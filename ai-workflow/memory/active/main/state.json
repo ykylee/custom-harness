@@ -27,26 +27,30 @@
     "runtime_checks": null
   },
   "session": {
-    "current_baseline": "워크플로우 킷 부트스트랩 직후의 초기 셋업 단계 — PURPOSE.md 와 PROJECT_PROFILE.md 를 채워 기준선을 실질화하는 중. 프로젝트 본체(LLM 에이전트 하네스) 코드는 아직 없고 기술 스택 미정.",
-    "current_axis": "워크플로우 킷 부트스트랩 직후의 초기 셋업 단계 — PURPOSE.md 와 PROJECT_PROFILE.md 를 채워 기준선을 실질화하는 중. 프로젝트 본체(LLM 에이전트 하네스) 코드는 아직 없고 기술 스택 미정.",
-    "current_focus": "TASK-001 표준 AI 워크플로우 초기 도입",
-    "in_progress_items": [
-      "TASK-001 표준 AI 워크플로우 초기 도입"
-    ],
+    "current_baseline": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구. 컨셉 전달이 진행 중(사용자 완료 선언 전)이며, 합의된 진행 범위는 설계까지(구현 금지). 레퍼런스 조사는 완료: paseo 상세 분석 + 확장 하네스 3종 인터페이스 조사. 코드는 아직 없고 기술 스택 미정.",
+    "current_axis": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구. 컨셉 전달이 진행 중(사용자 완료 선언 전)이며, 합의된 진행 범위는 설계까지(구현 금지). 레퍼런스 조사는 완료: paseo 상세 분석 + 확장 하네스 3종 인터페이스 조사. 코드는 아직 없고 기술 스택 미정.",
+    "current_focus": null,
+    "in_progress_items": [],
     "blocked_items": [],
-    "planned_items": [
-      "TASK-2026-08-24-custom-harness-001"
+    "planned_items": [],
+    "recent_done_items": [
+      "TASK-2026-08-24-custom-harness-002 — 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사",
+      "TASK-2026-08-24-custom-harness-001 — 표준 AI 워크플로우 초기 도입",
+      "TASK-001 표준 AI 워크플로우 초기 도입",
+      "TASK-002 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사"
     ],
-    "recent_done_items": [],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-24.md",
-    "task_count": 1,
+    "task_count": 2,
     "in_progress_items": [],
     "blocked_items": [],
-    "done_items": []
+    "done_items": [
+      "TASK-2026-08-24-custom-harness-001 — 표준 AI 워크플로우 초기 도입",
+      "TASK-2026-08-24-custom-harness-002 — 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사"
+    ]
   },
   "next_documents": [
     "docs/PROJECT_PROFILE.md",

@@ -1,6 +1,6 @@
 ---
 id: TASK-2026-08-24-custom-harness-001
-status: planned
+status: done
 created_at: 2026-08-24
 source_anchor: generic-task-2026-08-24-custom-harness-001
 source_path: backlog/2026-08-24.md
@@ -13,7 +13,7 @@ kind: generic
 
 ## 📝 Description
 
-- Status: planned
+- Status: done
 - Priority: high
 - Request date: 2026-08-24
 - Owner: yklee
@@ -28,6 +28,6 @@ kind: generic
 
 ## ✅ Outcome
 
-- Result:
-- Verification:
-- Follow-up:
+- Result: PURPOSE.md 작성, PROJECT_PROFILE/handoff/TASK TODO 해소, git 저장소 초기화 및 초기 커밋(d3ba4a8)
+- Verification: `wk session-start` 가 PURPOSE 부재 경고 없이 기준선 복원 (scope 포함 5·제외 3 항목 파싱 확인)
+- Follow-up: 기술 스택 확정 시 PROJECT_PROFILE §3 명령 5종 기입

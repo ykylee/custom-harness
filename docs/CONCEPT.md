@@ -38,6 +38,8 @@
 6. grok build
 7. antigravity
 
+- 확장 타깃 3종(oh my pi / grok build / antigravity)의 통합 인터페이스 조사 완료 — [하네스 인터페이스 조사](./reference/harness-interfaces.md). 셋 다 CLI 래핑으로 통합 가능.
+
 ## 5. 미정 / 후속 결정 사항
 
 - 기술 스택 (paseo 는 TypeScript — 따를지 여부 미정)

@@ -160,12 +160,30 @@ Mobile(Expo) │ Web │ Desktop(Electron) │ CLI          ← 전부 @getpaseo
 
 제품 정체성의 일부 ("voice-controlled development environment"). 딕테이션(STT→컴포저)과 보이스 에이전트(실시간 대화, AEC 필수라 자체 네이티브 모듈 `expo-two-way-audio` vendoring) 두 모드. 서버 측 STT/TTS는 sherpa-onnx 로컬 모델.
 
-## 5. 플러그인 시스템
+## 5. 확장 3축: Skill / MCP / Plugin
+
+paseo는 확장을 서로 겹치지 않는 세 축으로 분리한다. **스킬 = 하네스에게 주는 것(파일 동기화), MCP = 하네스와 주고받는 것(정방향 주입 + 역방향 폴백 툴 표면), 플러그인 = paseo 자신을 바꾸는 것(컴파일 타임 경계 + 프로세스 격리).**
+
+### 5.1 Skill — 에이전트에게 주입하는 지식
+
+- 저장소 `skills/`에 오케스트레이션 스킬 번들(SKILL.md): `paseo`(기반), `paseo-handoff`, `paseo-committee`, `paseo-advisor`, `paseo-help`, `paseo-plugin`.
+- 처리 방식은 **파일 동기화**: 빌드 시 데몬 dist에 복사 → 런타임에 `server/orchestration-skills/`가 각 하네스의 스킬 디렉터리(`~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`)로 설치·동기화. paseo가 스킬 실행을 제어하는 게 아니라 하네스들이 각자 읽어간다.
+- 선택 상태는 데몬 config(`agents.skills.selection`), 시작 시 자동 업데이트, 중단된 설치 트랜잭션 복구 로직 포함(`orchestration-skills/internal/transaction.ts`).
+- 클라이언트 노출: `AgentSkills*` RPC 5종 + `skillManagement` feature 플래그 (설정 UI 토글).
+- `paseo-help` 스킬은 런타임에 `https://paseo.sh/llms.txt`를 fetch해 최신 문서를 우선 신뢰 — public-docs가 에이전트의 원격 지식 베이스를 겸함.
+
+### 5.2 MCP — 양방향, 그리고 "폴백"이라는 위치
+
+- **정방향 (에이전트에게 MCP 서버 붙이기)**: `AgentSessionConfig.mcpServers`에 `McpServerConfig`(stdio | http | sse 판별 유니온)로 선언 → 각 어댑터가 하네스 네이티브 형식으로 변환. 지원 여부는 `supportsMcpServers` capability로 협상, claude/codex/opencode만 `supportsExactMcpPreapproval`(MCP 툴 사전 승인) 지원.
+- **역방향 (paseo 자신이 에이전트의 툴)**: 데몬이 `/mcp/agents` HTTP 엔드포인트(streamable HTTP)로 MCP 서버가 되어 40여 개 툴 노출(§2.5). 세션 생성 시 `withRuntimePaseoMcpServer()`가 `{type:"http", url:"…/mcp/agents?callerAgentId=<id>"}`를 자동 주입 — 에이전트가 에이전트를 만드는 오케스트레이션의 통로.
+- **MCP는 폴백 어댑터**: 정본은 `PaseoToolCatalog`(`agent/tools/types.ts`). 네이티브 툴 등록을 지원하는 하네스(`supportsNativePaseoTools: true`, 현재 OMP)는 MCP를 거치지 않고 `launchContext.paseoTools`로 직접 등록, 중복 주입은 `stripInternalPaseoMcpServer()`로 제거.
+
+### 5.3 Plugin — paseo 자체 확장
 
 - SDK `@getpaseo/plugin`: 확장 포인트 7종 — 서버 RPC 핸들러(`handle`), 전역 서피스, 사이드바 항목, 워크스페이스/에이전트 패널, ⌘K 항목, 컴포저 첨부 소스, 테마.
 - **파일명 기반 런타임 경계**: `*.client.tsx` / `*.server.ts` / `*.shared.ts`. 자체 컴파일러(Babel AST + esbuild)가 타깃별 번들 2개를 만들며 반대편 등록 호출을 소스 레인지 단위로 삭제, 교차 import는 컴파일 에러.
-- 서버 플러그인은 `child_process.fork` 서브프로세스로 격리(전용 데몬 세션 보유), 클라이언트 번들은 화이트리스트 모듈만 주입되는 `eval`. **신뢰된 비샌드박스 코드** 모델 — 사용자 동의(`pluginsEnabled`) 필수.
-- 별개 축으로 `skills/` — 코딩 에이전트에게 주입되는 오케스트레이션 스킬(SKILL.md) 번들을 `~/.claude/skills` 등에 설치·동기화.
+- 서버 플러그인은 `child_process.fork` 서브프로세스로 격리 — 각 플러그인이 `ipc://plugin/<id>`로 전용 데몬 세션 보유. 클라이언트 번들은 화이트리스트 모듈(react, zod 등)만 주입되는 `eval`.
+- 보안 모델은 샌드박스가 아니라 **신뢰된 코드** — 루트 `pluginsEnabled` 플래그를 사용자 동의 없이 켜지 않는 것이 규칙.
 
 ## 6. 개발/배포 인프라
 
@@ -184,6 +202,7 @@ Mobile(Expo) │ Web │ Desktop(Electron) │ CLI          ← 전부 @getpaseo
 6. **권한(승인) 흐름을 1급 개념으로.** `permission_requested/resolved` + attention 정책 + 푸시 알림 + 자동 승인(unattended 모드)까지 일관된 파이프라인.
 7. **원격 접속은 릴레이 + E2EE + 대역 외 키 교환.** 릴레이 운영자를 신뢰 대상에서 제외하는 구조.
 8. **탭/트랙 이중 구조의 멀티 에이전트 UI.** 형제 세션은 공간(페인/탭)으로, 부모-자식은 트랙으로.
+9. **확장 3축의 분리 (§5).** 스킬(하네스에게 주는 파일) / MCP(하네스와 주고받는 프로토콜, 폴백) / 플러그인(자기 자신의 확장)을 겹치지 않게 나눈 것 자체가 설계 결정.
 
 ## 8. 발견된 문제점 (참고)
 
@@ -195,5 +214,5 @@ Mobile(Expo) │ Web │ Desktop(Electron) │ CLI          ← 전부 @getpaseo
 ## 9. 미해결 질문 (설계 단계로 넘길 것)
 
 - custom-harness의 1차 타깃(claude, codex, pi)은 셋 다 paseo에 Direct 어댑터가 존재 — ACP 우선 전략을 취할지, 처음부터 Direct로 갈지.
-- paseo가 지원하지 않는 oh my pi(paseo는 기본 비활성), grok build, antigravity의 통합 인터페이스 조사 필요.
+- ~~oh my pi, grok build, antigravity의 통합 인터페이스 조사 필요~~ → 조사 완료: [확장 타깃 하네스 인터페이스 조사](./harness-interfaces.md). 셋 다 CLI 래핑으로 통합 가능.
 - 데몬/클라이언트 분리 수준 — paseo 수준의 원격/모바일 지원이 목표인지, 로컬 우선인지에 따라 relay 계층 필요성이 갈림.
