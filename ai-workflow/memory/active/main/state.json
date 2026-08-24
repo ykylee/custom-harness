@@ -27,29 +27,32 @@
     "runtime_checks": null
   },
   "session": {
-    "current_baseline": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구. 컨셉 전달이 진행 중(사용자 완료 선언 전)이며, 합의된 진행 범위는 설계까지(구현 금지). 레퍼런스 조사는 완료: paseo 상세 분석 + 확장 하네스 3종 인터페이스 조사. 코드는 아직 없고 기술 스택 미정.",
-    "current_axis": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구. 컨셉 전달이 진행 중(사용자 완료 선언 전)이며, 합의된 진행 범위는 설계까지(구현 금지). 레퍼런스 조사는 완료: paseo 상세 분석 + 확장 하네스 3종 인터페이스 조사. 코드는 아직 없고 기술 스택 미정.",
+    "current_baseline": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.",
+    "current_axis": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.",
     "current_focus": null,
     "in_progress_items": [],
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
+      "TASK-2026-08-24-custom-harness-003 — 사내망 제약 반영: 게이트웨이 호환·확장 공유 조사",
       "TASK-2026-08-24-custom-harness-002 — 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사",
       "TASK-2026-08-24-custom-harness-001 — 표준 AI 워크플로우 초기 도입",
       "TASK-001 표준 AI 워크플로우 초기 도입",
-      "TASK-002 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사"
+      "TASK-002 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사",
+      "TASK-003 사내망 제약 반영: 게이트웨이 호환·확장 공유 조사"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-24.md",
-    "task_count": 2,
+    "task_count": 3,
     "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
       "TASK-2026-08-24-custom-harness-001 — 표준 AI 워크플로우 초기 도입",
-      "TASK-2026-08-24-custom-harness-002 — 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사"
+      "TASK-2026-08-24-custom-harness-002 — 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사",
+      "TASK-2026-08-24-custom-harness-003 — 사내망 제약 반영: 게이트웨이 호환·확장 공유 조사"
     ]
   },
   "next_documents": [
