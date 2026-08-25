@@ -1,0 +1,42 @@
+{
+  "//": "번들 동봉물 조달 소스 + 고정 해시 (WBS 2.5.3, FR-4.7) — 버전 세트 불변성의 근거. 갱신은 버전·해시를 함께 교체.",
+  "pi": {
+    "version": "0.84.1",
+    "localDir": "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent",
+    "npmTarball": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-0.84.1.tgz",
+    "integrity": "sha512-ncAqFrG+iybuPGOhMiZoEHkEzTpJgz3guYD32pD+M7ucc0WeHmauP6wa7qwP8V/KWvsZDVNa5XGsdZ7fkC7w7A==",
+    "windowsNote": "Windows 는 조건부 동봉 (Git Bash 전제·실기기 실측 C-5 후 확정 — windows-support.md)"
+  },
+  "omp": {
+    "version": "17.3.8",
+    "assets": {
+      "darwin-arm64": {
+        "url": "https://github.com/can1357/oh-my-pi/releases/download/v17.3.8/omp-darwin-arm64",
+        "sha256": "84705a1ca833f59afccca2db7aff559e09cb74902e7a5aaf87077a88f3c84b84",
+        "binaryName": "omp"
+      },
+      "linux-x64": {
+        "url": "https://github.com/can1357/oh-my-pi/releases/download/v17.3.8/omp-linux-x64",
+        "sha256": "efdb54f0054e80afe1c05c09f43d5ced09ce8ec8b75c3fb6b0ca5ce4805b383f",
+        "binaryName": "omp"
+      },
+      "win32-x64": {
+        "url": "https://github.com/can1357/oh-my-pi/releases/download/v17.3.8/omp-windows-x64.exe",
+        "sha256": "0a7d4f7e491f9af906f3bdc750023bf51e8934a9e31db481b611ee2cb7909c32",
+        "binaryName": "omp.exe"
+      }
+    }
+  },
+  "grok": {
+    "version": "1.0.5",
+    "assets": {
+      "darwin-arm64": { "localFile": "~/.grok/bin/grok", "binaryName": "grok" },
+      "linux-x64": {
+        "unavailable": "x.ai CDN 미러링 + 자체 해시 고정 절차 미확정 (packaging.md §6 파생 과제) — 확정 시 url/sha256 기입"
+      },
+      "win32-x64": {
+        "unavailable": "Windows 번들 grok 제외 확정 (2026-08-25 승인, windows-support.md)"
+      }
+    }
+  }
+}

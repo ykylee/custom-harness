@@ -235,9 +235,43 @@ describe('DaemonServer config domain (WBS 1.4.3)', () => {
       expect(await nextMessage(ws)).toMatchObject({
         requestId: 'c-2',
         ok: true,
-        // 키 값은 응답에 실리지 않는다 — 상태만
-        result: { values: { gateway: null, keyState: { present: true, fallback: true } } },
+        // 키 값은 응답에 실리지 않는다 — 상태만. maxSessions 기본 8 (WBS 2.3.1)
+        result: {
+          values: { gateway: null, keyState: { present: true, fallback: true }, maxSessions: 8 },
+        },
       });
+
+      // maxSessions 설정 — 영속 + 매니저 즉시 반영 (WBS 2.3.1)
+      ws.send(
+        JSON.stringify({
+          type: 'config.set.request',
+          requestId: 'c-3',
+          params: { values: { maxSessions: 5 } },
+        }),
+      );
+      expect(await nextMessage(ws)).toMatchObject({
+        requestId: 'c-3',
+        ok: true,
+        result: { values: { maxSessions: 5 } },
+      });
+      expect(manager.getMaxSessions()).toBe(5);
+
+      ws.send(
+        JSON.stringify({
+          type: 'config.set.request',
+          requestId: 'c-4',
+          params: { values: { maxSessions: 0 } },
+        }),
+      );
+      expect(await nextMessage(ws)).toMatchObject({
+        requestId: 'c-4',
+        ok: false,
+        error: { code: 'bad_request' },
+      });
+
+      // harness.list — gateway 배선 시 모델 카탈로그 동봉 (FR-2.4). 미온보딩이면 빈 목록
+      ws.send(JSON.stringify({ type: 'harness.list.request', requestId: 'c-5', params: {} }));
+      expect(await nextMessage(ws)).toMatchObject({ requestId: 'c-5', ok: true });
     } finally {
       ws.close();
       await server.stop();

@@ -329,3 +329,216 @@ button.settings-link,
   color: #666;
   font-size: 12px;
 }
+
+/* ── M2 2.4 멀티 세션 UI ─────────────────────────────────────────────── */
+.sidebar-actions {
+  display: flex;
+  gap: 6px;
+}
+.sidebar-actions button {
+  flex: 1;
+  padding: 6px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.sidebar-actions .new-session {
+  background: #1a73e8;
+  border-color: #1a73e8;
+  color: #fff;
+}
+.bucket-title {
+  margin: 12px 4px 4px;
+  font-size: 11px;
+  color: #888;
+  text-transform: none;
+  display: flex;
+  justify-content: space-between;
+}
+.bucket-approval .bucket-title {
+  color: #b26a00;
+}
+.session-list li {
+  display: flex;
+  align-items: center;
+}
+.session-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.session-cwd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-usage {
+  margin-left: auto;
+  font-size: 11px;
+  color: #999;
+}
+.session-close {
+  border: 0;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.session-close:hover {
+  color: #c62828;
+}
+.harness-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #fff;
+  background: #888;
+}
+.harness-badge.harness-pi {
+  background: #7b1fa2;
+}
+.harness-badge.harness-omp {
+  background: #00695c;
+}
+.harness-badge.harness-grok {
+  background: #37474f;
+}
+.harness-badge.harness-mock {
+  background: #9e9e9e;
+}
+
+.main-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.tab-strip {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #ddd;
+  background: #fafafa;
+  overflow-x: auto;
+}
+.tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  border-right: 1px solid #eee;
+  max-width: 220px;
+}
+.tab.active {
+  background: #fff;
+  box-shadow: inset 0 -2px 0 #1a73e8;
+}
+.tab.secondary {
+  box-shadow: inset 0 -2px 0 #9c27b0;
+}
+.tab-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: none;
+  padding: 8px 4px 8px 10px;
+  cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab-close {
+  border: 0;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  padding: 0 8px;
+}
+.split-controls {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+}
+.split-controls button {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 7px;
+}
+.split-controls button.active {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+}
+.panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.panes.split-column {
+  flex-direction: column;
+}
+.pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.panes.split-row .pane-secondary {
+  border-left: 1px solid #ddd;
+}
+.panes.split-column .pane-secondary {
+  border-top: 1px solid #ddd;
+}
+.pane > .conversation {
+  flex: 1;
+  min-width: 0;
+}
+
+.auto-approve {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #666;
+}
+.auto-approve-on {
+  color: #b26a00;
+  font-weight: 600;
+}
+.turn-usage {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #999;
+}
+.harness-table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.harness-table th,
+.harness-table td {
+  border: 1px solid #eee;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.harness-warnings {
+  color: #b26a00;
+  max-width: 380px;
+}
+.auto-approve-policy {
+  color: #666;
+  font-size: 13px;
+}
+.notifications-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

@@ -99,6 +99,23 @@ describe('timeline reducer (FR-3.2 데이터 계층)', () => {
     expect(view.items[0]).toMatchObject({ kind: 'assistant', turnId: 't-x', text: '선행 델타' });
   });
 
+  it('records per-turn usage and accumulates session totals (FR-3.7, WBS 2.4.5)', () => {
+    seq = 0;
+    const turn = (id: string, tokens: number) => [
+      ev({ type: 'user_message', turnId: id, text: 'x' }),
+      ev({ type: 'turn_started', turnId: id }),
+      ev({ type: 'message_delta', turnId: id, delta: 'ok' }),
+      // 턴 중간 usage_updated 는 누적에 이중 집계되지 않아야 한다
+      ev({ type: 'usage_updated', usage: { totalTokens: tokens } }),
+      ev({ type: 'turn_completed', turnId: id, usage: { totalTokens: tokens } }),
+    ];
+    const view = applyEvents(emptySessionView(), [...turn('t-1', 15), ...turn('t-2', 25)]);
+    expect(view.totalTokens).toBe(40); // 세션 누적
+    const assistants = view.items.filter((item) => item.kind === 'assistant');
+    expect(assistants[0]).toMatchObject({ usage: { totalTokens: 15 } }); // 턴별
+    expect(assistants[1]).toMatchObject({ usage: { totalTokens: 25 } });
+  });
+
   it('keeps session error detail from session_status_changed', () => {
     seq = 0;
     const view = applyEvents(emptySessionView(), [

@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@custom-harness/protocol": "0.1.0",
+    "smol-toml": "^1.8.0",
     "ws": "^8.21.3",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "exports": {

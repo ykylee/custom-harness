@@ -19,6 +19,14 @@ export const SessionMetaSchema = z.looseObject({
   createdAt: z.string(),
   updatedAt: z.string(),
   approvalPolicy: z.enum(['mediate', 'auto']).optional(),
+  /** 세션 누적 토큰 (FR-3.7, WBS 2.4.5) — 턴 종료 usage 를 합산 (additive) */
+  usageTotals: z
+    .looseObject({
+      inputTokens: z.number().optional(),
+      outputTokens: z.number().optional(),
+      totalTokens: z.number().optional(),
+    })
+    .optional(),
   handle: z
     .looseObject({
       harness: HarnessIdSchema,

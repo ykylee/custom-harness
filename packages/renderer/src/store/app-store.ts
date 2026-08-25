@@ -1,9 +1,12 @@
-// 앱 상태 스토어·컨트롤러 (WBS 1.5.1) — 데몬 RPC/이벤트를 상태로 투영한다.
+// 앱 상태 스토어·컨트롤러 (WBS 1.5.1·2.4) — 데몬 RPC/이벤트를 상태로 투영한다.
 // 컨트롤러는 전송 계층을 인터페이스로 받는다 (컴포넌트 테스트에서 fake 주입).
+// M2 2.4: 탭·분할 레이아웃(FR-3.3.2/3, localStorage 복원), 자동 승인 opt-in(FR-3.4.3),
+// 네이티브 알림(FR-3.5.2 — Electron 렌더러의 Notification API), 하네스 상태 패널 데이터.
 import type {
   HarnessId,
   HarnessInfo,
   PermissionOutcome,
+  ProbeResult,
   SessionSummary,
 } from '@custom-harness/protocol';
 import type { ConnectionState, DaemonClient } from '../ws/client.js';
@@ -23,18 +26,64 @@ export interface KeyState {
   fallback: boolean;
 }
 
+/** 탭 + 분할 페인 배치 (FR-3.3.2) — 1차는 2분할까지 */
+export interface LayoutState {
+  /** 열린 탭(세션 ID) 순서 — 탭 닫기는 세션 종료가 아니다 (FR-3.3.3) */
+  tabs: string[];
+  /** 포커스 탭 (주 페인) */
+  active: string | null;
+  /** 분할 시 보조 페인 세션 — row = 좌우, column = 상하 */
+  split: { direction: 'row' | 'column'; secondary: string } | null;
+}
+
 export interface AppState {
   connection: ConnectionState;
   route: Route;
   bootstrapped: boolean;
   gateway: GatewaySettings | null;
   keyState: KeyState | null;
+  maxSessions: number | null;
   harnesses: HarnessInfo[];
   sessions: SessionSummary[];
-  currentSessionId: string | null;
+  layout: LayoutState;
   views: Record<string, SessionView>;
+  /** 세션 한정 자동 승인 opt-in (FR-3.4.3) — 렌더러 수명, 영속화하지 않는다 */
+  autoApprove: Record<string, boolean>;
+  /** 네이티브 알림 on/off (FR-3.5.2) — localStorage 영속 */
+  notificationsEnabled: boolean;
+  /** 하네스 상태 패널 (FR-3.6.3) — harness.probe 결과 캐시 */
+  probes: Record<string, ProbeResult>;
   /** 마지막 전역 오류 (RPC 실패 등) — 배너 표시용 */
   lastError: string | null;
+}
+
+const LAYOUT_KEY = 'custom-harness.layout';
+const NOTIFICATIONS_KEY = 'custom-harness.notifications';
+
+/** window.localStorage 명시 참조 — Node 22 의 전역 localStorage(제한 구현)와 혼동 방지 */
+function storage(): Storage | undefined {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function loadPersisted<T>(key: string): T | undefined {
+  try {
+    const raw = storage()?.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : undefined;
+  } catch {
+    return undefined; // 브라우저 비상 경로·테스트 환경 — 복원 생략
+  }
+}
+
+function persist(key: string, value: unknown): void {
+  try {
+    storage()?.setItem(key, JSON.stringify(value));
+  } catch {
+    /* 영속 실패는 무해 — 다음 실행에서 기본 배치 */
+  }
 }
 
 export function initialAppState(): AppState {
@@ -44,10 +93,14 @@ export function initialAppState(): AppState {
     bootstrapped: false,
     gateway: null,
     keyState: null,
+    maxSessions: null,
     harnesses: [],
     sessions: [],
-    currentSessionId: null,
+    layout: { tabs: [], active: null, split: null },
     views: {},
+    autoApprove: {},
+    notificationsEnabled: loadPersisted<boolean>(NOTIFICATIONS_KEY) ?? true,
+    probes: {},
     lastError: null,
   };
 }
@@ -78,6 +131,15 @@ export class AppController {
         return { ...prev, views: { ...prev.views, [event.sessionId]: applyEvent(view, event) } };
       });
       if (event.type === 'session_status_changed') void this.refreshSessions();
+      if (event.type === 'permission_requested') this.onPermissionRequested(event.sessionId, event);
+      if (event.type === 'turn_completed' || event.type === 'turn_failed') {
+        this.maybeNotify(
+          event.sessionId,
+          event.type === 'turn_completed' ? '턴 완료' : '턴 실패',
+          `세션 ${this.sessionLabel(event.sessionId)}`,
+        );
+        void this.refreshSessions(); // 목록 usage 요약 갱신 (FR-3.7)
+      }
     });
     client.onReconnected(() => void this.resync());
   }
@@ -90,12 +152,13 @@ export class AppController {
     this.client.stop();
   }
 
-  /** 최초 연결 시 상태 적재 — 온보딩 필요 여부 판정 (FR-3.8) */
+  /** 최초 연결 시 상태 적재 — 온보딩 필요 여부 판정 (FR-3.8) + 배치 복원 (FR-3.3.2) */
   async bootstrap(): Promise<void> {
     try {
       await this.refreshConfig();
       await this.refreshHarnesses();
       await this.refreshSessions();
+      this.restoreLayout();
       const { gateway, keyState } = this.store.get();
       this.store.set({
         bootstrapped: true,
@@ -106,34 +169,40 @@ export class AppController {
     }
   }
 
-  /** 재연결 재동기화 — 목록 + 현재 세션 타임라인 갭 회수 (protocol-design §5) */
+  /** 재연결 재동기화 — 목록 + 열린 페인들의 타임라인 갭 회수 (protocol-design §5) */
   async resync(): Promise<void> {
     try {
       await this.refreshSessions();
-      const { currentSessionId, views } = this.store.get();
-      if (!currentSessionId) return;
-      const fromSeq = (views[currentSessionId]?.lastSeq ?? -1) + 1;
-      const result = (await this.client.rpc('session.timeline', {
-        sessionId: currentSessionId,
-        fromSeq,
-      })) as { events: Parameters<typeof applyEvents>[1] };
-      this.store.set((prev) => {
-        const view = prev.views[currentSessionId] ?? emptySessionView();
-        return {
-          ...prev,
-          views: { ...prev.views, [currentSessionId]: applyEvents(view, result.events) },
-        };
-      });
+      const { layout } = this.store.get();
+      const open = [layout.active, layout.split?.secondary].filter(
+        (id): id is string => id !== null && id !== undefined,
+      );
+      for (const sessionId of open) await this.syncTimelineGap(sessionId);
     } catch (error) {
       this.reportError(error);
     }
   }
 
+  private async syncTimelineGap(sessionId: string): Promise<void> {
+    const fromSeq = (this.store.get().views[sessionId]?.lastSeq ?? -1) + 1;
+    const result = (await this.client.rpc('session.timeline', { sessionId, fromSeq })) as {
+      events: Parameters<typeof applyEvents>[1];
+    };
+    this.store.set((prev) => {
+      const view = prev.views[sessionId] ?? emptySessionView();
+      return { ...prev, views: { ...prev.views, [sessionId]: applyEvents(view, result.events) } };
+    });
+  }
+
   async refreshConfig(): Promise<void> {
     const result = (await this.client.rpc('config.get')) as {
-      values: { gateway: GatewaySettings | null; keyState: KeyState };
+      values: { gateway: GatewaySettings | null; keyState: KeyState; maxSessions?: number };
     };
-    this.store.set({ gateway: result.values.gateway, keyState: result.values.keyState });
+    this.store.set({
+      gateway: result.values.gateway,
+      keyState: result.values.keyState,
+      maxSessions: result.values.maxSessions ?? null,
+    });
   }
 
   async refreshHarnesses(): Promise<void> {
@@ -146,32 +215,104 @@ export class AppController {
     this.store.set({ sessions: result.sessions });
   }
 
+  /** 하네스 상태 패널 (FR-3.6.3) — 버전·검증·가용성 probe */
+  async probeHarness(harness: HarnessId): Promise<void> {
+    const result = (await this.client.rpc('harness.probe', { harness })) as { probe: ProbeResult };
+    this.store.set((prev) => ({ ...prev, probes: { ...prev.probes, [harness]: result.probe } }));
+  }
+
   navigate(route: Route): void {
     this.store.set({ route });
   }
 
-  async createSession(params: {
-    harness: HarnessId;
-    cwd: string;
-    modelId?: string;
-  }): Promise<void> {
-    const result = (await this.client.rpc('session.create', { ...params })) as {
-      session: SessionSummary;
-    };
-    const session = result.session;
-    this.store.set((prev) => ({
-      ...prev,
-      currentSessionId: session.sessionId,
-      views: {
-        ...prev.views,
-        [session.sessionId]: prev.views[session.sessionId] ?? emptySessionView(session.status),
-      },
+  // ── 탭·분할 레이아웃 (FR-3.3.2/3, WBS 2.4.2) ─────────────────────────────
+
+  private setLayout(mutate: (layout: LayoutState) => LayoutState): void {
+    this.store.set((prev) => {
+      const layout = mutate(prev.layout);
+      persist(LAYOUT_KEY, layout);
+      return { ...prev, layout };
+    });
+  }
+
+  private restoreLayout(): void {
+    const saved = loadPersisted<LayoutState>(LAYOUT_KEY);
+    if (!saved) return;
+    const alive = new Set(this.store.get().sessions.map((s) => s.sessionId));
+    const tabs = (saved.tabs ?? []).filter((id) => alive.has(id));
+    const active =
+      saved.active !== null && alive.has(saved.active) ? saved.active : (tabs[0] ?? null);
+    const split =
+      saved.split && alive.has(saved.split.secondary) && saved.split.secondary !== active
+        ? saved.split
+        : null;
+    this.setLayout(() => ({ tabs, active, split }));
+    // 복원된 페인 타임라인 적재
+    for (const id of [active, split?.secondary]) {
+      if (id !== null && id !== undefined) void this.loadTimeline(id);
+    }
+  }
+
+  /** 탭으로 열기 — 목록·재개 공용 진입점 */
+  async openSession(sessionId: string): Promise<void> {
+    const summary = this.store.get().sessions.find((s) => s.sessionId === sessionId);
+    if (summary?.status === 'closed') {
+      await this.client.rpc('session.resume', { sessionId });
+      await this.refreshSessions();
+    }
+    this.setLayout((layout) => ({
+      ...layout,
+      tabs: layout.tabs.includes(sessionId) ? layout.tabs : [...layout.tabs, sessionId],
+      active: sessionId,
     }));
+    await this.loadTimeline(sessionId);
+  }
+
+  setActiveTab(sessionId: string): void {
+    this.setLayout((layout) =>
+      layout.tabs.includes(sessionId) ? { ...layout, active: sessionId } : layout,
+    );
+  }
+
+  /** 새 세션 뷰 — 활성 탭 해제 (탭은 유지) */
+  showNewSessionView(): void {
+    this.store.set({ route: 'main' });
+    this.setLayout((layout) => ({ ...layout, active: null }));
+  }
+
+  /** 탭 닫기 — 세션은 데몬에 유지 (FR-3.3.3) */
+  closeTab(sessionId: string): void {
+    this.setLayout((layout) => {
+      const tabs = layout.tabs.filter((id) => id !== sessionId);
+      const split = layout.split?.secondary === sessionId ? null : layout.split;
+      const active =
+        layout.active === sessionId
+          ? (tabs[Math.min(layout.tabs.indexOf(sessionId), tabs.length - 1)] ?? null)
+          : layout.active;
+      return { tabs, active, split };
+    });
+  }
+
+  /** 명시적 세션 종료 (FR-3.3.3) — 하네스 프로세스 정리, 이력은 유지(재개 가능) */
+  async closeSession(sessionId: string): Promise<void> {
+    await this.client.rpc('session.close', { sessionId });
+    this.closeTab(sessionId);
     await this.refreshSessions();
   }
 
-  async selectSession(sessionId: string): Promise<void> {
-    this.store.set({ currentSessionId: sessionId });
+  /** 분할 토글 — secondary 미지정 시 active 외 첫 탭 (없으면 무시) */
+  setSplit(direction: 'row' | 'column' | null, secondary?: string): void {
+    this.setLayout((layout) => {
+      if (direction === null) return { ...layout, split: null };
+      const candidate = secondary ?? layout.tabs.find((id) => id !== layout.active);
+      if (candidate === undefined || candidate === layout.active) return { ...layout, split: null };
+      return { ...layout, split: { direction, secondary: candidate } };
+    });
+    const target = this.store.get().layout.split?.secondary;
+    if (target !== undefined) void this.loadTimeline(target);
+  }
+
+  private async loadTimeline(sessionId: string): Promise<void> {
     try {
       const result = (await this.client.rpc('session.timeline', { sessionId, fromSeq: 0 })) as {
         events: Parameters<typeof applyEvents>[1];
@@ -185,9 +326,27 @@ export class AppController {
     }
   }
 
-  async resumeSession(sessionId: string): Promise<void> {
-    await this.client.rpc('session.resume', { sessionId });
-    await this.selectSession(sessionId);
+  async createSession(params: {
+    harness: HarnessId;
+    cwd: string;
+    modelId?: string;
+  }): Promise<void> {
+    const result = (await this.client.rpc('session.create', { ...params })) as {
+      session: SessionSummary;
+    };
+    const session = result.session;
+    this.store.set((prev) => ({
+      ...prev,
+      views: {
+        ...prev.views,
+        [session.sessionId]: prev.views[session.sessionId] ?? emptySessionView(session.status),
+      },
+    }));
+    this.setLayout((layout) => ({
+      ...layout,
+      tabs: [...layout.tabs, session.sessionId],
+      active: session.sessionId,
+    }));
     await this.refreshSessions();
   }
 
@@ -207,10 +366,78 @@ export class AppController {
     await this.client.rpc('session.permission.respond', { sessionId, requestId, outcome });
   }
 
+  // ── 자동 승인 (FR-3.4.3, WBS 2.4.7) ──────────────────────────────────────
+
+  /** 세션 한정 opt-in — 위험 고지는 UI 가 담당. 렌더러 수명이라 재시작 시 초기화 */
+  setAutoApprove(sessionId: string, enabled: boolean): void {
+    this.store.set((prev) => ({
+      ...prev,
+      autoApprove: { ...prev.autoApprove, [sessionId]: enabled },
+    }));
+  }
+
+  private onPermissionRequested(
+    sessionId: string,
+    event: { request: { requestId: string; options: { optionId: string; kind: string }[] } },
+  ): void {
+    if (this.store.get().autoApprove[sessionId] === true) {
+      const allow = event.request.options.find((o) => o.kind === 'allow_once');
+      if (allow) {
+        void this.respondPermission(sessionId, event.request.requestId, {
+          optionId: allow.optionId,
+        });
+        return;
+      }
+    }
+    // 백그라운드 세션 승인 대기 유도 (FR-3.4.2) — 배지는 목록 갱신, 알림은 여기서
+    void this.refreshSessions();
+    this.maybeNotify(sessionId, '승인 대기', `세션 ${this.sessionLabel(sessionId)} 승인 요청`);
+  }
+
+  // ── 네이티브 알림 (FR-3.5.2, WBS 2.4.6) ──────────────────────────────────
+
+  setNotificationsEnabled(enabled: boolean): void {
+    persist(NOTIFICATIONS_KEY, enabled);
+    this.store.set({ notificationsEnabled: enabled });
+  }
+
+  /** 비활성(백그라운드) 세션에만 알림 — 클릭 시 해당 세션 포커스 */
+  private maybeNotify(sessionId: string, title: string, body: string): void {
+    const state = this.store.get();
+    if (!state.notificationsEnabled) return;
+    const isVisible =
+      state.layout.active === sessionId || state.layout.split?.secondary === sessionId;
+    const windowFocused = typeof document !== 'undefined' && document.hasFocus();
+    if (isVisible && windowFocused) return;
+    if (typeof Notification === 'undefined') return; // 테스트·비지원 환경
+    try {
+      const notification = new Notification(title, { body });
+      notification.onclick = () => {
+        window.focus();
+        void this.openSession(sessionId);
+      };
+    } catch {
+      /* 알림 실패는 무해 */
+    }
+  }
+
+  private sessionLabel(sessionId: string): string {
+    const summary = this.store.get().sessions.find((s) => s.sessionId === sessionId);
+    if (!summary) return sessionId.slice(0, 8);
+    return `${summary.harness} · ${summary.cwd.split('/').pop() ?? summary.cwd}`;
+  }
+
+  // ── 설정 (FR-3.6, WBS 2.4.4) ─────────────────────────────────────────────
+
   /** 온보딩·설정 — 게이트웨이 설정 저장 (config.set) */
   async saveGateway(settings: Partial<GatewaySettings>): Promise<void> {
     await this.client.rpc('config.set', { values: { gateway: settings } });
     await this.refreshConfig();
+  }
+
+  /** 기본 모델 선택 (FR-3.6.2) */
+  async setDefaultModel(modelId: string): Promise<void> {
+    await this.saveGateway({ defaultModel: modelId });
   }
 
   /** 키 저장 후 연결 확인 — 결과를 그대로 반환해 화면이 원인별 안내 (FR-3.8) */

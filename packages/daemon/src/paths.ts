@@ -9,6 +9,8 @@ export interface DaemonPaths {
   grokHomeDir: string;
   /** pi 격리 홈 (PI_CODING_AGENT_DIR) — models.json 주입 대상 (credential-injection-design §2) */
   piHomeDir: string;
+  /** omp 격리 홈 (PI_CODING_AGENT_DIR, omp 도 동일 env 실측) — models.yml·config.yml 주입 대상 (WBS 2.1.3) */
+  ompHomeDir: string;
   tokenFile: string;
   pidFile: string;
   processesFile: string;
@@ -29,6 +31,7 @@ export function resolvePaths(
     sessionsDir: join(dataDir, 'sessions'),
     grokHomeDir: join(dataDir, 'grok-home'),
     piHomeDir: join(dataDir, 'pi-home'),
+    ompHomeDir: join(dataDir, 'omp-home'),
     tokenFile: join(dataDir, 'daemon.token'),
     pidFile: join(dataDir, 'daemon.pid'),
     processesFile: join(dataDir, 'processes.json'),

@@ -8,6 +8,7 @@ import {
   PermissionRequestSchema,
   SessionEventSchema,
   SessionStatusSchema,
+  UsageSchema,
 } from './events.js';
 
 export const RpcErrorSchema = z.looseObject({
@@ -59,6 +60,8 @@ export const SessionSummarySchema = z.looseObject({
   seq: z.number().int().nonnegative(),
   /** 미응답 승인 요청 — 데몬 재시작·재연결 후 조회 보장 (FR-1.5) */
   pendingPermissions: z.array(PermissionRequestSchema).optional(),
+  /** 세션 누적 토큰 요약 (FR-3.7, M2 2.4.5 — additive) */
+  usage: UsageSchema.optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 });
@@ -83,6 +86,8 @@ export const HarnessInfoSchema = z.looseObject({
   id: HarnessIdSchema,
   capabilities: CapabilityFlagsSchema,
   models: z.array(ModelInfoSchema).optional(),
+  /** 트래픽 경계·버전 검증 경고 (FR-2.5/FR-1.8, M2 2.3 — additive) */
+  warnings: z.array(z.string()).optional(),
 });
 export type HarnessInfo = z.infer<typeof HarnessInfoSchema>;
 

@@ -57,7 +57,18 @@ headless 의 잔여 용도: `--yolo` 배치 실행, `end` 이벤트의 usage 메
 - **grok 는 런타임에 config.toml 을 재작성**함(`[marketplace]` 블록 자동 추가 확인) — 관리 블록 주입 시 재작성 내성 필요, GROK_HOME 격리 방식이면 무관
 - headless 실측 중 **세션 제목 생성 등 보조 호출이 기본 모델 id(`grok-4.6`)로 커스텀 엔드포인트에 전송**됨 — 게이트웨이가 미지의 모델 id 를 거부하면 보조 기능 실패 가능. 기본 모델을 커스텀 모델로 고정하는 설정 확인 필요
 
-**잔여 실측 항목**: §1 의 2(세션 load replay), 3(permission options 상세·allow_always 영속), 5(--mcp-config 플래그), 6(cancel 후 상태), 7(fork 시그니처), 9(SIGTERM 세션 저장) — 어댑터 설계(0.1.2) 진행 중 수행.
+**잔여 실측 항목**: §1 의 5(--mcp-config 플래그), 7(fork 시그니처) — 필요 시 후속. 나머지는 §3-1 에서 해소.
+
+## 3-1. 잔여 실측 해소 (2026-08-25, WBS 2.2 — grok 1.0.5, 목 게이트웨이 ACP 프로브)
+
+| # (§1 목록) | 결과 |
+|---|---|
+| 2. session/load replay | ✅ **load 응답이 오기 전에** 과거 대화가 `session/update` 알림(user/agent_message_chunk·tool_call·turn_completed(usage 포함))으로 리플레이된다. 어댑터는 load 완결까지 대화 이벤트를 드롭해야 함 (구현: suppressReplay 가드) |
+| 3. request_permission options | ✅ 기본 권한 모드에서 **allow-once/reject-once 2종만** 노출 (`{optionId, name, kind}`) — allow_always 는 기본 미노출이라 영속 문제 자체가 1차 범위 밖. 응답은 `{outcome:{outcome:'selected',optionId}}` / `{outcome:{outcome:'cancelled'}}`. 요청에 `toolCall{toolCallId,kind,title,rawInput,_meta['x.ai/tool']}` 동봉 |
+| 3-보충. 거부 의미론 | ✅ reject-once 는 **툴만 실패시키고 턴은 end_turn 으로 완결** (모델이 거부를 안고 계속) — pi(거부=턴 취소)와 다름, 계약 스위트에 옵션으로 반영 |
+| 6. cancel 후 상태 | ✅ `session/cancel`(알림) → 진행 중 prompt 가 `stopReason:'cancelled'` 로 귀결(x.ai turn_completed 알림에 cancellationCategory:MidTurnAbort). **동일 세션 재프롬프트 정상** |
+| 9. SIGTERM 세션 저장 | ✅ SIGTERM 시 `GROK_HOME/sessions/<cwd-인코딩>/<sessionId>/` 에 저장 확인 — 재spawn+session/load 재개 성립 |
+| config.toml 현행 구문 | ✅ 오프라인 스위치: `[cli] auto_update=false`, `[features] telemetry=false / remote_fetch=false / managed_config=false` (구 top-level `telemetry=` 는 폐기). 보조 호출 유출 방지: `[models] default·web_search` 를 커스텀 모델로 고정. `[model.<id>]` 에 `env_key`(환경변수명 키 참조 — 평문 불요)·`api_backend="chat_completions"` 1.0.5 실기 파싱·동작 확인 |
 
 ## 2-1. 결론 갱신
 

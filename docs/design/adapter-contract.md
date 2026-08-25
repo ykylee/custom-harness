@@ -3,7 +3,7 @@
 # 어댑터 설계서 — 공통 세션 계약 (M0 WBS 0.1.2~0.1.5)
 
 - 문서 목적: 하네스 어댑터의 공통 계약(인터페이스·상태·에러 모델), capability 플래그, 툴콜 정규화 매핑, 승인 흐름을 확정한다. FR-1 의 설계 구체화.
-- 상태: approved (v1.1, 2026-08-25 사용자 승인 — 개정: §2 pi capability 실측 보정 + §4 pi 승인 채널 실측 반영, WBS 1.3 구현 중 발견분)
+- 상태: approved (v1.3, 2026-08-25 사용자 승인 — 개정: §2 grok compaction 1차 하향(/compact 슬래시 커맨드 경로뿐, 계약 메서드 부재) + §4 grok 승인 실측 반영(기본 옵션 2종·거부=턴 완결) + §6 grok 잔여 실측 해소, WBS 2.2 구현 중 발견분. v1.2: §2 omp capability 하향 + §4·§6 omp 실측. v1.1: §2 pi capability 보정 + §4 pi 승인 채널)
 - 최종 수정일: 2026-08-25
 - 입력: [FR-1](../requirements/fr1-harness-sessions.md), [grok 경로 비교·실측](../reference/grok-integration-paths.md), [하네스 인터페이스 조사](../reference/harness-interfaces.md), paseo 패턴(분석 문서 매개 — 코드 참조 금지)
 - 확정 전제: grok 는 ACP 경로 (2026-08-25 승인). 시그니처는 설계 수준 TypeScript — 구현 시 세부 조정 허용, 의미 변경은 본 문서 개정 필요.
@@ -60,10 +60,10 @@ interface AgentSession {
 | `runtimePermission` (런타임 승인 중재) | ✓ | **✗ 1차** (`--approval-mode` 고정 — §4) | ✓ (request_permission) | 결정 §4 |
 | `modelSwitch` (세션 중 전환) | ✓ (set_model) | ✓ (set_model) | ✓ (session/set_model — 실측) | 실측 |
 | `mcpInjection` (세션 단위 주입) | **✗ (v1.1 실측 보정)** — pi 0.84.1 에 `--mcp-config` 류 주입 플래그 부재. MCP 는 확장(extension) 경유만 | ✗ (host tools 로 대체) | ✓ (session/new mcpServers) | 실측(0.84.1) |
-| `nativeToolRegistration` | ✗ | ✓ (set_host_tools) | ✗ | 조사 |
-| `steering` (실행 중 조종) | ✗ 1차 (v1.1 주기: 0.84.1 에 steer/follow_up RPC 실존 — 계약에 메서드 없어 보류, 도입 시 계약 확장과 함께 상향) | ✓ (steer) | ✗ (확인 안 됨) | 실측(0.84.1)·조사 |
+| `nativeToolRegistration` | ✗ | **✗ 1차 (v1.2 보정)** — 17.3.8 에 `set_host_tools` RPC 실존하나 계약에 등록 경로 없어 보류 | ✗ | 실측(17.3.8) |
+| `steering` (실행 중 조종) | ✗ 1차 (v1.1 주기: 0.84.1 에 steer/follow_up RPC 실존 — 계약에 메서드 없어 보류, 도입 시 계약 확장과 함께 상향) | **✗ 1차 (v1.2 보정)** — steer RPC 실존, pi 와 동일 논리로 보류 | ✗ (확인 안 됨) | 실측(0.84.1/17.3.8) |
 | `usageReporting` | ✓ | ✓ | ✓ (turn_completed usage — 실측) | 실측 |
-| `compaction` | ✗ 1차 (v1.1 주기: 0.84.1 에 compact RPC 실존 — steering 과 동일하게 보류) | ✓ (compact) | ✓ (/compact 커맨드) | 실측(0.84.1)·조사 |
+| `compaction` | ✗ 1차 (v1.1 주기: 0.84.1 에 compact RPC 실존 — steering 과 동일하게 보류) | **✗ 1차 (v1.2 보정)** — compact RPC 실존, 동일 보류 | **✗ 1차 (v1.3 보정)** — /compact 슬래시 커맨드 경로뿐, 계약 메서드 부재로 보류 | 실측(0.84.1/17.3.8/1.0.5) |
 
 규칙:
 - UI 는 플래그로 기능 노출/숨김. **미지원 기능 호출은 silent no-op 금지** — `AdapterError('unsupported')`.
@@ -108,8 +108,8 @@ type PermissionOutcome = { optionId: string } | { cancelled: true };
 하네스별 배선:
 
 - **pi** (v1.1 실측 보정): 전용 승인 프레임이 없다 — 승인·선택은 **`extension_ui_request`(confirm/select) 채널**로 도착하며, 어댑터가 이를 중립 모델로 매핑한다(confirm → allow_once/reject_once 2옵션, select → 옵션 목록 투영). `input`/`editor` 요청은 1차 취소 격하(M2 개정 포인트). 기본 내장 툴 실행 자체에는 승인 게이트가 없음(0.84.1 실측) — 툴 실행 중재 필요 시 pi 확장 훅 도입을 M2 에서 검토.
-- **omp — 1차 결정: 런타임 중재 포기, `--approval-mode` 고정** (`runtimePermission: false`). 근거: rpc-ui 모드의 승인이 범용 `extension_ui_request` 다이얼로그로 도착해 텍스트 휴리스틱 파싱이 필요(취약, paseo 도 동일 문제). 세션 생성 시 approvalPolicy 를 spawn 인자로 번역: `mediate → --approval-mode always-ask 불가하므로 write`(보수 프리셋), `auto → yolo`. **`extension_ui_request` 파싱 채택은 보류** — omp 가 전용 승인 프레임을 제공하면 재검토 (COMPAT 여지로 기록).
-- **grok**: ACP `session/request_permission` 의 options 를 그대로 중립 옵션으로 투영 (kind 4종). `allow_always` 의 영속 범위(세션 vs 홈)는 잔여 실측 — 영속이 홈 단위면 GROK_HOME 격리 덕에 번들 데이터로 한정됨.
+- **omp — 1차 결정: 런타임 중재 포기, `--approval-mode` 고정** (`runtimePermission: false`). 근거: rpc-ui 모드의 승인이 범용 `extension_ui_request` 다이얼로그로 도착해 텍스트 휴리스틱 파싱이 필요(취약, paseo 도 동일 문제). 세션 생성 시 approvalPolicy 를 spawn 인자로 번역: `mediate → --approval-mode write`(보수 프리셋 — v1.2 보정: `always-ask` 값 자체는 17.3.8 에 실존하나 위 파싱 문제로 채택 보류), `auto → yolo`. **`extension_ui_request` 파싱 채택은 보류** — omp 가 전용 승인 프레임을 제공하면 재검토 (COMPAT 여지로 기록). 구현(2.1.2): 입력성 요청(confirm/select/input/editor)은 취소 응답으로 우아한 격하, 표시성 요청은 무시.
+- **grok** (v1.3 실측 보정): ACP `session/request_permission` 의 options 를 그대로 중립 옵션으로 투영. 실측(1.0.5 기본 권한 모드): options 는 **allow-once/reject-once 2종만** 노출 — `allow_always` 는 기본 미노출이라 영속 문제는 1차 범위 밖(노출되는 설정이 확인되면 재실측, GROK_HOME 격리 덕에 영속돼도 번들 데이터로 한정). 응답은 `{outcome:{outcome:'selected',optionId}}` / `{outcome:{outcome:'cancelled'}}`. **거부 의미론 주의**: reject-once 는 툴만 실패시키고 턴은 end_turn 으로 완결된다(pi 의 거부=턴 취소와 다름) — 계약 테스트·UI 표시가 이 차이를 전제해야 함.
 - 공통: 미응답 요청은 어댑터가 보관, `getPendingPermissions()` 로 재조회 (FR-1.5). `auto` 정책은 명시적 opt-in (FR-3.4.3)이며 감사 로그에 남긴다.
 
 ## 5. 전송 계층 배치
@@ -129,4 +129,10 @@ daemon/adapters/
 
 ## 6. 잔여 실측 → 구현 전 확인 (grok-integration-paths §3 잔여와 동일)
 
-session/load replay 방식, request_permission options 실구성·allow_always 영속, cancel 후 상태 일관성, SIGTERM 세션 저장, omp v2 청킹 실동작. — M1/M2 각 어댑터 구현 첫 태스크에 편입.
+**grok 실측 확정 (v1.3, WBS 2.2 — grok 1.0.5 + 목 게이트웨이 ACP 프로브, 상세는 [grok-integration-paths §3-1](../reference/grok-integration-paths.md))**: session/load 는 응답 전에 히스토리를 `session/update` 로 리플레이(어댑터 드롭 가드 필요), request_permission options 는 기본 2종(§4), cancel 후 동일 세션 재프롬프트 정상, SIGTERM 시 세션 저장(GROK_HOME/sessions). config.toml 오프라인 스위치 현행 구문·`[models]` 고정·`env_key` 참조도 확정. 잔여는 `--mcp-config` 플래그·`x.ai/session/fork` 시그니처뿐 — 필요 시 후속.
+
+**omp 실측 확정 (v1.2, WBS 2.1 — 공개 소스 can1357/oh-my-pi v17.3.8(MIT) + 바이너리 행동 실측)**:
+- v2 청킹 실동작 확인: `ready`(supportedProtocolVersions [1,2], 1MiB/64MiB 한도) → `negotiate_protocol` 요청/응답 → 초과 프레임은 `rpc_chunk`(chunkId·index·count·byteLength·base64 256KiB, 연속·비인터리브) 수신. **stdin(송신) 방향은 서버에 재조립기가 없어 1MiB 라인 한도가 하드 리밋** — 어댑터는 초과 송신을 명시 에러 처리.
+- 재개(`--session <file>`): 17.3.8 에서 기동 시 이벤트 리플레이 **없음**(실물 2턴 실측). agent_end.messages 는 당회 런 분량만 포함. 리플레이 드롭 가드는 버전 드리프트 방어용으로 유지.
+- 격리 env: omp 도 pi 와 동일한 `PI_CODING_AGENT_DIR` 지원 (dirs.ts 실측) — credential-injection-design §2 의 "M2 확인" 해소.
+- models.yml `apiKey` 는 **bare env 변수명**으로 해석(`resolveConfigValue` — pi 의 `$VAR` 표기와 다름). 오프라인 차단은 `PI_OFFLINE` 미지원이라 config.yml 프리셋(startup.checkUpdate·marketplace.autoUpdate·dev.autoqa)으로 수행.

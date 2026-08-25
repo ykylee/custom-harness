@@ -1,73 +1,120 @@
 #!/usr/bin/env node
-// macOS arm64 번들 프로토타입 조립 (WBS 1.7.1, FR-4.1 — 설치 스크립트는 M2, 수동 절차 문서 동봉)
-// 사용: node bundle/build-bundle.mjs [--pi-source <pi 패키지 디렉토리>] [--verify] [--skip-archive]
-// 전제: `npm run typecheck`(dist)와 renderer `npm run build`(dist-web)가 선행되어 있어야 한다.
+// 3 OS 번들 빌드 파이프라인 (WBS 2.5.3·2.5.4, FR-4.1/FR-4.7 — M1 1.7.1 프로토타입 확장)
+// 사용: node bundle/build-bundle.mjs [--target darwin-arm64|linux-x64|win32-x64]
+//       [--verify] [--skip-archive] [--pi-source <dir>]
+// 전제: `npm run typecheck`(dist)와 renderer `npm run build`(dist-web) 선행.
+// 사외 빌드 환경 전제(FR-4.7): 크로스 타깃은 고정 해시(sources.json)로 조달물을 다운로드해
+// bundle/cache/ 에 캐시한다 — 재실행은 캐시로 오프라인 재현 가능. 반입 산출물 = 아카이브+sha256.
+// Windows 구성(2026-08-25 승인): omp + pi(조건부, C-5 실측 대기) — grok 제외.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { cp, chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildManifest, verifyBundle } from './lib/manifest.mjs';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+const bundleDir = join(repoRoot, 'bundle');
+const cacheDir = join(bundleDir, 'cache');
 const args = process.argv.slice(2);
 const argValue = (flag) => {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : undefined;
 };
 
-const OS = 'darwin';
-const ARCH = 'arm64';
-if (process.platform !== OS || process.arch !== ARCH) {
-  console.warn(`[bundle] 경고: 호스트(${process.platform}/${process.arch})가 대상과 다름 — 프로토타입은 호스트 산출물 복사 방식`);
-}
+const hostTarget = `${process.platform}-${process.arch}`;
+const target = argValue('--target') ?? hostTarget;
+const TARGETS = {
+  'darwin-arm64': { os: 'darwin', arch: 'arm64', electronPlatform: 'darwin-arm64' },
+  'linux-x64': { os: 'linux', arch: 'x64', electronPlatform: 'linux-x64' },
+  'win32-x64': { os: 'win32', arch: 'x64', electronPlatform: 'win32-x64' },
+};
+const targetInfo = TARGETS[target];
+if (!targetInfo) throw new Error(`지원하지 않는 타깃: ${target} (${Object.keys(TARGETS).join('|')})`);
+const isWindows = targetInfo.os === 'win32';
+const isDarwin = targetInfo.os === 'darwin';
 
 const rootPackage = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'));
 const electronPackage = JSON.parse(
   await readFile(join(repoRoot, 'node_modules/electron/package.json'), 'utf8'),
 );
+const sources = JSON.parse(await readFile(join(bundleDir, 'sources.json'), 'utf8'));
 const bundleVersion = rootPackage.version;
-const bundleName = `custom-harness-${bundleVersion}-${OS}-${ARCH}`;
-const outDir = join(repoRoot, 'bundle', 'out');
+const bundleName = `custom-harness-${bundleVersion}-${targetInfo.os}-${targetInfo.arch}`;
+const outDir = join(bundleDir, 'out');
 const staging = join(outDir, bundleName);
 
-// pi 동봉 소스 — 기본: 로컬 전역 설치본 (사외 빌드 파이프라인은 M2 FR-4.7)
-const piSource =
-  argValue('--pi-source') ?? '/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent';
-const piPackage = JSON.parse(await readFile(join(piSource, 'package.json'), 'utf8'));
-
-console.log(`[bundle] ${bundleName} 조립 시작 (pi ${piPackage.version})`);
+console.log(`[bundle] ${bundleName} 조립 시작 (호스트 ${hostTarget})`);
 await rm(staging, { recursive: true, force: true });
 await mkdir(staging, { recursive: true });
+await mkdir(cacheDir, { recursive: true });
 
-// ── 결정적 디렉토리 해시 (FR-4.2 checksum) ────────────────────────────────
-async function dirHash(dir) {
-  const files = [];
-  async function walk(current) {
-    for (const entry of (await readdir(current, { withFileTypes: true })).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    )) {
-      const full = join(current, entry.name);
-      if (entry.isSymbolicLink()) continue; // Electron.app 프레임워크 심링크 등
-      if (entry.isDirectory()) await walk(full);
-      else files.push(full);
-    }
-  }
-  await walk(dir);
-  const hash = createHash('sha256');
-  for (const file of files) {
-    hash.update(relative(dir, file));
-    hash.update(await readFile(file));
-  }
-  return `sha256:${hash.digest('hex')}`;
+// ── 조달: 고정 해시 다운로드 + 캐시 (FR-4.7 재현성) ───────────────────────
+function sha256Of(buffer) {
+  return createHash('sha256').update(buffer).digest('hex');
 }
 
-// ── app/ — Electron 앱 (셸+데몬+렌더러+CLI, Node 겸용 FR-4.1.3) ───────────
+async function fetchPinned(url, expectedSha256, cacheName) {
+  const cached = join(cacheDir, cacheName);
+  try {
+    const existing = await readFile(cached);
+    if (sha256Of(existing) === expectedSha256) {
+      console.log(`[bundle] 캐시 사용: ${cacheName}`);
+      return cached;
+    }
+    console.warn(`[bundle] 캐시 해시 불일치 — 재다운로드: ${cacheName}`);
+  } catch {
+    /* 캐시 없음 */
+  }
+  console.log(`[bundle] 다운로드: ${url}`);
+  const response = await fetch(url, { redirect: 'follow' });
+  if (!response.ok) throw new Error(`다운로드 실패 (${response.status}): ${url}`);
+  const body = Buffer.from(await response.arrayBuffer());
+  const actual = sha256Of(body);
+  if (expectedSha256 && actual !== expectedSha256) {
+    throw new Error(`해시 불일치: ${url}\n  기대 ${expectedSha256}\n  실제 ${actual}`);
+  }
+  await writeFile(cached, body);
+  return cached;
+}
+
+/** Electron 공식 릴리스 zip — SHASUMS256.txt 로 해시 확정 후 fetchPinned */
+async function fetchElectronZip() {
+  const version = electronPackage.version;
+  const zipName = `electron-v${version}-${targetInfo.electronPlatform}.zip`;
+  const base = `https://github.com/electron/electron/releases/download/v${version}`;
+  const shasumsCache = join(cacheDir, `electron-v${version}-SHASUMS256.txt`);
+  let shasums;
+  try {
+    shasums = await readFile(shasumsCache, 'utf8');
+  } catch {
+    const response = await fetch(`${base}/SHASUMS256.txt`, { redirect: 'follow' });
+    if (!response.ok) throw new Error(`Electron SHASUMS 다운로드 실패 (${response.status})`);
+    shasums = await response.text();
+    await writeFile(shasumsCache, shasums);
+  }
+  const line = shasums.split('\n').find((l) => l.trim().endsWith(`*${zipName}`));
+  if (!line) throw new Error(`SHASUMS256.txt 에 ${zipName} 없음`);
+  const expected = line.trim().split(/\s+/)[0];
+  return fetchPinned(`${base}/${zipName}`, expected, zipName);
+}
+
+// ── app/ — Electron (셸+데몬+렌더러+CLI, Node 겸용 FR-4.1.3) ──────────────
 const appDir = join(staging, 'app');
-await cp(join(repoRoot, 'node_modules/electron/dist/Electron.app'), join(appDir, 'Electron.app'), {
-  recursive: true,
-  verbatimSymlinks: true,
-});
+if (isDarwin && hostTarget === target) {
+  // 호스트 산출물 직접 복사 (M1 방식) — 사외 빌드에서도 darwin 은 zip 경로 사용 가능
+  await cp(join(repoRoot, 'node_modules/electron/dist/Electron.app'), join(appDir, 'Electron.app'), {
+    recursive: true,
+    verbatimSymlinks: true,
+  });
+} else {
+  const zip = await fetchElectronZip();
+  const extractTo = join(appDir, isDarwin ? '.' : 'electron');
+  await mkdir(extractTo, { recursive: true });
+  // unzip: 심링크·실행권한 보존 (macOS/린uxCI 공통 가용)
+  execFileSync('unzip', ['-q', zip, '-d', extractTo]);
+}
 
 const scopeDir = join(appDir, 'node_modules', '@custom-harness');
 for (const [name, artifacts] of [
@@ -78,48 +125,91 @@ for (const [name, artifacts] of [
   ['renderer', ['dist-web']],
 ]) {
   const source = join(repoRoot, 'packages', name);
-  const target = join(scopeDir, name);
-  await mkdir(target, { recursive: true });
-  await cp(join(source, 'package.json'), join(target, 'package.json'));
+  const packageTarget = join(scopeDir, name);
+  await mkdir(packageTarget, { recursive: true });
+  await cp(join(source, 'package.json'), join(packageTarget, 'package.json'));
   for (const artifact of artifacts) {
-    await cp(join(source, artifact), join(target, artifact), { recursive: true });
+    await cp(join(source, artifact), join(packageTarget, artifact), { recursive: true });
   }
 }
-// 런타임 외부 의존은 zod·ws 뿐 (renderer 는 사전 번들)
-for (const dep of ['zod', 'ws']) {
+// 런타임 외부 의존 — 전부 무의존 패키지 (renderer 는 사전 번들)
+for (const dep of ['zod', 'ws', 'yaml', 'smol-toml']) {
   await cp(join(repoRoot, 'node_modules', dep), join(appDir, 'node_modules', dep), {
     recursive: true,
   });
 }
 
-// 실행 래퍼 — GUI(인자 없음) / CLI(인자 있음), Electron 내장 Node 겸용
-const binDir = join(staging, 'bin');
-await mkdir(binDir, { recursive: true });
-await writeFile(
-  join(binDir, 'custom-harness'),
-  `#!/bin/sh
-# custom-harness 실행 래퍼 (프로토타입) — GUI: 인자 없이 / CLI: custom-harness daemon status 등
-HERE="$(cd "$(dirname "$0")/.." && pwd)"
-ELECTRON="$HERE/app/Electron.app/Contents/MacOS/Electron"
-export CUSTOM_HARNESS_PI_ENTRY="$HERE/harnesses/pi/dist/cli.js"
-if [ $# -eq 0 ]; then
-  exec "$ELECTRON" "$HERE/app/node_modules/@custom-harness/shell/dist/index.js"
-fi
-ELECTRON_RUN_AS_NODE=1 exec "$ELECTRON" "$HERE/app/node_modules/@custom-harness/cli/dist/index.js" "$@"
-`,
-  { mode: 0o755 },
-);
+// ── harnesses/ ────────────────────────────────────────────────────────────
+const manifestHarnesses = [];
+const wrapperEnv = []; // [envName, 번들 상대 경로]
 
-// ── harnesses/pi/ — npm 패키지 해제본 동봉 (FR-4.1.2) ─────────────────────
-const piTarget = join(staging, 'harnesses', 'pi');
-await cp(piSource, piTarget, { recursive: true, verbatimSymlinks: true });
+// pi — npm 패키지 해제본 (Windows 는 조건부 동봉 — C-5 실측 대기, sources.json 주기)
+{
+  const piSource = argValue('--pi-source') ?? sources.pi.localDir;
+  const piPackage = JSON.parse(await readFile(join(piSource, 'package.json'), 'utf8'));
+  if (piPackage.version !== sources.pi.version) {
+    console.warn(
+      `[bundle] 경고: pi 로컬 버전(${piPackage.version}) ≠ sources 고정(${sources.pi.version})`,
+    );
+  }
+  const piTarget = join(staging, 'harnesses', 'pi');
+  await cp(piSource, piTarget, { recursive: true, verbatimSymlinks: true });
+  manifestHarnesses.push({
+    name: 'pi',
+    version: piPackage.version,
+    kind: 'dir',
+    path: 'harnesses/pi',
+    entry: 'harnesses/pi/dist/cli.js',
+  });
+  wrapperEnv.push(['CUSTOM_HARNESS_PI_ENTRY', 'harnesses/pi/dist/cli.js']);
+  if (isWindows) console.warn(`[bundle] 주의: ${sources.pi.windowsNote}`);
+}
 
-// ── config-templates/ — 주입 템플릿 (FR-2.1.4 버전 관리) ──────────────────
-const templatesDir = join(staging, 'config-templates', 'pi');
-await mkdir(templatesDir, { recursive: true });
-await writeFile(
-  join(templatesDir, 'models.json.tmpl'),
-  JSON.stringify(
+// omp — 릴리스 바이너리 (고정 해시)
+{
+  const asset = sources.omp.assets[target];
+  const binary = await fetchPinned(asset.url, asset.sha256, `omp-${sources.omp.version}-${target}`);
+  const ompDir = join(staging, 'harnesses', 'omp');
+  await mkdir(ompDir, { recursive: true });
+  const binaryPath = join(ompDir, asset.binaryName);
+  await cp(binary, binaryPath);
+  await chmod(binaryPath, 0o755);
+  manifestHarnesses.push({
+    name: 'omp',
+    version: sources.omp.version,
+    kind: 'file',
+    path: `harnesses/omp/${asset.binaryName}`,
+  });
+  wrapperEnv.push(['CUSTOM_HARNESS_OMP_PATH', `harnesses/omp/${asset.binaryName}`]);
+}
+
+// grok — darwin 은 로컬 실측 바이너리, linux 는 CDN 미러 절차 미확정, Windows 는 제외 결정
+{
+  const asset = sources.grok.assets[target];
+  if (asset?.unavailable) {
+    console.warn(`[bundle] grok 제외: ${asset.unavailable}`);
+  } else if (asset) {
+    const source = asset.localFile
+      ? asset.localFile.replace(/^~/, homedir())
+      : await fetchPinned(asset.url, asset.sha256, `grok-${sources.grok.version}-${target}`);
+    const grokDir = join(staging, 'harnesses', 'grok');
+    await mkdir(grokDir, { recursive: true });
+    const binaryPath = join(grokDir, asset.binaryName);
+    await cp(source, binaryPath);
+    await chmod(binaryPath, 0o755);
+    manifestHarnesses.push({
+      name: 'grok',
+      version: sources.grok.version,
+      kind: 'file',
+      path: `harnesses/grok/${asset.binaryName}`,
+    });
+    wrapperEnv.push(['CUSTOM_HARNESS_GROK_PATH', `harnesses/grok/${asset.binaryName}`]);
+  }
+}
+
+// ── config-templates/ — 주입 템플릿·프리셋 (FR-2.1.4 버전 관리) ───────────
+const templates = {
+  'pi/models.json.tmpl': JSON.stringify(
     {
       providers: {
         gateway: {
@@ -134,108 +224,211 @@ await writeFile(
     null,
     2,
   ),
-);
-const templateVersion = 'pi-models-v1';
+  // omp: apiKey 는 bare env 변수명 (17.3.8 실측 — omp-injection 과 동일)
+  'omp/models.yml.tmpl': [
+    'providers:',
+    '  gateway:',
+    '    baseUrl: ${GATEWAY_BASE_URL}',
+    '    api: openai-completions',
+    '    apiKey: CUSTOM_HARNESS_GATEWAY_KEY',
+    '    authHeader: true',
+    '    models:',
+    '      - id: ${GATEWAY_MODEL_ID}',
+    '',
+  ].join('\n'),
+  'omp/config.yml.preset': [
+    'startup:',
+    '  checkUpdate: false',
+    'marketplace:',
+    '  autoUpdate: false',
+    'dev:',
+    '  autoqa: false',
+    '  autoqaConsent: denied',
+    '',
+  ].join('\n'),
+  // grok: env_key 참조 + 오프라인 3스위치 (1.0.5 실측 — grok-injection 과 동일)
+  'grok/config.toml.tmpl': [
+    '[cli]',
+    'auto_update = false',
+    '',
+    '[features]',
+    'telemetry = false',
+    'remote_fetch = false',
+    'managed_config = false',
+    '',
+    '[models]',
+    'default = "${GATEWAY_MODEL_ID}"',
+    'web_search = "${GATEWAY_MODEL_ID}"',
+    '',
+    '[model."${GATEWAY_MODEL_ID}"]',
+    'model = "${GATEWAY_MODEL_ID}"',
+    'base_url = "${GATEWAY_BASE_URL}"',
+    'api_backend = "chat_completions"',
+    'env_key = "CUSTOM_HARNESS_GATEWAY_KEY"',
+    '',
+  ].join('\n'),
+};
+for (const [path, content] of Object.entries(templates)) {
+  const full = join(staging, 'config-templates', path);
+  await mkdir(join(full, '..'), { recursive: true });
+  await writeFile(full, content);
+}
+const configTemplates = { pi: 'pi-models-v1', omp: 'omp-models-v1', grok: 'grok-config-v1' };
 
-// ── licenses/ — 프로토타입 최소 NOTICE (전체 고지는 M3 FR-4.5) ────────────
+// ── 설치기 + 도구 동봉 (FR-4.3) ───────────────────────────────────────────
+await cp(join(bundleDir, 'lib'), join(staging, 'lib'), { recursive: true });
+await cp(join(bundleDir, 'tools'), join(staging, 'tools'), { recursive: true });
+if (isWindows) {
+  await cp(join(bundleDir, 'install.ps1'), join(staging, 'install.ps1'));
+} else {
+  await cp(join(bundleDir, 'install.sh'), join(staging, 'install.sh'));
+  await chmod(join(staging, 'install.sh'), 0o755);
+}
+
+// ── 실행 래퍼 — GUI(인자 없음) / CLI(인자 있음) ───────────────────────────
+const binDir = join(staging, 'bin');
+await mkdir(binDir, { recursive: true });
+if (isWindows) {
+  await writeFile(
+    join(binDir, 'custom-harness.cmd'),
+    [
+      '@echo off',
+      'rem custom-harness 실행 래퍼 — GUI: 인자 없이 / CLI: custom-harness daemon status 등',
+      'setlocal',
+      'set "HERE=%~dp0.."',
+      'set "ELECTRON=%HERE%\\app\\electron\\electron.exe"',
+      ...wrapperEnv.map(
+        ([name, path]) => `set "${name}=%HERE%\\${path.split('/').join('\\')}"`,
+      ),
+      'set "CUSTOM_HARNESS_MANIFEST=%HERE%\\manifest.json"',
+      'if "%~1"=="" (',
+      '  "%ELECTRON%" "%HERE%\\app\\node_modules\\@custom-harness\\shell\\dist\\index.js"',
+      ') else (',
+      '  set ELECTRON_RUN_AS_NODE=1',
+      '  "%ELECTRON%" "%HERE%\\app\\node_modules\\@custom-harness\\cli\\dist\\index.js" %*',
+      ')',
+    ].join('\r\n'),
+  );
+} else {
+  const electronPath = isDarwin
+    ? 'app/Electron.app/Contents/MacOS/Electron'
+    : 'app/electron/electron';
+  await writeFile(
+    join(binDir, 'custom-harness'),
+    `#!/bin/sh
+# custom-harness 실행 래퍼 — GUI: 인자 없이 / CLI: custom-harness daemon status 등
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+ELECTRON="$HERE/${electronPath}"
+${wrapperEnv.map(([name, path]) => `export ${name}="$HERE/${path}"`).join('\n')}
+export CUSTOM_HARNESS_MANIFEST="$HERE/manifest.json"
+if [ $# -eq 0 ]; then
+  exec "$ELECTRON" "$HERE/app/node_modules/@custom-harness/shell/dist/index.js"
+fi
+ELECTRON_RUN_AS_NODE=1 exec "$ELECTRON" "$HERE/app/node_modules/@custom-harness/cli/dist/index.js" "$@"
+`,
+    { mode: 0o755 },
+  );
+}
+
+// ── licenses/ — 최소 NOTICE (전체 원문 동봉은 M3 FR-4.5) ──────────────────
 await mkdir(join(staging, 'licenses'), { recursive: true });
 await writeFile(
   join(staging, 'licenses', 'NOTICE.md'),
-  `# NOTICE (프로토타입 — 전체 라이선스 원문 동봉은 M3 FR-4.5)
+  `# NOTICE (전체 라이선스 원문 동봉은 M3 FR-4.5)
 
 - custom-harness ${bundleVersion} (사내 도구)
-- pi (@earendil-works/pi-coding-agent) ${piPackage.version} — MIT
+${manifestHarnesses
+  .map((h) => {
+    const license = h.name === 'grok' ? 'Apache 2.0' : 'MIT';
+    return `- ${h.name} ${h.version} — ${license}`;
+  })
+  .join('\n')}
 - Electron ${electronPackage.version} — MIT (Chromium/Node 고지 포함은 M3)
-- zod, ws — MIT
+- zod, ws, yaml, smol-toml — MIT/ISC 계열
 `,
 );
 
-// ── manifest.json (FR-4.2) ────────────────────────────────────────────────
+// ── manifest.json (FR-4.2 — lib/manifest.mjs 스키마) ──────────────────────
 console.log('[bundle] 체크섬 계산 중…');
-const manifest = {
+const manifest = await buildManifest(staging, {
   bundleVersion,
-  os: OS,
-  arch: ARCH,
-  harnesses: [
-    {
-      name: 'pi',
-      version: piPackage.version,
-      checksum: await dirHash(piTarget),
-      path: 'harnesses/pi',
-      entry: 'harnesses/pi/dist/cli.js',
-      verifiedAt: new Date().toISOString().slice(0, 10),
-    },
-  ],
-  app: {
-    version: bundleVersion,
-    // 프로토타입 범위: 자사 코드+런타임 의존만. Electron.app 은 서명·공증(M3)과 함께 재검토
-    checksumScope: 'app/node_modules',
-    checksum: await dirHash(join(appDir, 'node_modules')),
-  },
-  configTemplates: { pi: templateVersion },
+  os: targetInfo.os,
+  arch: targetInfo.arch,
+  harnesses: manifestHarnesses,
+  configTemplates,
   electronVersion: electronPackage.version,
-};
+  verifiedAt: new Date().toISOString().slice(0, 10),
+});
 await writeFile(join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-// ── INSTALL.md — 수동 설치 절차 (FR-4.3 스크립트는 M2) ────────────────────
+// ── INSTALL.md — 스크립트 안내 (수동 절차는 폴백) ─────────────────────────
 await writeFile(
   join(staging, 'INSTALL.md'),
-  `# 수동 설치 절차 (M1 프로토타입 — 설치 스크립트는 M2)
+  `# 설치 절차 (M2 — 설치 스크립트, FR-4.3)
 
-폐쇄망 반입 후 관리자 권한 없이 사용자 홈에 설치한다 (FR-4.3.1 상당의 수동판).
+폐쇄망 반입 후 관리자 권한 없이 사용자 홈에 설치한다.
 
-1. **체크섬 검증**: 반입 절차의 아카이브 sha256 을 대조한다.
-   \`shasum -a 256 ${bundleName}.tar.gz\`
-2. **버전 디렉토리 해제**:
-   \`mkdir -p ~/.custom-harness/versions && tar -xzf ${bundleName}.tar.gz -C ~/.custom-harness/versions/\`
-3. **current 전환** (원자적 — 마지막 단계):
-   \`ln -sfn ~/.custom-harness/versions/${bundleName} ~/.custom-harness/current\`
-4. **실행**:
-   - GUI: \`~/.custom-harness/current/bin/custom-harness\`
-   - CLI: \`~/.custom-harness/current/bin/custom-harness daemon status\`
-5. **최초 실행(zero-config)**: 앱 온보딩에서 게이트웨이 주소·API 키 입력 → 연결 확인 → 완료.
-   게이트웨이 연결 설정은 데몬이 격리 홈(\`~/.custom-harness/data/pi-home\`)에 자동 주입한다 —
-   사용자 \`~/.pi\` 는 건드리지 않는다.
+1. 반입 절차의 아카이브 sha256 대조 후 해제.
+2. 설치 스크립트 실행:
+   - macOS/Linux: \`./install.sh\`
+   - Windows: \`powershell -ExecutionPolicy Bypass -File .\\install.ps1\`
+   스크립트가 체크섬 검증 → 버전 디렉토리 배치 → 오프라인 프리셋 → current 전환(원자) →
+   실행 진입점 생성을 수행한다. 실패 시 기존 설치는 변경되지 않는다.
+3. 실행: \`~/.custom-harness/bin/custom-harness\` (GUI) / \`… daemon status\` (CLI)
+4. 최초 실행(zero-config): 앱 온보딩에서 게이트웨이 주소·API 키 입력 → 연결 확인 → 완료.
 
-제거: \`rm -rf ~/.custom-harness\` (세션 이력 포함 전체 삭제 — 선택적 보존은 M3 제거 스크립트에서).
+수동 설치(폴백): 해제본을 \`~/.custom-harness/versions/${bundleName}\` 로 옮기고
+\`ln -sfn\` (Windows: junction) 으로 \`current\` 전환 후 \`bin/custom-harness\` 실행.
 `,
 );
 
-// ── 아카이브 ──────────────────────────────────────────────────────────────
+// ── 아카이브 (darwin/linux: tar.gz, win: zip) ─────────────────────────────
 if (!args.includes('--skip-archive')) {
   console.log('[bundle] 아카이브 생성 중…');
-  execFileSync('tar', ['-czf', `${bundleName}.tar.gz`, bundleName], { cwd: outDir });
-  const archive = join(outDir, `${bundleName}.tar.gz`);
+  const archiveName = isWindows ? `${bundleName}.zip` : `${bundleName}.tar.gz`;
+  if (isWindows) {
+    execFileSync('zip', ['-qry', archiveName, bundleName], { cwd: outDir });
+  } else {
+    execFileSync('tar', ['-czf', archiveName, bundleName], { cwd: outDir });
+  }
+  const archive = join(outDir, archiveName);
   const size = (await stat(archive)).size;
-  const sha = createHash('sha256').update(await readFile(archive)).digest('hex');
+  const sha = sha256Of(await readFile(archive));
+  await writeFile(`${archive}.sha256`, `${sha}  ${archiveName}\n`);
   console.log(`[bundle] 완료: ${archive} (${(size / 1024 / 1024).toFixed(1)}MB, sha256=${sha})`);
 }
 
-// ── 검증 모드: 해제 → 체크섬 재검증 → 번들 데몬 기동 스모크 ───────────────
+// ── 검증 모드: manifest 재검증 + (호스트 타깃) 데몬 기동 스모크 ────────────
 if (args.includes('--verify')) {
-  console.log('[bundle] 검증: 체크섬 재계산…');
-  const rehash = await dirHash(join(appDir, 'node_modules'));
-  if (rehash !== manifest.app.checksum) throw new Error('app 체크섬 불일치');
-  const piRehash = await dirHash(piTarget);
-  if (piRehash !== manifest.harnesses[0].checksum) throw new Error('pi 체크섬 불일치');
-
-  console.log('[bundle] 검증: 번들 데몬 기동 스모크…');
-  const home = await mkdtemp(join(tmpdir(), 'ch-bundle-verify-'));
-  const electronBin = join(appDir, 'Electron.app/Contents/MacOS/Electron');
-  const daemonEntry = join(scopeDir, 'daemon/dist/main.js');
-  const cliEntry = join(scopeDir, 'cli/dist/index.js');
-  const env = {
-    ...process.env,
-    ELECTRON_RUN_AS_NODE: '1',
-    CUSTOM_HARNESS_HOME: home,
-    CUSTOM_HARNESS_DAEMON_ENTRY: daemonEntry,
-    CUSTOM_HARNESS_PI_ENTRY: join(staging, 'harnesses/pi/dist/cli.js'),
-  };
-  const run = (cmdArgs) =>
-    execFileSync(electronBin, cmdArgs, { env, encoding: 'utf8', timeout: 30_000 });
-  console.log(run([cliEntry, 'daemon', 'start']).trim());
-  console.log(run([cliEntry, 'daemon', 'status']).trim());
-  console.log(run([cliEntry, 'daemon', 'stop']).trim());
-  await rm(home, { recursive: true, force: true });
-  console.log('[bundle] 검증 통과 — 체크섬 일치 + 번들 데몬 기동/제어/종료 정상');
+  console.log('[bundle] 검증: manifest 대조…');
+  const result = await verifyBundle(staging);
+  if (!result.ok) {
+    for (const m of result.mismatches) console.error(`[bundle] 불일치: ${m.target}`);
+    throw new Error('manifest 검증 실패');
+  }
+  if (target === hostTarget && isDarwin) {
+    console.log('[bundle] 검증: 번들 데몬 기동 스모크…');
+    const home = await mkdtemp(join(tmpdir(), 'ch-bundle-verify-'));
+    const electronBin = join(appDir, 'Electron.app/Contents/MacOS/Electron');
+    const cliEntry = join(scopeDir, 'cli/dist/index.js');
+    const env = {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      CUSTOM_HARNESS_HOME: home,
+      CUSTOM_HARNESS_DAEMON_ENTRY: join(scopeDir, 'daemon/dist/main.js'),
+      CUSTOM_HARNESS_PI_ENTRY: join(staging, 'harnesses/pi/dist/cli.js'),
+      CUSTOM_HARNESS_OMP_PATH: join(staging, 'harnesses/omp/omp'),
+      CUSTOM_HARNESS_GROK_PATH: join(staging, 'harnesses/grok/grok'),
+      CUSTOM_HARNESS_MANIFEST: join(staging, 'manifest.json'),
+    };
+    const run = (cmdArgs) =>
+      execFileSync(electronBin, cmdArgs, { env, encoding: 'utf8', timeout: 30_000 });
+    console.log(run([cliEntry, 'daemon', 'start']).trim());
+    console.log(run([cliEntry, 'daemon', 'status']).trim());
+    console.log(run([cliEntry, 'daemon', 'stop']).trim());
+    await rm(home, { recursive: true, force: true });
+    console.log('[bundle] 검증 통과 — manifest 일치 + 번들 데몬 기동/제어/종료 정상');
+  } else {
+    console.log(`[bundle] 검증 통과 — manifest 일치 (실행 스모크는 ${target} 실기기에서, NFR-9)`);
+  }
 }

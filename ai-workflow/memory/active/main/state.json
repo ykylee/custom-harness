@@ -34,23 +34,23 @@
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
+      "TASK-2026-08-25-main-022 — M2 2.7 검증 (NFR-1 확장·매트릭스·부하)",
+      "TASK-2026-08-25-main-021 — M2 2.6 CLI·진단 (doctor·logs)",
+      "TASK-2026-08-25-main-020 — M2 2.5 번들·설치 완성",
+      "TASK-2026-08-25-main-019 — M2 2.4 멀티 세션 UI",
+      "TASK-2026-08-25-main-018 — M2 2.3 데몬 멀티 세션 완성",
+      "TASK-2026-08-25-main-017 — M2 2.2 grok 어댑터 (ACP·설정 주입·승인 배선)",
+      "TASK-2026-08-25-main-016 — M2 2.1 omp 어댑터 (전송 v2·어댑터·설정 주입)",
       "TASK-2026-08-25-main-015 — M1 1.7 번들 프로토타입·NFR-1 스모크 (수용은 C-1 대기)",
       "TASK-2026-08-25-main-014 — M1 1.6 Electron 셸·CLI (detached 데몬·RUN_AS_NODE 진입점·daemon 제어)",
-      "TASK-2026-08-25-main-013 — M1 1.5 렌더러 (골격·세션 생성·대화 뷰·승인·온보딩)",
-      "TASK-2026-08-25-main-012 — M1 1.4 게이트웨이 연결 (pi 주입·오프라인 프리셋·키 관리)",
-      "TASK-2026-08-25-main-011 — M1 1.3 pi 어댑터 (JSONL RPC base·계약·승인·mock/계약 테스트)",
-      "TASK-2026-08-25-main-010 — M1 1.2 데몬 코어 (WS 서버·세션 매니저·영속화·spawn)",
-      "TASK-2026-08-25-main-009 — M1 1.1.2 protocol 이벤트 유니온·RPC 스키마 작성",
-      "TASK-2026-08-25-main-008 — M0 완료 선언 + 이월 승인 반영, M1 착수 (1.1.1 모노레포 골격)",
-      "TASK-2026-08-25-main-007 — M0 설계 일괄 진행 (0.2 프로토콜, 0.3 데몬, 0.4 크리덴셜·주입, 0.6.2 테스트 전략, 0.7.1 pi 스파이크)",
-      "TASK-2026-08-25-main-006 — 결정 2건 확정 반영 + 어댑터 설계서 작성 (0.1.2~0.1.5)"
+      "TASK-2026-08-25-main-013 — M1 1.5 렌더러 (골격·세션 생성·대화 뷰·승인·온보딩)"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-25.md",
-    "task_count": 15,
+    "task_count": 22,
     "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
@@ -68,7 +68,14 @@
       "TASK-2026-08-25-main-012 — M1 1.4 게이트웨이 연결 (pi 주입·오프라인 프리셋·키 관리)",
       "TASK-2026-08-25-main-013 — M1 1.5 렌더러 (골격·세션 생성·대화 뷰·승인·온보딩)",
       "TASK-2026-08-25-main-014 — M1 1.6 Electron 셸·CLI (detached 데몬·RUN_AS_NODE 진입점·daemon 제어)",
-      "TASK-2026-08-25-main-015 — M1 1.7 번들 프로토타입·NFR-1 스모크 (수용은 C-1 대기)"
+      "TASK-2026-08-25-main-015 — M1 1.7 번들 프로토타입·NFR-1 스모크 (수용은 C-1 대기)",
+      "TASK-2026-08-25-main-016 — M2 2.1 omp 어댑터 (전송 v2·어댑터·설정 주입)",
+      "TASK-2026-08-25-main-017 — M2 2.2 grok 어댑터 (ACP·설정 주입·승인 배선)",
+      "TASK-2026-08-25-main-018 — M2 2.3 데몬 멀티 세션 완성",
+      "TASK-2026-08-25-main-019 — M2 2.4 멀티 세션 UI",
+      "TASK-2026-08-25-main-020 — M2 2.5 번들·설치 완성",
+      "TASK-2026-08-25-main-021 — M2 2.6 CLI·진단 (doctor·logs)",
+      "TASK-2026-08-25-main-022 — M2 2.7 검증 (NFR-1 확장·매트릭스·부하)"
     ]
   },
   "next_documents": [

@@ -11,8 +11,10 @@ import type {
   SessionSummary,
 } from '@custom-harness/protocol';
 import { hasCapability } from '@custom-harness/protocol';
+import type { ProbeResult } from '@custom-harness/protocol';
 import type { AgentAdapter, AgentSession, Unsubscribe } from './adapters/contract.js';
 import { DaemonError } from './errors.js';
+import { verifyProbeAgainstManifest, type BundleManifest } from './manifest.js';
 import type { SessionMeta, SessionStore } from './store.js';
 
 interface LiveSession {
@@ -25,6 +27,11 @@ interface LiveSession {
   pending: Map<string, PermissionRequest>;
   /** 영속화·팬아웃 순서 보장용 직렬 체인 */
   chain: Promise<void>;
+  /**
+   * meta.json 쓰기 직렬 체인 (WBS 2.3.1) — 같은 세션의 tmp+rename 이 동시 실행되면
+   * ENOENT 경합이 난다 (빠른 하네스에서 running 전이와 turn 완료 idle 전이가 겹침)
+   */
+  metaChain: Promise<void>;
 }
 
 export interface SessionManagerOptions {
@@ -34,12 +41,15 @@ export interface SessionManagerOptions {
   maxSessions?: number;
   /** SessionConfig.env 조립 — 게이트웨이 키·격리 홈·오프라인 프리셋 (GatewayService.buildEnv) */
   buildEnv?: (harness: HarnessId) => Record<string, string> | Promise<Record<string, string>>;
+  /** 번들 manifest — probe 버전 대조 (WBS 2.3.3, FR-1.8). 미공급 시 검증 생략 */
+  manifest?: BundleManifest;
 }
 
 export class SessionManager {
   private readonly store: SessionStore;
   private readonly adapters: Map<HarnessId, AgentAdapter>;
-  private readonly maxSessions: number;
+  private maxSessions: number;
+  private readonly manifest: BundleManifest | undefined;
   private readonly buildEnv: (
     harness: HarnessId,
   ) => Record<string, string> | Promise<Record<string, string>>;
@@ -50,7 +60,23 @@ export class SessionManager {
     this.store = options.store;
     this.adapters = new Map(options.adapters.map((a) => [a.id, a]));
     this.maxSessions = options.maxSessions ?? 8;
+    this.manifest = options.manifest;
     this.buildEnv = options.buildEnv ?? (() => ({}));
+  }
+
+  /** 동시 세션 상한 런타임 갱신 (WBS 2.3.1) — 초과 활성 세션은 종료하지 않고 신규만 거부 */
+  setMaxSessions(value: number): void {
+    this.maxSessions = value;
+  }
+
+  getMaxSessions(): number {
+    return this.maxSessions;
+  }
+
+  /** probe + manifest 버전 대조 (WBS 2.3.3, FR-1.8) — 불일치는 경고만 */
+  async probeHarness(harness: HarnessId): Promise<ProbeResult> {
+    const adapter = this.getAdapter(harness);
+    return verifyProbeAgainstManifest(harness, await adapter.probe(), this.manifest);
   }
 
   /** 기동 시 저장된 세션 로드 — 런타임이 없으므로 잔존 활성 상태는 closed 로 정정 (FR-1.3.5) */
@@ -70,6 +96,7 @@ export class SessionManager {
         activeTurnId: undefined,
         pending: new Map(),
         chain: Promise.resolve(),
+        metaChain: Promise.resolve(),
       });
     }
   }
@@ -121,9 +148,10 @@ export class SessionManager {
       activeTurnId: undefined,
       pending: new Map(),
       chain: Promise.resolve(),
+      metaChain: Promise.resolve(),
     };
     this.sessions.set(meta.sessionId, live);
-    await this.store.writeMeta(meta);
+    await this.persistMeta(live);
     this.emit(live, { type: 'session_status_changed', status: 'initializing' });
 
     try {
@@ -203,10 +231,13 @@ export class SessionManager {
 
     const { turnId } = await live.runtime.startTurn(text);
     live.activeTurnId = turnId;
-    // 매니저 소유 타임라인 행 — user_message + turn_started (FR-1.4, daemon-design §4)
+    // 매니저 소유 타임라인 행 — user_message + turn_started 는 즉시 발행 (FR-1.4)
     this.emit(live, { type: 'user_message', turnId, text });
     this.emit(live, { type: 'turn_started', turnId });
-    await this.transition(live, 'running');
+    // 매우 빠른 하네스는 이 시점에 이미 턴을 끝냈을 수 있다 — running 역전 방지 (WBS 2.3.1)
+    if (live.activeTurnId === turnId) {
+      await this.transition(live, 'running');
+    }
     return { turnId };
   }
 
@@ -283,6 +314,22 @@ export class SessionManager {
       case 'turn_completed':
       case 'turn_failed':
       case 'turn_canceled':
+        // 세션 누적 토큰 (FR-3.7) — 턴 종료 usage 를 meta 에 합산해 목록 요약에 노출
+        if (event.type === 'turn_completed' && event.usage) {
+          const totals = live.meta.usageTotals ?? {};
+          live.meta.usageTotals = {
+            ...totals,
+            ...(event.usage.inputTokens !== undefined
+              ? { inputTokens: (totals.inputTokens ?? 0) + event.usage.inputTokens }
+              : {}),
+            ...(event.usage.outputTokens !== undefined
+              ? { outputTokens: (totals.outputTokens ?? 0) + event.usage.outputTokens }
+              : {}),
+            ...(event.usage.totalTokens !== undefined
+              ? { totalTokens: (totals.totalTokens ?? 0) + event.usage.totalTokens }
+              : {}),
+          };
+        }
         this.emit(live, event);
         live.activeTurnId = undefined;
         void this.transition(live, 'idle');
@@ -334,9 +381,15 @@ export class SessionManager {
     this.emit(live, { type: 'session_status_changed', status });
   }
 
-  private async persistMeta(live: LiveSession): Promise<void> {
+  /** 세션별 직렬화 — 스냅샷을 체인에 태워 tmp+rename 경합 없이 호출 순서대로 기록 */
+  private persistMeta(live: LiveSession): Promise<void> {
     live.meta.updatedAt = new Date().toISOString();
-    await this.store.writeMeta(live.meta);
+    const snapshot = { ...live.meta };
+    const write = live.metaChain.then(() => this.store.writeMeta(snapshot));
+    live.metaChain = write.catch((error: unknown) => {
+      console.error(`[daemon] meta 기록 실패 (${live.meta.sessionId}):`, error);
+    });
+    return write;
   }
 
   private summarize(live: LiveSession): SessionSummary {
@@ -348,6 +401,7 @@ export class SessionManager {
       ...(live.meta.modelId !== undefined ? { modelId: live.meta.modelId } : {}),
       seq: live.nextSeq - 1,
       ...(live.pending.size > 0 ? { pendingPermissions: [...live.pending.values()] } : {}),
+      ...(live.meta.usageTotals !== undefined ? { usage: live.meta.usageTotals } : {}),
       createdAt: live.meta.createdAt,
       updatedAt: live.meta.updatedAt,
     };

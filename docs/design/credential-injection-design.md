@@ -3,7 +3,7 @@
 # 크리덴셜·설정 주입 설계 (M0 WBS 0.4.1 / 0.4.2 / 0.4.3)
 
 - 문서 목적: 게이트웨이 API 키의 저장 방식과 하네스별 설정 주입 전략을 확정한다. OPEN-2 처리.
-- 상태: approved (v1.1, 2026-08-25 사용자 승인 — 개정: §1 headless 실측 확정 반영, WBS 1.6 구현 중 실측)
+- 상태: approved (v1.2, 2026-08-25 사용자 승인 — 개정: §2 omp 격리 env 실측 확정(PI_CODING_AGENT_DIR 동일 지원, WBS 2.1). v1.1: §1 headless 실측 확정 반영)
 - 최종 수정일: 2026-08-25
 - 입력: [FR-2](../requirements/fr2-gateway.md), [grok 실측](../reference/grok-integration-paths.md) §3, [데몬 설계](./daemon-design.md)
 
@@ -24,7 +24,7 @@
 |---|---|---|
 | **grok** | **완전 격리 (파일 주입 없음)** | `GROK_HOME=data/grok-home` — 번들 설치 시 config.toml(커스텀 모델 + 기본 모델 고정 + 오프라인 스위치) 생성. 사용자 자체 `~/.grok` 와 완전 분리. grok 의 런타임 config 재작성도 격리 홈 안에서만 발생 |
 | **pi** | **완전 격리 — 실측 확정 (2026-08-25 스파이크)** | **`PI_CODING_AGENT_DIR` 로 홈 격리 동작 확인** (pi 0.84.1): 격리 디렉토리의 `models.json` 커스텀 프로바이더(`openai-completions` + apiKey + authHeader)로 목 게이트웨이 직결·Bearer 키 전송 성공, `PI_OFFLINE=1` 에서도 게이트웨이(LLM) 호출은 정상. 사용자 `~/.pi` 완전 불간섭 |
-| **omp** | pi 와 동일 방침 (격리 env 유무는 M2 2.1 에서 확인) | pi 포크라 동일 계열 env 기대. 미지원 시 `models.yml`(YAML — 관리 블록 주석 마커 가능) + `config.yml` modelRoles 관리 블록 폴백 |
+| **omp** | **완전 격리 — 실측 확정 (2026-08-25, WBS 2.1.3)** | **pi 와 동일한 `PI_CODING_AGENT_DIR` 지원 확인** (oh-my-pi 17.3.8 dirs.ts 소스 실측). 격리 홈에 `models.yml` 관리 프로바이더 블록(`apiKey` 는 **bare env 변수명** — pi 의 `$VAR` 와 다름) + `config.yml` 관리 항목(modelRoles.default + 오프라인 프리셋: startup.checkUpdate·marketplace.autoUpdate·dev.autoqa off — omp 는 `PI_OFFLINE` 미지원). 드리프트·백업 정책은 pi 와 동일 |
 
 - 주입 시점: 설치 스크립트(초기) + 데몬 기동 시 검증·복구(드리프트 감지 시 재주입 여부는 경고 후 사용자 확인 — 자동 덮어쓰기 금지).
 - 템플릿: `current/config-templates/` 에 하네스·버전별 보관, manifest 에 버전 기록 (FR-4.2). **grok telemetry 스위치 구문은 v1.0.5 스키마로 재작성** (실측 발견 반영 — 구조체 형식).

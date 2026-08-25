@@ -208,14 +208,27 @@ export class DaemonServer {
         return {
           events: await manager.timeline(message.params.sessionId, message.params.fromSeq),
         };
-      case 'harness.list.request':
+      case 'harness.list.request': {
+        // 모델 카탈로그(FR-2.4)·경계 경고(FR-2.5)는 gateway 배선 시에만 — 미배선이면 기본 목록
+        const { gateway } = this.options;
+        const models = gateway ? await gateway.listModels() : undefined;
+        const violations = gateway ? await gateway.checkTrafficBoundaries() : [];
         return {
-          harnesses: manager
-            .listAdapters()
-            .map((adapter) => ({ id: adapter.id, capabilities: adapter.capabilities })),
+          harnesses: manager.listAdapters().map((adapter) => {
+            const warnings = violations
+              .filter((v) => v.harness === adapter.id)
+              .map((v) => `게이트웨이 외 목적지: ${v.url} (${v.location})`);
+            return {
+              id: adapter.id,
+              capabilities: adapter.capabilities,
+              ...(models !== undefined ? { models } : {}),
+              ...(warnings.length > 0 ? { warnings } : {}),
+            };
+          }),
         };
+      }
       case 'harness.probe.request':
-        return { probe: await manager.getAdapter(message.params.harness).probe() };
+        return { probe: await manager.probeHarness(message.params.harness) };
       case 'system.version.request':
         return { version: this.options.serverVersion, protocolVersion: PROTOCOL_VERSION };
       case 'system.shutdown.request':
@@ -238,16 +251,40 @@ export class DaemonServer {
           values: {
             gateway: (await gateway.getConfig()) ?? null,
             keyState: await keyStore.state(), // 키 값 자체는 절대 반환하지 않는다
+            maxSessions: await gateway.getMaxSessions(),
           },
         };
       }
       case 'config.set.request': {
         const { gateway } = this.requireConfigServices();
+        const values: Record<string, unknown> = {};
         const partial = message.params.values.gateway;
-        if (typeof partial !== 'object' || partial === null) {
-          throw new DaemonError('bad_request', 'values.gateway 객체가 필요');
+        if (partial !== undefined) {
+          if (typeof partial !== 'object' || partial === null) {
+            throw new DaemonError('bad_request', 'values.gateway 객체가 필요');
+          }
+          values.gateway = await gateway.setConfig(partial);
         }
-        return { values: { gateway: await gateway.setConfig(partial) } };
+        const maxSessions = message.params.values.maxSessions;
+        if (maxSessions !== undefined) {
+          if (typeof maxSessions !== 'number') {
+            throw new DaemonError('bad_request', 'values.maxSessions 숫자가 필요');
+          }
+          try {
+            await gateway.setMaxSessions(maxSessions);
+          } catch (error) {
+            throw new DaemonError(
+              'bad_request',
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+          manager.setMaxSessions(maxSessions); // 즉시 반영 (WBS 2.3.1)
+          values.maxSessions = maxSessions;
+        }
+        if (Object.keys(values).length === 0) {
+          throw new DaemonError('bad_request', '적용할 설정 없음 (gateway 또는 maxSessions)');
+        }
+        return { values };
       }
     }
   }

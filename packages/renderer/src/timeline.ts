@@ -19,6 +19,8 @@ export type TimelineItem =
       reasoning: string;
       status: 'running' | 'completed' | 'failed' | 'canceled';
       errorMessage?: string;
+      /** 턴별 토큰 (FR-3.7, WBS 2.4.5) — turn_completed usage */
+      usage?: Usage;
     }
   | {
       kind: 'tool';
@@ -42,7 +44,10 @@ export interface SessionView {
   /** 마지막 반영 seq — 재동기화 요청 기준점 (fromSeq = lastSeq + 1) */
   lastSeq: number;
   items: TimelineItem[];
+  /** 마지막 턴 usage (표시용) */
   usage?: Usage;
+  /** 세션 누적 토큰 (FR-3.7) — turn_completed usage.totalTokens 합산 */
+  totalTokens?: number;
   activeTurnId?: string;
   lastError?: string;
 }
@@ -97,20 +102,25 @@ function closeTurn(
   view: SessionView,
   turnId: string,
   status: 'completed' | 'failed' | 'canceled',
-  errorMessage?: string,
+  options: { errorMessage?: string; usage?: Usage } = {},
 ): SessionView {
   const index = view.items.findIndex((item) => item.kind === 'assistant' && item.turnId === turnId);
   const next: SessionView = { ...view };
   delete next.activeTurnId;
+  // 세션 누적 토큰 (FR-3.7) — 턴 종료 시점에만 합산 (중간 usage_updated 와 이중 집계 방지)
+  if (options.usage?.totalTokens !== undefined) {
+    next.totalTokens = (view.totalTokens ?? 0) + options.usage.totalTokens;
+  }
   if (index < 0) return next;
   const item = view.items[index];
   if (!item || item.kind !== 'assistant') return next;
   return {
     ...next,
-    items: replaceItem(view.items, index, {
+    items: replaceItem(next.items, index, {
       ...item,
       status,
-      ...(errorMessage !== undefined ? { errorMessage } : {}),
+      ...(options.errorMessage !== undefined ? { errorMessage: options.errorMessage } : {}),
+      ...(options.usage !== undefined ? { usage: options.usage } : {}),
     }),
   };
 }
@@ -143,9 +153,12 @@ export function applyEvent(view: SessionView, event: SessionEvent): SessionView 
         event.usage ? { ...base, usage: event.usage } : base,
         event.turnId,
         'completed',
+        {
+          ...(event.usage !== undefined ? { usage: event.usage } : {}),
+        },
       );
     case 'turn_failed':
-      return closeTurn(base, event.turnId, 'failed', event.error.message);
+      return closeTurn(base, event.turnId, 'failed', { errorMessage: event.error.message });
     case 'turn_canceled':
       return closeTurn(base, event.turnId, 'canceled');
     case 'tool_execution_started':

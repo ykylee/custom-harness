@@ -11,6 +11,10 @@
   "dependencies": {
     "@custom-harness/daemon": "0.1.0",
     "@custom-harness/protocol": "0.1.0",
-    "@custom-harness/renderer": "0.1.0"
+    "@custom-harness/renderer": "0.1.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }

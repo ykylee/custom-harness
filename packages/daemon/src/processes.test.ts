@@ -1,4 +1,5 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -83,5 +84,65 @@ describe('ProcessSupervisor', () => {
     await vi.waitFor(async () => {
       expect(JSON.parse(await readFile(ledgerPath, 'utf8'))).toEqual([]);
     });
+  });
+
+  it('writes harness stderr to per-session log files (WBS 2.6.2, FR-5.3)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ch-proc-'));
+    const logDir = join(dir, 'logs');
+    const supervisor = new ProcessSupervisor({ harnessLogDir: logDir });
+    const proc = await supervisor.spawn({
+      command: node,
+      args: ['-e', 'process.stderr.write("하네스 오류 로그\\n")'],
+      sessionId: 'sess-log-1',
+      harness: 'pi',
+    });
+    await proc.exited;
+    await vi.waitFor(async () => {
+      const content = await readFile(join(logDir, 'pi-sess-log-1.log'), 'utf8');
+      expect(content).toContain('하네스 오류 로그');
+    });
+  });
+
+  it('reaps stale processes from a previous run (FR-1.1.4, WBS 2.3.2)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ch-proc-'));
+    const ledgerPath = join(dir, 'processes.json');
+    // 이전 데몬 실행 흉내: 원장에 남았지만 이번 supervisor 가 spawn 하지 않은 프로세스
+    const orphan = spawn(node, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    await new Promise((resolve) => orphan.once('spawn', resolve));
+    await writeFile(
+      ledgerPath,
+      JSON.stringify([
+        { pid: orphan.pid, harness: 'pi', spawnedAt: 'x', daemonPid: 999_999_999 },
+        { pid: 999_999_998, harness: 'omp', spawnedAt: 'x', daemonPid: 999_999_999 }, // 죽은 항목
+      ]),
+    );
+
+    const supervisor = new ProcessSupervisor({ ledgerPath, gracePeriodMs: 500 });
+    const result = await supervisor.reapStale();
+    expect(result.terminated).toEqual([orphan.pid]);
+    expect(result.removed).toEqual([999_999_998]);
+    expect(JSON.parse(await readFile(ledgerPath, 'utf8'))).toEqual([]);
+    // 프로세스가 실제로 죽었는지 확인 (수용 기준: stale 하네스 0개)
+    await vi.waitFor(() => {
+      expect(orphan.exitCode !== null || orphan.signalCode !== null).toBe(true);
+    });
+  });
+
+  it('keeps entries owned by the current daemon during reap (FR-5.2 소유 구분)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ch-proc-'));
+    const ledgerPath = join(dir, 'processes.json');
+    const supervisor = new ProcessSupervisor({ ledgerPath, gracePeriodMs: 500 });
+    const proc = await supervisor.spawn({
+      command: node,
+      args: ['-e', 'setTimeout(() => {}, 3000)'],
+      harness: 'pi',
+    });
+    // 이번 실행(daemonPid = 현재 pid) 항목은 회수 대상이 아니다
+    const result = await supervisor.reapStale();
+    expect(result.terminated).toEqual([]);
+    expect(result.removed).toEqual([]);
+    const entries = JSON.parse(await readFile(ledgerPath, 'utf8'));
+    expect(entries).toMatchObject([{ pid: proc.pid, daemonPid: process.pid }]);
+    await proc.terminate();
   });
 });

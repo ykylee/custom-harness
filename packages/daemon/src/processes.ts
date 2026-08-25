@@ -1,7 +1,7 @@
 // 프로세스 관리 (daemon-design §3, FR-1.1)
 // spawn 규약: 어댑터가 인자 조립, 데몬이 실행. 실행 파일은 절대 경로만 (PATH 탐색 금지).
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { DaemonError } from './errors.js';
 
@@ -37,6 +37,15 @@ interface LedgerEntry {
   harness?: string;
   spawnedAt: string;
   bundleVersion?: string;
+  /** 소유 데몬 프로세스 구분 (FR-5.2, WBS 2.3.2) — 기동 시 이 값이 다른 항목만 회수 대상 */
+  daemonPid?: number;
+}
+
+export interface ReapResult {
+  /** 살아있어 단계적 종료(SIGTERM→SIGKILL) 후 정리한 pid */
+  terminated: number[];
+  /** 이미 죽어 있어 원장에서만 제거한 pid */
+  removed: number[];
 }
 
 export interface SupervisorOptions {
@@ -44,18 +53,57 @@ export interface SupervisorOptions {
   ledgerPath?: string;
   gracePeriodMs?: number;
   bundleVersion?: string;
+  /** 하네스 stderr 로그 디렉토리 (WBS 2.6.2, FR-5.3) — 미지정 시 stderr 는 어댑터 콜백만 */
+  harnessLogDir?: string;
+}
+
+/** 시그널 0 프로브 — 살아있으면 true (EPERM 도 존재로 간주) */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }
 
 export class ProcessSupervisor {
   private readonly gracePeriodMs: number;
   private readonly ledgerPath: string | undefined;
   private readonly bundleVersion: string | undefined;
+  private readonly harnessLogDir: string | undefined;
   private readonly live = new Set<ManagedProcess>();
 
   constructor(options: SupervisorOptions = {}) {
     this.gracePeriodMs = options.gracePeriodMs ?? 5000;
     this.ledgerPath = options.ledgerPath;
     this.bundleVersion = options.bundleVersion;
+    this.harnessLogDir = options.harnessLogDir;
+  }
+
+  /** 하네스 stderr → logs/<harness>-<sessionId|pid>.log (append) — 어댑터 콜백과 병행 */
+  private attachHarnessLog(spec: SpawnSpec, child: ChildProcess, pid: number): void {
+    if (!this.harnessLogDir || !child.stderr) return;
+    const name = `${spec.harness ?? 'proc'}-${spec.sessionId ?? pid}.log`;
+    const path = join(this.harnessLogDir, name);
+    const chunks: Buffer[] = [];
+    let flushing = false;
+    const flush = (): void => {
+      if (flushing || chunks.length === 0) return;
+      flushing = true;
+      const payload = Buffer.concat(chunks.splice(0));
+      void mkdir(this.harnessLogDir as string, { recursive: true })
+        .then(() => appendFile(path, payload))
+        .catch(() => {}) // 로그 실패는 세션을 죽이지 않는다
+        .finally(() => {
+          flushing = false;
+          flush();
+        });
+    };
+    child.stderr.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+      flush();
+    });
   }
 
   async spawn(spec: SpawnSpec): Promise<ManagedProcess> {
@@ -80,6 +128,7 @@ export class ProcessSupervisor {
     if (pid === undefined) {
       throw new DaemonError('internal', 'spawn 후 pid 없음');
     }
+    this.attachHarnessLog(spec, child, pid);
 
     let expected = false;
     let resolveExit!: (exit: ProcessExit) => void;
@@ -117,8 +166,46 @@ export class ProcessSupervisor {
       ...(spec.harness !== undefined ? { harness: spec.harness } : {}),
       spawnedAt: new Date().toISOString(),
       ...(this.bundleVersion !== undefined ? { bundleVersion: this.bundleVersion } : {}),
+      daemonPid: process.pid,
     });
     return managed;
+  }
+
+  /**
+   * 기동 시 이전 실행이 남긴 stale 프로세스 회수 (FR-1.1.4, daemon-design §3 1차 단순화).
+   * 어댑터 재접속은 하지 않는다 — 살아있으면 graceful kill 후 세션은 재개 경로로.
+   * pid 재사용 오살 리스크는 1차 수용 (원장 잔존 자체가 비정상 종료의 흔적).
+   */
+  async reapStale(): Promise<ReapResult> {
+    const result: ReapResult = { terminated: [], removed: [] };
+    const entries = await this.readLedger();
+    if (entries.length === 0) return result;
+    const survivors: LedgerEntry[] = [];
+    for (const entry of entries) {
+      // 현재 데몬 소유(이번 실행에서 spawn) 항목은 대상 아님 (FR-5.2 소유 구분)
+      if (entry.daemonPid === process.pid || entry.pid === process.pid) {
+        survivors.push(entry);
+        continue;
+      }
+      if (!isAlive(entry.pid)) {
+        result.removed.push(entry.pid);
+        continue;
+      }
+      try {
+        process.kill(entry.pid, 'SIGTERM');
+        const deadline = Date.now() + this.gracePeriodMs;
+        while (isAlive(entry.pid) && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        if (isAlive(entry.pid)) process.kill(entry.pid, 'SIGKILL');
+        result.terminated.push(entry.pid);
+      } catch {
+        // 종료 경합(이미 사라짐)·권한 문제 — 원장에서만 제거
+        result.removed.push(entry.pid);
+      }
+    }
+    await this.writeLedger(survivors);
+    return result;
   }
 
   /** 데몬 셧다운 경로 — 남은 프로세스 전부 단계적 종료 */
@@ -143,14 +230,28 @@ export class ProcessSupervisor {
     await rename(tmp, this.ledgerPath);
   }
 
-  private async ledgerAppend(entry: LedgerEntry): Promise<void> {
-    const entries = await this.readLedger();
-    entries.push(entry);
-    await this.writeLedger(entries);
+  /**
+   * 원장 조작 직렬화 (WBS 2.7.3 부하 스모크 검출) — 동시 spawn/exit 의
+   * read-modify-write 가 겹치면 갱신 유실·tmp rename ENOENT 경합이 난다.
+   */
+  private ledgerChain: Promise<void> = Promise.resolve();
+
+  private ledgerMutate(mutate: (entries: LedgerEntry[]) => LedgerEntry[]): Promise<void> {
+    const run = this.ledgerChain.then(async () => {
+      const entries = await this.readLedger();
+      await this.writeLedger(mutate(entries));
+    });
+    this.ledgerChain = run.catch((error: unknown) => {
+      console.error('[daemon] PID 원장 기록 실패:', error);
+    });
+    return run;
   }
 
-  private async ledgerRemove(pid: number): Promise<void> {
-    const entries = await this.readLedger();
-    await this.writeLedger(entries.filter((e) => e.pid !== pid));
+  private ledgerAppend(entry: LedgerEntry): Promise<void> {
+    return this.ledgerMutate((entries) => [...entries, entry]);
+  }
+
+  private ledgerRemove(pid: number): Promise<void> {
+    return this.ledgerMutate((entries) => entries.filter((e) => e.pid !== pid));
   }
 }

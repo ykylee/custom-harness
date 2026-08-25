@@ -12,13 +12,21 @@ export interface ConversationActions {
   prompt(text: string): void;
   interrupt(): void;
   respondPermission(requestId: string, outcome: PermissionOutcome): void;
+  /** 세션 한정 자동 승인 opt-in (FR-3.4.3, WBS 2.4.7) */
+  setAutoApprove?(enabled: boolean): void;
 }
+
+const AUTO_APPROVE_WARNING =
+  '이 세션의 모든 승인 요청(셸 실행·파일 쓰기 포함)을 자동으로 허용합니다.\n' +
+  '에이전트가 확인 없이 위험한 작업을 수행할 수 있습니다. 계속할까요?';
 
 export function Conversation({
   view,
+  autoApprove = false,
   actions,
 }: {
   view: SessionView;
+  autoApprove?: boolean;
   actions: ConversationActions;
 }): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -55,8 +63,25 @@ export function Conversation({
           </button>
         )}
         {view.lastError && <span className="session-error">{view.lastError}</span>}
-        {view.usage?.totalTokens !== undefined && (
-          <span className="usage">토큰 {view.usage.totalTokens.toLocaleString()}</span>
+        {view.totalTokens !== undefined && (
+          <span className="usage" data-testid="session-usage">
+            누적 {view.totalTokens.toLocaleString()} 토큰
+          </span>
+        )}
+        {actions.setAutoApprove && (
+          <label className="auto-approve" data-testid="auto-approve">
+            <input
+              type="checkbox"
+              checked={autoApprove}
+              onChange={(event) => {
+                // 위험 고지 (FR-3.4.3) — 켤 때만 확인
+                if (event.target.checked && !window.confirm(AUTO_APPROVE_WARNING)) return;
+                actions.setAutoApprove?.(event.target.checked);
+              }}
+            />
+            자동 승인
+            {autoApprove && <span className="auto-approve-on">⚠ 이 세션 자동 허용 중</span>}
+          </label>
         )}
       </div>
 
@@ -80,6 +105,11 @@ export function Conversation({
                   )}
                   <Markdown text={item.text} />
                   {item.status === 'running' && <span className="turn-spinner">●</span>}
+                  {item.usage?.totalTokens !== undefined && (
+                    <span className="turn-usage" data-testid="turn-usage">
+                      {item.usage.totalTokens.toLocaleString()} 토큰
+                    </span>
+                  )}
                   {item.status === 'failed' && (
                     <div className="turn-error">턴 실패: {item.errorMessage ?? '원인 미상'}</div>
                   )}
