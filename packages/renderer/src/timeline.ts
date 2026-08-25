@@ -62,39 +62,36 @@ function replaceItem(items: TimelineItem[], index: number, next: TimelineItem): 
   return copy;
 }
 
-/** 델타가 turn_started 보다 먼저 도착하는 방어 — 열린 assistant 턴이 없으면 만든다 */
-function ensureAssistant(view: SessionView, turnId: string | undefined): SessionView {
-  const id = turnId ?? view.activeTurnId ?? 'unknown-turn';
-  const index = view.items.findIndex(
-    (item) => item.kind === 'assistant' && item.turnId === id && item.status === 'running',
-  );
-  if (index >= 0) return view;
-  return {
-    ...view,
-    activeTurnId: id,
-    items: [
-      ...view.items,
-      { kind: 'assistant', turnId: id, text: '', reasoning: '', status: 'running' },
-    ],
-  };
-}
-
+/**
+ * 델타를 시간순 세그먼트로 누적한다 — 마지막 아이템이 이 턴의 열린 assistant 일 때만 이어 붙이고,
+ * 툴/승인 카드가 끼어든 뒤(또는 turn_started 방어 경로)는 새 세그먼트를 연다.
+ * 한 말풍선에 턴 전체를 몰아 붙이면 툴 카드들이 쌓인 뒤 도착하는 최종 답변이
+ * 화면 위로 밀려 보이지 않는다 (2026-08-25 실사용 보고).
+ */
 function appendToAssistant(
   view: SessionView,
   turnId: string | undefined,
   field: 'text' | 'reasoning',
   delta: string,
 ): SessionView {
-  const ensured = ensureAssistant(view, turnId);
-  const id = turnId ?? ensured.activeTurnId ?? 'unknown-turn';
-  const index = ensured.items.findIndex(
-    (item) => item.kind === 'assistant' && item.turnId === id && item.status === 'running',
-  );
-  const item = ensured.items[index];
-  if (!item || item.kind !== 'assistant') return ensured;
+  const id = turnId ?? view.activeTurnId ?? 'unknown-turn';
+  const last = view.items[view.items.length - 1];
+  if (last && last.kind === 'assistant' && last.turnId === id && last.status === 'running') {
+    return {
+      ...view,
+      items: replaceItem(view.items, view.items.length - 1, {
+        ...last,
+        [field]: last[field] + delta,
+      }),
+    };
+  }
   return {
-    ...ensured,
-    items: replaceItem(ensured.items, index, { ...item, [field]: item[field] + delta }),
+    ...view,
+    activeTurnId: id,
+    items: [
+      ...view.items,
+      { kind: 'assistant', turnId: id, text: '', reasoning: '', status: 'running', [field]: delta },
+    ],
   };
 }
 
@@ -104,23 +101,30 @@ function closeTurn(
   status: 'completed' | 'failed' | 'canceled',
   options: { errorMessage?: string; usage?: Usage } = {},
 ): SessionView {
-  const index = view.items.findIndex((item) => item.kind === 'assistant' && item.turnId === turnId);
   const next: SessionView = { ...view };
   delete next.activeTurnId;
   // 세션 누적 토큰 (FR-3.7) — 턴 종료 시점에만 합산 (중간 usage_updated 와 이중 집계 방지)
   if (options.usage?.totalTokens !== undefined) {
     next.totalTokens = (view.totalTokens ?? 0) + options.usage.totalTokens;
   }
-  if (index < 0) return next;
-  const item = view.items[index];
-  if (!item || item.kind !== 'assistant') return next;
+  // 세그먼트 전부 닫되, 최종 상태·에러·usage 는 마지막 세그먼트에만 — 마커·턴별 토큰 중복 방지
+  let lastIndex = -1;
+  view.items.forEach((item, i) => {
+    if (item.kind === 'assistant' && item.turnId === turnId) lastIndex = i;
+  });
+  if (lastIndex < 0) return next;
   return {
     ...next,
-    items: replaceItem(next.items, index, {
-      ...item,
-      status,
-      ...(options.errorMessage !== undefined ? { errorMessage: options.errorMessage } : {}),
-      ...(options.usage !== undefined ? { usage: options.usage } : {}),
+    items: view.items.map((item, i) => {
+      if (item.kind !== 'assistant' || item.turnId !== turnId) return item;
+      if (i !== lastIndex)
+        return item.status === 'running' ? { ...item, status: 'completed' } : item;
+      return {
+        ...item,
+        status,
+        ...(options.errorMessage !== undefined ? { errorMessage: options.errorMessage } : {}),
+        ...(options.usage !== undefined ? { usage: options.usage } : {}),
+      };
     }),
   };
 }

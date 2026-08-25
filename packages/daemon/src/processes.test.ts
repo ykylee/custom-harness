@@ -51,19 +51,22 @@ describe('ProcessSupervisor', () => {
   });
 
   // Windows 는 SIGTERM 에뮬레이션이 즉시 강제 종료라 "무시" 시나리오가 성립하지 않음
-  it.skipIf(process.platform === 'win32')('escalates to SIGKILL when SIGTERM is ignored', async () => {
-    const supervisor = new ProcessSupervisor({ gracePeriodMs: 150 });
-    const proc = await supervisor.spawn({
-      command: node,
-      args: [
-        '-e',
-        'process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000)',
-      ],
-    });
-    // SIGTERM 핸들러가 설치된 뒤에 종료 — 준비 신호 대기
-    await new Promise<void>((resolve) => proc.child.stdout?.once('data', () => resolve()));
-    expect(await proc.terminate()).toMatchObject({ signal: 'SIGKILL', expected: true });
-  });
+  it.skipIf(process.platform === 'win32')(
+    'escalates to SIGKILL when SIGTERM is ignored',
+    async () => {
+      const supervisor = new ProcessSupervisor({ gracePeriodMs: 150 });
+      const proc = await supervisor.spawn({
+        command: node,
+        args: [
+          '-e',
+          'process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000)',
+        ],
+      });
+      // SIGTERM 핸들러가 설치된 뒤에 종료 — 준비 신호 대기
+      await new Promise<void>((resolve) => proc.child.stdout?.once('data', () => resolve()));
+      expect(await proc.terminate()).toMatchObject({ signal: 'SIGKILL', expected: true });
+    },
+  );
 
   it('records and clears the PID ledger (daemon-design §3)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ch-proc-'));

@@ -56,7 +56,9 @@ describe('SessionManager', () => {
     const capped = new SessionManager({ store, adapters: [adapter], maxSessions: 1 });
     await capped.init();
     await capped.createSession({ harness: 'mock', cwd: process.cwd() });
-    await expect(capped.createSession({ harness: 'mock', cwd: process.cwd() })).rejects.toMatchObject({
+    await expect(
+      capped.createSession({ harness: 'mock', cwd: process.cwd() }),
+    ).rejects.toMatchObject({
       code: 'session_limit',
     });
   });

@@ -116,6 +116,43 @@ describe('timeline reducer (FR-3.2 데이터 계층)', () => {
     expect(assistants[1]).toMatchObject({ usage: { totalTokens: 25 } });
   });
 
+  it('splits assistant text into chronological segments around tool cards (2026-08-25 UX)', () => {
+    seq = 0;
+    const view = applyEvents(emptySessionView(), [
+      ev({ type: 'user_message', turnId: 't-1', text: '고쳐줘' }),
+      ev({ type: 'turn_started', turnId: 't-1' }),
+      ev({ type: 'message_delta', turnId: 't-1', delta: '먼저 확인할게요' }),
+      ev({ type: 'tool_execution_started', toolCallId: 'tc-1', kind: 'shell' }),
+      ev({ type: 'tool_execution_completed', toolCallId: 'tc-1', ok: true }),
+      ev({ type: 'message_delta', turnId: 't-1', delta: '결론: ' }),
+      ev({ type: 'message_delta', turnId: 't-1', delta: '수정 완료' }),
+      ev({ type: 'turn_completed', turnId: 't-1', usage: { totalTokens: 10 } }),
+    ]);
+    // 툴 카드 뒤 텍스트는 새 세그먼트 — 시간순 유지 (한 말풍선 누적이면 답변이 위로 밀림)
+    expect(view.items.map((i) => i.kind)).toEqual(['user', 'assistant', 'tool', 'assistant']);
+    expect(view.items[1]).toMatchObject({ text: '먼저 확인할게요', status: 'completed' });
+    // 최종 상태·usage 는 마지막 세그먼트에만 부착 (마커·턴별 토큰 중복 방지)
+    expect(view.items[1]).not.toHaveProperty('usage');
+    expect(view.items[3]).toMatchObject({
+      text: '결론: 수정 완료',
+      status: 'completed',
+      usage: { totalTokens: 10 },
+    });
+  });
+
+  it('marks only the final segment canceled — 중단 마커 1회 표시', () => {
+    seq = 0;
+    const view = applyEvents(emptySessionView(), [
+      ev({ type: 'turn_started', turnId: 't-1' }),
+      ev({ type: 'message_delta', turnId: 't-1', delta: '진행 중' }),
+      ev({ type: 'tool_execution_started', toolCallId: 'tc-1', kind: 'shell' }),
+      ev({ type: 'message_delta', turnId: 't-1', delta: '이어서' }),
+      ev({ type: 'turn_canceled', turnId: 't-1' }),
+    ]);
+    const assistants = view.items.filter((item) => item.kind === 'assistant');
+    expect(assistants.map((a) => a.status)).toEqual(['completed', 'canceled']);
+  });
+
   it('keeps session error detail from session_status_changed', () => {
     seq = 0;
     const view = applyEvents(emptySessionView(), [

@@ -94,7 +94,17 @@ export function Conversation({
                   {item.text}
                 </div>
               );
-            case 'assistant':
+            case 'assistant': {
+              // 세그먼트 분할(timeline)로 생기는 빈 껍데기는 숨김 — 단, 마지막 아이템로서
+              // 델타 대기 중인 running 세그먼트는 스피너 자리로 남긴다
+              const isLast = index === view.items.length - 1;
+              const isEmpty =
+                item.text === '' &&
+                item.reasoning === '' &&
+                item.usage?.totalTokens === undefined &&
+                item.status !== 'failed' &&
+                item.status !== 'canceled';
+              if (isEmpty && !(item.status === 'running' && isLast)) return null;
               return (
                 <div key={index} className={`msg-assistant turn-${item.status}`}>
                   {item.reasoning && (
@@ -104,7 +114,7 @@ export function Conversation({
                     </details>
                   )}
                   <Markdown text={item.text} />
-                  {item.status === 'running' && <span className="turn-spinner">●</span>}
+                  {item.status === 'running' && isLast && <span className="turn-spinner">●</span>}
                   {item.usage?.totalTokens !== undefined && (
                     <span className="turn-usage" data-testid="turn-usage">
                       {item.usage.totalTokens.toLocaleString()} 토큰
@@ -116,6 +126,7 @@ export function Conversation({
                   {item.status === 'canceled' && <div className="turn-canceled">중단됨</div>}
                 </div>
               );
+            }
             case 'tool':
               return <ToolCard key={index} item={item} />;
             case 'permission':
