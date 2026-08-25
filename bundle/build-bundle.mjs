@@ -269,12 +269,19 @@ const templates = {
     '',
   ].join('\n'),
 };
+// 미동봉 하네스의 템플릿은 제외 — Windows 번들에 grok 템플릿이 남지 않게 (windows-support.md)
+const stagedHarnessNames = new Set(manifestHarnesses.map((h) => h.name));
 for (const [path, content] of Object.entries(templates)) {
+  if (!stagedHarnessNames.has(path.split('/')[0])) continue;
   const full = join(staging, 'config-templates', path);
   await mkdir(join(full, '..'), { recursive: true });
   await writeFile(full, content);
 }
-const configTemplates = { pi: 'pi-models-v1', omp: 'omp-models-v1', grok: 'grok-config-v1' };
+const configTemplates = Object.fromEntries(
+  Object.entries({ pi: 'pi-models-v1', omp: 'omp-models-v1', grok: 'grok-config-v1' }).filter(
+    ([name]) => stagedHarnessNames.has(name),
+  ),
+);
 
 // ── 설치기 + 도구 동봉 (FR-4.3) ───────────────────────────────────────────
 await cp(join(bundleDir, 'lib'), join(staging, 'lib'), { recursive: true });
