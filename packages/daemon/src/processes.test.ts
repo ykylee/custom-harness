@@ -50,7 +50,8 @@ describe('ProcessSupervisor', () => {
     expect(await proc.terminate()).toMatchObject({ signal: 'SIGTERM', expected: true });
   });
 
-  it('escalates to SIGKILL when SIGTERM is ignored', async () => {
+  // Windows 는 SIGTERM 에뮬레이션이 즉시 강제 종료라 "무시" 시나리오가 성립하지 않음
+  it.skipIf(process.platform === 'win32')('escalates to SIGKILL when SIGTERM is ignored', async () => {
     const supervisor = new ProcessSupervisor({ gracePeriodMs: 150 });
     const proc = await supervisor.spawn({
       command: node,

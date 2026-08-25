@@ -11,9 +11,11 @@ describe('startDaemon', () => {
     const root = await mkdtemp(join(tmpdir(), 'ch-daemon-'));
     const daemon = await startDaemon({ root, version: '0.1.0', managedBy: 'test' });
 
-    // 토큰 파일 0600 (protocol-design §4)
-    const mode = (await stat(daemon.paths.tokenFile)).mode & 0o777;
-    expect(mode).toBe(0o600);
+    // 토큰 파일 0600 (protocol-design §4) — Windows 는 POSIX 모드 무의미(ACL 기반), 검사 제외
+    if (process.platform !== 'win32') {
+      const mode = (await stat(daemon.paths.tokenFile)).mode & 0o777;
+      expect(mode).toBe(0o600);
+    }
     const token = await readFile(daemon.paths.tokenFile, 'utf8');
     expect(token).toBe(daemon.token);
 

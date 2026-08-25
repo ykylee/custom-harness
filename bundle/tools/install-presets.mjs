@@ -29,10 +29,13 @@ await writeIfAbsent(
 );
 
 // grok — config.toml 오프라인 3스위치 (1.0.5 현행 구문, gateway/grok-injection 과 동일 키)
-await mkdir(join(dataDir, 'grok-home'), { recursive: true });
-await writeIfAbsent(
-  join(dataDir, 'grok-home', 'config.toml'),
-  ['[cli]', 'auto_update = false', '', '[features]', 'telemetry = false', 'remote_fetch = false', 'managed_config = false', ''].join('\n'),
-);
+// Windows 번들은 grok 제외 확정(2026-08-25, windows-support.md) — 격리 홈 프리셋도 만들지 않는다
+if (process.platform !== 'win32') {
+  await mkdir(join(dataDir, 'grok-home'), { recursive: true });
+  await writeIfAbsent(
+    join(dataDir, 'grok-home', 'config.toml'),
+    ['[cli]', 'auto_update = false', '', '[features]', 'telemetry = false', 'remote_fetch = false', 'managed_config = false', ''].join('\n'),
+  );
+}
 
 console.log('[presets] 오프라인 프리셋 완료');

@@ -25,7 +25,10 @@ describe('KeyStore (credential-injection-design §1)', () => {
     const dir = await mkdtemp(join(tmpdir(), 'ch-keys-'));
     const file = join(dir, 'credentials.enc');
     await new KeyStore(file).set('sk-x');
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    // Windows 는 POSIX 모드 무의미(ACL 기반) — 모드 검사는 POSIX 에서만 (credential-injection-design §1)
+    if (process.platform !== 'win32') {
+      expect((await stat(file)).mode & 0o777).toBe(0o600);
+    }
     // 파일 자체에 평문 키가 그대로 눕지 않는다 (base64 인코딩 — 암호화는 cipher 주입 시)
     expect(await readFile(file, 'utf8')).not.toContain('sk-x');
   });

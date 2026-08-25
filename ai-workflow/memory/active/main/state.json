@@ -29,8 +29,10 @@
   "session": {
     "current_baseline": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.",
     "current_axis": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.",
-    "current_focus": null,
-    "in_progress_items": [],
+    "current_focus": "TASK-2026-08-25-main-026",
+    "in_progress_items": [
+      "TASK-2026-08-25-main-026"
+    ],
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
@@ -50,8 +52,10 @@
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-25.md",
-    "task_count": 25,
-    "in_progress_items": [],
+    "task_count": 26,
+    "in_progress_items": [
+      "TASK-2026-08-25-main-026 — Windows 대응 보강 — grok 제외 일관화·lint POSIX 의존 제거·테스트 플랫폼 조건화"
+    ],
     "blocked_items": [],
     "done_items": [
       "TASK-2026-08-25-main-001 — 요구사항 상세 세분화 (카테고리별 문서 분리)",

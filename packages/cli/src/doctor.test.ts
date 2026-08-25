@@ -125,6 +125,8 @@ describe('doctor (WBS 2.6.1, FR-5.3)', () => {
     const okOut = ok.lines.join('\n');
     expect(okOut).toContain('[PASS] manifest');
     expect(okOut).toContain('[PASS] 하네스:pi — 9.9.9');
+    // manifest 동봉 하네스만 프리셋 검사 — pi 단독 번들이라 omp·grok 검사 제외 (Windows grok 미동봉 대응)
+    expect(okOut).not.toContain('프리셋:');
 
     // 변조 → 체크섬 fail + 버전 불일치 warn
     await writeFile(join(piDir, 'cli.js'), 'console.log("0.0.1");\n');

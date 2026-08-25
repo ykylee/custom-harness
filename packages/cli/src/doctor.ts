@@ -158,6 +158,10 @@ export async function runDoctor(paths: DaemonPaths, io: CliIo): Promise<number> 
   }
 
   // 5. 오프라인 프리셋 (FR-2.2) — pi 는 spawn env(PI_OFFLINE) 방식이라 파일 검사 없음
+  // 번들 환경은 manifest 동봉 하네스만 검사 — Windows 번들은 grok 미동봉 (windows-support.md)
+  const bundledNames = raw?.harnesses
+    ? new Set(raw.harnesses.map((h) => h.name).filter((n): n is string => n !== undefined))
+    : undefined;
   const presetChecks: [string, string, (content: string) => boolean][] = [
     [
       'omp',
@@ -171,6 +175,7 @@ export async function runDoctor(paths: DaemonPaths, io: CliIo): Promise<number> 
     ],
   ];
   for (const [name, path, valid] of presetChecks) {
+    if (bundledNames !== undefined && !bundledNames.has(name)) continue; // 미동봉 하네스 — 검사 제외
     if (!(await exists(path))) {
       add(`프리셋:${name}`, 'warn', `${path} 없음 — 설치기/온보딩 전이면 정상 (pi 는 env 방식)`);
     } else if (valid(await readFile(path, 'utf8'))) {
