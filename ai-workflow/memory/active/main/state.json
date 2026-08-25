@@ -34,23 +34,23 @@
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
+      "TASK-2026-08-25-main-025 — M3 3.5.2 제거 스크립트 (uninstall)",
+      "TASK-2026-08-25-main-024 — M3 3.3.1 라이선스 고지 — NOTICE·원문 수집 동봉 자동화",
+      "TASK-2026-08-25-main-023 — grok Linux 조달 — x.ai CDN 미러링 + 자체 해시 고정",
       "TASK-2026-08-25-main-022 — M2 2.7 검증 (NFR-1 확장·매트릭스·부하)",
       "TASK-2026-08-25-main-021 — M2 2.6 CLI·진단 (doctor·logs)",
       "TASK-2026-08-25-main-020 — M2 2.5 번들·설치 완성",
       "TASK-2026-08-25-main-019 — M2 2.4 멀티 세션 UI",
       "TASK-2026-08-25-main-018 — M2 2.3 데몬 멀티 세션 완성",
       "TASK-2026-08-25-main-017 — M2 2.2 grok 어댑터 (ACP·설정 주입·승인 배선)",
-      "TASK-2026-08-25-main-016 — M2 2.1 omp 어댑터 (전송 v2·어댑터·설정 주입)",
-      "TASK-2026-08-25-main-015 — M1 1.7 번들 프로토타입·NFR-1 스모크 (수용은 C-1 대기)",
-      "TASK-2026-08-25-main-014 — M1 1.6 Electron 셸·CLI (detached 데몬·RUN_AS_NODE 진입점·daemon 제어)",
-      "TASK-2026-08-25-main-013 — M1 1.5 렌더러 (골격·세션 생성·대화 뷰·승인·온보딩)"
+      "TASK-2026-08-25-main-016 — M2 2.1 omp 어댑터 (전송 v2·어댑터·설정 주입)"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-25.md",
-    "task_count": 22,
+    "task_count": 25,
     "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
@@ -75,7 +75,10 @@
       "TASK-2026-08-25-main-019 — M2 2.4 멀티 세션 UI",
       "TASK-2026-08-25-main-020 — M2 2.5 번들·설치 완성",
       "TASK-2026-08-25-main-021 — M2 2.6 CLI·진단 (doctor·logs)",
-      "TASK-2026-08-25-main-022 — M2 2.7 검증 (NFR-1 확장·매트릭스·부하)"
+      "TASK-2026-08-25-main-022 — M2 2.7 검증 (NFR-1 확장·매트릭스·부하)",
+      "TASK-2026-08-25-main-023 — grok Linux 조달 — x.ai CDN 미러링 + 자체 해시 고정",
+      "TASK-2026-08-25-main-024 — M3 3.3.1 라이선스 고지 — NOTICE·원문 수집 동봉 자동화",
+      "TASK-2026-08-25-main-025 — M3 3.5.2 제거 스크립트 (uninstall)"
     ]
   },
   "next_documents": [

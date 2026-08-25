@@ -133,7 +133,8 @@ for (const [name, artifacts] of [
   }
 }
 // 런타임 외부 의존 — 전부 무의존 패키지 (renderer 는 사전 번들)
-for (const dep of ['zod', 'ws', 'yaml', 'smol-toml']) {
+const RUNTIME_DEPS = ['zod', 'ws', 'yaml', 'smol-toml'];
+for (const dep of RUNTIME_DEPS) {
   await cp(join(repoRoot, 'node_modules', dep), join(appDir, 'node_modules', dep), {
     recursive: true,
   });
@@ -280,9 +281,12 @@ await cp(join(bundleDir, 'lib'), join(staging, 'lib'), { recursive: true });
 await cp(join(bundleDir, 'tools'), join(staging, 'tools'), { recursive: true });
 if (isWindows) {
   await cp(join(bundleDir, 'install.ps1'), join(staging, 'install.ps1'));
+  await cp(join(bundleDir, 'uninstall.ps1'), join(staging, 'uninstall.ps1'));
 } else {
-  await cp(join(bundleDir, 'install.sh'), join(staging, 'install.sh'));
-  await chmod(join(staging, 'install.sh'), 0o755);
+  for (const script of ['install.sh', 'uninstall.sh']) {
+    await cp(join(bundleDir, script), join(staging, script));
+    await chmod(join(staging, script), 0o755);
+  }
 }
 
 // ── 실행 래퍼 — GUI(인자 없음) / CLI(인자 있음) ───────────────────────────
@@ -330,21 +334,67 @@ ELECTRON_RUN_AS_NODE=1 exec "$ELECTRON" "$HERE/app/node_modules/@custom-harness/
   );
 }
 
-// ── licenses/ — 최소 NOTICE (전체 원문 동봉은 M3 FR-4.5) ──────────────────
-await mkdir(join(staging, 'licenses'), { recursive: true });
-await writeFile(
-  join(staging, 'licenses', 'NOTICE.md'),
-  `# NOTICE (전체 라이선스 원문 동봉은 M3 FR-4.5)
+// ── licenses/ — NOTICE + 전체 원문 동봉 (WBS 3.3.1, FR-4.5·NFR-4) ─────────
+// 하네스 원문은 licenses-src/ 반입본(PROVENANCE.md 에 출처·해시), Electron·의존성은
+// 로컬 node_modules 에서 직접 수집. 타깃에 실제 동봉된 하네스만 고지한다.
+const HARNESS_LICENSES = {
+  pi: { license: 'MIT', src: 'pi-LICENSE.txt' },
+  omp: { license: 'MIT', src: 'omp-LICENSE.txt' },
+  grok: { license: 'Apache-2.0', src: 'grok-LICENSE.txt' },
+};
+const licensesDir = join(staging, 'licenses');
+const noticeRows = [];
 
-- custom-harness ${bundleVersion} (사내 도구)
-${manifestHarnesses
-  .map((h) => {
-    const license = h.name === 'grok' ? 'Apache 2.0' : 'MIT';
-    return `- ${h.name} ${h.version} — ${license}`;
-  })
-  .join('\n')}
-- Electron ${electronPackage.version} — MIT (Chromium/Node 고지 포함은 M3)
-- zod, ws, yaml, smol-toml — MIT/ISC 계열
+for (const h of manifestHarnesses) {
+  const entry = HARNESS_LICENSES[h.name];
+  if (!entry) throw new Error(`라이선스 미등록 하네스: ${h.name} — HARNESS_LICENSES 에 추가 필요`);
+  await mkdir(join(licensesDir, h.name), { recursive: true });
+  await cp(join(bundleDir, 'licenses-src', entry.src), join(licensesDir, h.name, 'LICENSE'));
+  noticeRows.push([h.name, h.version, entry.license, `licenses/${h.name}/LICENSE`]);
+}
+
+// Electron — 자체 MIT + Chromium/Node 서드파티 고지(dist 동봉 원문)
+await mkdir(join(licensesDir, 'electron'), { recursive: true });
+await cp(join(repoRoot, 'node_modules/electron/LICENSE'), join(licensesDir, 'electron', 'LICENSE'));
+await cp(
+  join(repoRoot, 'node_modules/electron/dist/LICENSES.chromium.html'),
+  join(licensesDir, 'electron', 'LICENSES.chromium.html'),
+);
+noticeRows.push([
+  'Electron',
+  electronPackage.version,
+  'MIT (+ Chromium/Node 고지)',
+  'licenses/electron/LICENSE · licenses/electron/LICENSES.chromium.html',
+]);
+
+// 런타임 의존성 — app/node_modules 로 동봉되는 패키지의 원문·라이선스명 수집
+for (const dep of RUNTIME_DEPS) {
+  const depPackage = JSON.parse(
+    await readFile(join(repoRoot, 'node_modules', dep, 'package.json'), 'utf8'),
+  );
+  await mkdir(join(licensesDir, 'deps', dep), { recursive: true });
+  await cp(join(repoRoot, 'node_modules', dep, 'LICENSE'), join(licensesDir, 'deps', dep, 'LICENSE'));
+  noticeRows.push([dep, depPackage.version, depPackage.license, `licenses/deps/${dep}/LICENSE`]);
+}
+
+await cp(join(bundleDir, 'licenses-src', 'PROVENANCE.md'), join(licensesDir, 'PROVENANCE.md'));
+await writeFile(
+  join(licensesDir, 'NOTICE.md'),
+  `# NOTICE — custom-harness ${bundleVersion} (${targetInfo.os}-${targetInfo.arch})
+
+custom-harness 는 사내 배포용 오케스트레이션 도구이며, 아래 오픈소스 소프트웨어를 동봉한다.
+각 원문은 표의 경로에, 반입 출처·해시는 PROVENANCE.md 에 있다.
+
+| 동봉물 | 버전 | 라이선스 | 원문 |
+|---|---|---|---|
+${noticeRows.map((r) => `| ${r[0]} | ${r[1]} | ${r[2]} | ${r[3]} |`).join('\n')}
+
+- pi 하네스는 npm 패키지에 자체 의존성(node_modules)을 동봉한 형태 그대로 재배포한다 — 개별 고지는 패키지 내 각 LICENSE 파일 참조.
+${
+  manifestHarnesses.some((h) => h.name === 'grok')
+    ? '- grok build upstream(xai-org/grok-build)에는 NOTICE 파일이 없음(2026-08-25 확인) — Apache-2.0 §4(d) 승계 대상 없음, 원문 LICENSE 동봉으로 충족.\n'
+    : ''
+}- 본 도구는 paseo(AGPL-3.0)의 코드를 포함하지 않는다 (패턴 참고만, NFR-4 clean-room).
 `,
 );
 
@@ -379,6 +429,16 @@ await writeFile(
 
 수동 설치(폴백): 해제본을 \`~/.custom-harness/versions/${bundleName}\` 로 옮기고
 \`ln -sfn\` (Windows: junction) 으로 \`current\` 전환 후 \`bin/custom-harness\` 실행.
+
+## 제거 (FR-4.3.4)
+
+- macOS/Linux: \`./uninstall.sh\` / Windows: \`powershell -ExecutionPolicy Bypass -File .\\uninstall.ps1\`
+- 기본은 프로그램만 제거하고 사용자 데이터(\`~/.custom-harness/data\`·\`logs\` — 세션 이력·크리덴셜)는 보존한다.
+- 데이터까지 삭제: \`--purge\` (Windows: \`-Purge\`) — 대화식 확인 후 삭제, 비대화 환경은 \`--yes\`(\`-Yes\`) 병행.
+
+## 라이선스 고지 (FR-4.5)
+
+동봉 오픈소스 목록·원문은 \`licenses/NOTICE.md\` 와 \`licenses/\` 하위 원문 파일 참조.
 `,
 );
 

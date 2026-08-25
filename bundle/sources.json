@@ -32,7 +32,11 @@
     "assets": {
       "darwin-arm64": { "localFile": "~/.grok/bin/grok", "binaryName": "grok" },
       "linux-x64": {
-        "unavailable": "x.ai CDN 미러링 + 자체 해시 고정 절차 미확정 (packaging.md §6 파생 과제) — 확정 시 url/sha256 기입"
+        "url": "https://x.ai/cli/grok-1.0.5-linux-x86_64",
+        "fallbackUrl": "https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-1.0.5-linux-x86_64",
+        "sha256": "9ba87444e1819e8f6104adbbf4676a870c204380aa5c3e1c38a926c4ea677238",
+        "binaryName": "grok",
+        "note": "x.ai CDN 은 체크섬 미공개 — 2026-08-25 primary/fallback 이중 소스 실측 다운로드로 sha256 교차 검증 후 자체 고정 (static-pie ELF x86-64, packaging.md §6-1 절차)"
       },
       "win32-x64": {
         "unavailable": "Windows 번들 grok 제외 확정 (2026-08-25 승인, windows-support.md)"

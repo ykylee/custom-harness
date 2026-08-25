@@ -4,7 +4,14 @@
 
 - 문서 목적: 로드맵 WBS 기준 진척 현황의 단일 보드. 모든 작업은 여기 등재된 WBS ID 로 추적한다.
 - 갱신 규칙: 작업 상태 변화 시마다 갱신 (planned / in_progress / blocked / done). 계획 변경 발생 시 원 문서(ROADMAP·roadmap/·REQUIREMENTS 등) 동기화 후 여기 비고에 링크.
-- 최종 수정일: 2026-08-25 (M2 2.1 완료 반영)
+- 최종 수정일: 2026-08-25 (M3 선행 착수분 3.3.1·3.5.2 완료 반영)
+
+## M3 — 선행 착수 (M2 완료 선언 전 사외 가능분)
+
+| WBS | 작업 | 상태 | 비고 |
+|---|---|---|---|
+| 3.3.1 | NOTICE + 라이선스 원문 수집·동봉 자동화 | done | 2026-08-25 — build-bundle 파이프라인 편입: 번들 `licenses/` 에 NOTICE.md(동봉물·버전·라이선스·원문 경로 표, 타깃별 실동봉분만 고지) + 원문 전체 동봉 — 하네스 3종(pi·omp MIT, grok Apache-2.0 — upstream NOTICE 파일 부재 확인, §4(d) 승계 대상 없음), Electron(MIT + **LICENSES.chromium.html 20MB** Chromium/Node 서드파티 고지), 런타임 의존 4종(zod·ws·yaml·smol-toml — package.json 라이선스명 자동 수집). 원문 반입 출처·해시는 bundle/licenses-src/PROVENANCE.md (pi 는 npm 패키지에 LICENSE 미동봉이라 저장소 원문 반입). 3 OS 재조립·manifest 검증 통과. 잔여: 앱 정보 화면 열람·clean-room 검수는 3.3.2 |
+| 3.5.2 | 제거 스크립트 (uninstall) | done (sh 실검증·ps1 실기기 C-5) | 2026-08-25 — uninstall.sh/ps1 번들 동봉(FR-4.3.4): 데몬 정지(best-effort)→프로그램 제거(versions/·current·bin)→사용자 데이터는 **기본 보존**, `--purge`(-Purge) 시 대화식 확인 후 삭제(비대화는 `--yes` 필수 — non-tty 안전 중단 exit 2). 주입 설정 블록은 전부 data/ 격리 홈이라 외부 파일 무접촉. **격리 루트 실설치 스모크 통과**: 데몬 실행 중 제거(정지 확인)→데이터 보존→purge 전체 삭제(루트까지). INSTALL.md 에 제거·라이선스 절 추가 |
 
 ## 현재 마일스톤: M2 — 멀티 하네스 · 멀티 세션 (M1 완료 선언 전 C-1 대기 중 선행 착수)
 
@@ -19,7 +26,7 @@
 | 2.6.2 | logs 명령 + 로그 체계 정리 | done | 2026-08-25 — 하네스 stderr → `logs/<harness>-<sessionId>.log` (ProcessSupervisor harnessLogDir 배선 — 로그 실패는 세션에 무해). `custom-harness logs`: 목록·경로 안내, `logs <이름|daemon> [--lines N]` tail(정확→접두 매칭). 데몬 stdout/stderr 는 기존 logs/daemon.log(launcher). 테스트 전체 191건·typecheck·lint·format 그린 |
 | 2.5.1 | manifest 스키마 구현 + 생성 도구 (체크섬) | done | 2026-08-25 — bundle/lib/manifest.mjs: 스키마 v1(schemaVersion·harnesses[{name,version,kind,path,checksum,entry,verifiedAt}]·app·configTemplates), 결정적 dirHash(Windows 경로 정규화)+fileHash, buildManifest·verifyBundle(FR-4.2.1 — 불일치 목록 반환). tools/manifest-tool.mjs(verify/hash CLI — 번들 동봉, 설치기·반입 대조용). 데몬 2.3.3 관대 로더와 호환 확인 |
 | 2.5.2 | 설치 스크립트 install.sh / install.ps1 | done (sh 실검증·ps1 실기기 대기) | 2026-08-25 — FR-4.3.2 순서 구현: 체크섬 검증(번들 Electron RUN_AS_NODE 로 manifest-tool 실행 — Node 불요)→버전 디렉토리 배치(.partial→rename)→오프라인 프리셋 선주입(tools/install-presets.mjs — create-if-absent, 기존 파일 불변 FR-4.3.3)→current 심링크 원자 전환(tmp+mv)→bin shim. **install.sh 실설치 스모크 통과**(격리 루트: 검증→설치→설치본 CLI 로 데몬 기동/상태/종료 — bin 심링크의 \$0 미해석 버그 검출·shim 방식으로 수정). install.ps1 은 실행 정책 안내·junction 교체(비원자 한계 주기)·.cmd shim — 실기기 검증은 C-5 |
-| 2.5.3 | 3 OS 번들 빌드 파이프라인 | done (실행 스모크: darwin ✓, linux·win 실기기 대기) | 2026-08-25 — build-bundle.mjs 전면 개편: --target 3종, sources.json 고정 해시 조달(omp 릴리스 바이너리 3종 sha256 핀, pi npm integrity 기록, Electron 공식 SHASUMS256 검증) + bundle/cache 캐시(오프라인 재실행 가능 — FR-4.7 재현성). **3 타깃 실조립 완료**: darwin-arm64 205.7MB tar.gz(+데몬 기동 스모크 PASS), linux-x64 244.4MB tar.gz, win32-x64 260.7MB zip — 전부 manifest 검증 통과, .sha256 사이드카 생성. 잔여: grok linux 는 x.ai CDN 미러 절차 확정 시 소스 기입(다운로드 경로는 구현됨), 템플릿에 omp/grok 추가(v1 버전 관리) |
+| 2.5.3 | 3 OS 번들 빌드 파이프라인 | done (실행 스모크: darwin ✓, linux·win 실기기 대기) | 2026-08-25 — build-bundle.mjs 전면 개편: --target 3종, sources.json 고정 해시 조달(omp 릴리스 바이너리 3종 sha256 핀, pi npm integrity 기록, Electron 공식 SHASUMS256 검증) + bundle/cache 캐시(오프라인 재실행 가능 — FR-4.7 재현성). **3 타깃 실조립 완료**: darwin-arm64 205.7MB tar.gz(+데몬 기동 스모크 PASS), linux-x64 244.4MB tar.gz, win32-x64 260.7MB zip — 전부 manifest 검증 통과, .sha256 사이드카 생성. 잔여였던 grok linux 조달은 2026-08-25 해소: CDN 미러+자체 해시 고정 절차 확정(packaging §6-1 — primary/fallback 이중 소스 sha256 교차 검증), sources.json 기입, linux-x64 재조립 307.0MB(pi+omp+grok)·manifest 검증 통과. 실행 스모크는 C-5 실기기 |
 | 2.5.4 | Windows 특이 처리 — junction·경로·ps1 정책 | done (실기기 검증 C-5) | 2026-08-25 — 0.5.1 실측 반영: 구성 omp+pi(조건부)·grok 제외, junction 전환(rmdir 식 제거→생성, 비원자 한계 문서화), .cmd 래퍼·shim(심링크 권한 불요), ExecutionPolicy Bypass 안내, dirHash 경로 구분자 정규화(NFR-9), zip 아카이브. 실기기 실행 검증은 C-5 실측 항목 |
 | 2.4.1 | 사이드바 — 상태 버킷·하네스 아이콘·승인 배지 | done | 2026-08-25 — Sidebar 컴포넌트: 버킷 그룹핑(승인 대기→실행 중→유휴→에러→완료·보관, FR-3.3.1), 하네스 텍스트 배지(자산 없이 색상 구분), 디렉토리 표시, 승인 대기 건수 배지(FR-3.4.2), 목록 사용량 요약(FR-3.7), 명시적 세션 종료 버튼(탭 닫기와 분리, FR-3.3.3) |
 | 2.4.2 | 탭 + 분할 페인 — 배치·복원, 탭 닫기 ≠ 세션 종료 | done | 2026-08-25 — LayoutState(tabs·active·split 2분할 row/column), Tabs 컴포넌트(탭 스트립·분할 토글), 페인 렌더링. **탭 닫기는 RPC 없음**(세션 유지 — 테스트로 보증), closed 세션 열기는 resume 경유. 배치는 localStorage 영속 + 재시작 복원(죽은 세션 드롭). 재연결 재동기화가 열린 페인 전체 갭 회수하도록 확장 |

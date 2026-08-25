@@ -76,6 +76,20 @@
 
 - [x] **grok build 의 Windows x64 지원 조사** (2026-08-25 완료) — Windows 빌드 "best-effort·미테스트" + **GitHub Releases 에 전 플랫폼 asset 부재(CDN 배포만)**. Windows 번들 1차에서 grok 제외 제안. 상세: [Windows 지원 조사](../reference/windows-support.md)
 - [x] pi/omp 의 Windows 동작 조사 (2026-08-25 완료) — omp 네이티브 지원 명확(단일 exe 릴리스), pi 는 Git Bash 전제 + 이슈 다수로 조건부(실기기 실측 후 확정). 상세: 동 문서
-- [ ] **(신규) grok 바이너리 조달 — x.ai CDN 미러링 + 자체 해시 고정 절차** (전 플랫폼 영향, M2 2.5.3 빌드 파이프라인에 반영)
+- [x] **grok 바이너리 조달 — x.ai CDN 미러링 + 자체 해시 고정 절차** (2026-08-25 완료) — 절차 확정·linux-x64 실측 적용(§6-1). `bundle/sources.json` 에 url/sha256 기입, linux 번들에 grok 1.0.5 동봉
 - [ ] **(신규) pi 첫 실행 외부 바이너리(fd 등) 다운로드의 `PI_OFFLINE` 차단 여부 실측** — 미차단 시 해당 바이너리 동봉 필요 (NFR-1)
 - [ ] 내부 아티팩트 저장소 유무 확인 (확인되면 §4 채널을 저장소 게시로 확정 — [체크리스트 C-2](../roadmap/m0-internal-checklist.md))
+
+### 6-1. grok 바이너리 조달 절차 (2026-08-25 확정 — 사외 실측)
+
+grok 은 GitHub Releases 에 asset 이 없고 x.ai CDN 이 유일 배포 경로이며, **CDN 은 체크섬을 공개하지 않는다**(설치 스크립트도 해시 검증 없이 다운로드). 따라서 사외 빌드 환경에서 아래 절차로 자체 해시를 고정한다.
+
+1. **URL 규칙** (install.sh 실측): `<BASE>/grok-<version>-<os>-<arch>`
+   - primary: `https://x.ai/cli/…`, fallback: `https://storage.googleapis.com/grok-build-public-artifacts/cli/…`
+   - os·arch 토큰: `macos|linux|windows` × `x86_64|aarch64` (예: `grok-1.0.5-linux-x86_64`)
+2. **이중 소스 교차 검증**: primary·fallback 양쪽에서 각각 다운로드 → sha256 일치 확인. 불일치 시 조달 중단(공급망 이상 신호).
+3. **바이너리 무결성 확인**: `file` 로 타깃 형식 확인 (linux 는 static-pie ELF — 폐쇄망 glibc 의존 최소화에 유리), 가능하면 실행 스모크(`--version`)는 해당 OS 실기기에서.
+4. **고정 기입**: `bundle/sources.json` 의 해당 asset 에 `url`(primary)·`fallbackUrl`·`sha256`·`binaryName` 기입. 빌드 파이프라인(`fetchPinned`)이 이 해시로 다운로드·캐시 검증한다.
+5. **버전 갱신 시**: 1~4 를 재수행하고 버전·해시를 함께 교체 (버전 세트 불변성, §3).
+
+2026-08-25 적용 실측: `grok-1.0.5-linux-x86_64` — primary/fallback sha256 동일(`9ba87444…7238`, 159MB) 확인 후 고정, linux 번들 재조립·manifest 검증 통과. 실행 스모크는 linux 실기기(C-5)에서.

@@ -13,7 +13,7 @@
 |---|---|---|---|
 | pi | 대상 | 대상 | **조건부** (Git Bash 전제 — C-5 실측 후 확정) |
 | omp | 대상 | 대상 | 대상 |
-| grok | 대상 | 조달 절차 미확정 (CDN 미러 — packaging §6) | **제외** (2026-08-25 결정) |
+| grok | 대상 | 대상 (2026-08-25 CDN 미러 해시 고정 — packaging §6-1) | **제외** (2026-08-25 결정) |
 
 ## 기능 체크리스트 × 실측 결과
 
@@ -34,7 +34,7 @@
 
 ### Linux x64 — 실기기 대기 (C-5)
 
-- 번들 조립·manifest 검증까지는 사외 빌드에서 **PASS** (244.4MB, 2.5.3 — grok 제외 구성).
+- 번들 조립·manifest 검증까지는 사외 빌드에서 **PASS** — 2026-08-25 grok 1.0.5 추가 재조립(307.0MB, pi+omp+grok 3하네스 구성, packaging §6-1 조달 절차).
 - ②~⑧: 실기기 필요. 절차: install.sh → doctor → 온보딩 → pi·omp 각 1턴 → NFR-1 스모크.
 
 ### Windows x64 — 실기기 대기 (C-5)
@@ -45,5 +45,5 @@
 ## 잔여 → M2 완료 판정 조건
 
 - [ ] Linux/Windows 실기기 실측 (C-5) — 사내 체크리스트로 요청
-- [ ] grok Linux 조달(CDN 미러 절차) 확정 시 Linux 열에 grok 추가
+- [x] grok Linux 조달(CDN 미러 절차) 확정 → Linux 번들에 grok 추가 (2026-08-25 완료, packaging §6-1)
 - 매트릭스 "축소안 반영 범위 내" 기준: darwin 전 항목 + linux(pi·omp) + win(omp, pi 조건부) 통과 시 충족
