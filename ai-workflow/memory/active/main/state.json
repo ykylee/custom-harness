@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-08-24",
-  "purpose_digest": "LLM 에이전트를 직접 실행·제어할 수 있는 커스텀 하네스를 만든다 — 모델 호출, 툴 루프, 프롬프트 구성을 우리가 원하는 방식으로 조립할 수 있는 실행 기반.",
+  "generated_at": "2026-08-25",
+  "purpose_digest": "폐쇄망(사내망)에서 여러 오픈소스 코딩 에이전트 하네스를 하나의 데스크톱 UI 로 선택·사용할 수 있게 하는 오케스트레이션 도구를 만든다. 에이전트 루프는 래핑된 하네스가 소유하고, 이 도구는 하네스의 실행·상태·UI 를 소유한다.",
   "purpose_digest_rev": "2026-08-24",
   "source_of_truth": {
     "project_profile_path": "docs/PROJECT_PROFILE.md",
@@ -10,7 +10,7 @@
     "daily_backlog_dir": "ai-workflow/memory/active/main/backlog",
     "tasks_dir": "ai-workflow/memory/active/main/backlog/tasks",
     "sessions_dir": "ai-workflow/memory/active/main/sessions",
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-24.md",
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-25.md",
     "repository_assessment_path": null
   },
   "project": {
@@ -29,36 +29,63 @@
   "session": {
     "current_baseline": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.",
     "current_axis": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.",
-    "current_focus": null,
-    "in_progress_items": [],
+    "current_focus": "TASK-2026-08-24-main-001",
+    "in_progress_items": [
+      "TASK-2026-08-24-main-001",
+      "TASK-2026-08-24-main-002",
+      "TASK-2026-08-24-main-003",
+      "TASK-2026-08-24-main-004",
+      "TASK-2026-08-24-main-005",
+      "TASK-2026-08-24-main-006",
+      "TASK-2026-08-24-main-007",
+      "TASK-2026-08-24-main-008",
+      "TASK-2026-08-24-main-009",
+      "TASK-2026-08-25-main-001",
+      "TASK-2026-08-25-main-002",
+      "TASK-2026-08-25-main-003",
+      "TASK-2026-08-25-main-004",
+      "TASK-2026-08-25-main-005",
+      "TASK-2026-08-25-main-006",
+      "TASK-2026-08-25-main-007",
+      "TASK-2026-08-25-main-008"
+    ],
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
       "TASK-2026-08-24-custom-harness-003 — 사내망 제약 반영: 게이트웨이 호환·확장 공유 조사",
       "TASK-2026-08-24-custom-harness-002 — 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사",
       "TASK-2026-08-24-custom-harness-001 — 표준 AI 워크플로우 초기 도입",
-      "TASK-001 표준 AI 워크플로우 초기 도입",
-      "TASK-002 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사",
-      "TASK-003 사내망 제약 반영: 게이트웨이 호환·확장 공유 조사"
+      "TASK-2026-08-25-main-008 M0 완료 선언 + M1 착수(1.1.1 모노레포 골격)",
+      "TASK-2026-08-25-main-007 M0 설계 일괄(0.2/0.3/0.4/0.6.2 + 0.7.1 pi 스파이크)",
+      "TASK-2026-08-25-main-006 결정 2건 확정 + 어댑터 설계서(0.1.2~0.1.5)",
+      "TASK-2026-08-25-main-005 grok 커스텀 LLM 실측(무로그인·session/set_model 확인)",
+      "TASK-2026-08-25-main-004 M0 착수(Windows 조사·grok 경로 조사·진척 보드 구축)",
+      "TASK-2026-08-25-main-003 요구사항·로드맵 14문서 승인 반영",
+      "TASK-2026-08-25-main-002 로드맵 세분화(마일스톤 WBS 5종)"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-24.md",
-    "task_count": 3,
-    "in_progress_items": [],
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-25.md",
+    "task_count": 8,
+    "in_progress_items": [
+      "TASK-2026-08-25-main-001 — 요구사항 상세 세분화 (카테고리별 문서 분리)",
+      "TASK-2026-08-25-main-002 — 로드맵 세분화 (마일스톤별 세부 계획 + WBS)",
+      "TASK-2026-08-25-main-003 — 요구사항·로드맵 문서 일괄 승인 반영",
+      "TASK-2026-08-25-main-004 — M0 착수 — 트랙 B 조사(0.5.1, 0.1.1) + 진척 보드·사내 체크리스트 구축",
+      "TASK-2026-08-25-main-005 — grok 커스텀 LLM 설정 실측 (0.1.1 스파이크 일부)",
+      "TASK-2026-08-25-main-006 — 결정 2건 확정 반영 + 어댑터 설계서 작성 (0.1.2~0.1.5)",
+      "TASK-2026-08-25-main-007 — M0 설계 일괄 진행 (0.2 프로토콜, 0.3 데몬, 0.4 크리덴셜·주입, 0.6.2 테스트 전략, 0.7.1 pi 스파이크)",
+      "TASK-2026-08-25-main-008 — M0 완료 선언 + 이월 승인 반영, M1 착수 (1.1.1 모노레포 골격)"
+    ],
     "blocked_items": [],
-    "done_items": [
-      "TASK-2026-08-24-custom-harness-001 — 표준 AI 워크플로우 초기 도입",
-      "TASK-2026-08-24-custom-harness-002 — 컨셉 정의 및 레퍼런스(paseo)·확장 하네스 조사",
-      "TASK-2026-08-24-custom-harness-003 — 사내망 제약 반영: 게이트웨이 호환·확장 공유 조사"
-    ]
+    "done_items": []
   },
   "next_documents": [
     "docs/PROJECT_PROFILE.md",
     "ai-workflow/memory/active/main/session_handoff.md",
-    "ai-workflow/memory/active/main/backlog/2026-08-24.md",
+    "ai-workflow/memory/active/main/backlog/2026-08-25.md",
     "ai-workflow/memory/active/main/work_backlog.md"
   ],
   "repository_assessment": {

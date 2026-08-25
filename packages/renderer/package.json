@@ -1,0 +1,14 @@
+{
+  "name": "@custom-harness/renderer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@custom-harness/protocol": "0.1.0"
+  }
+}
