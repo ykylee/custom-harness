@@ -133,7 +133,7 @@ describe('DaemonServer', () => {
       JSON.stringify({
         type: 'session.create.request',
         requestId: 'r-2',
-        params: { harness: 'mock', cwd: '/work' },
+        params: { harness: 'mock', cwd: process.cwd() },
       }),
     );
     const response = await responsePromise;

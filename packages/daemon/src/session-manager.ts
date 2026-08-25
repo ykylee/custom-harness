@@ -1,6 +1,8 @@
 // 세션 매니저 (daemon-design §4, FR-1.3~1.6)
 // 상태 전이는 매니저 소유 — 어댑터는 신호만. turn_started·user_message 행도 매니저가 발행한다.
 import { randomUUID } from 'node:crypto';
+import { stat } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 import type {
   AgentEvent,
   HarnessId,
@@ -127,6 +129,18 @@ export class SessionManager {
     const activeCount = [...this.sessions.values()].filter((s) => s.runtime).length;
     if (activeCount >= this.maxSessions) {
       throw new DaemonError('session_limit', `동시 세션 상한 초과 (${this.maxSessions})`);
+    }
+    // cwd 선검증 — 존재하지 않는 디렉토리는 spawn 이 명령 경로를 탓하는 ENOENT 로 오인 보고됨
+    if (!isAbsolute(params.cwd)) {
+      throw new DaemonError('bad_request', `작업 디렉토리는 절대 경로만 허용: ${params.cwd}`);
+    }
+    try {
+      if (!(await stat(params.cwd)).isDirectory()) {
+        throw new DaemonError('bad_request', `작업 디렉토리가 디렉토리가 아님: ${params.cwd}`);
+      }
+    } catch (error) {
+      if (error instanceof DaemonError) throw error;
+      throw new DaemonError('bad_request', `작업 디렉토리 없음: ${params.cwd}`);
     }
 
     const now = new Date().toISOString();

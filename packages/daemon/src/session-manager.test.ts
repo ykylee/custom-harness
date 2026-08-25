@@ -31,7 +31,7 @@ describe('SessionManager', () => {
   }
 
   it('creates a session: initializing → idle, meta+handle persisted (FR-1.3.5)', async () => {
-    const summary = await manager.createSession({ harness: 'mock', cwd: '/work' });
+    const summary = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     expect(summary.status).toBe('idle');
     await settled();
 
@@ -45,7 +45,7 @@ describe('SessionManager', () => {
 
   it('marks the session error when the adapter fails to create', async () => {
     adapter.failNextCreate = true;
-    await expect(manager.createSession({ harness: 'mock', cwd: '/w' })).rejects.toThrow(
+    await expect(manager.createSession({ harness: 'mock', cwd: process.cwd() })).rejects.toThrow(
       'fake create failure',
     );
     const [summary] = await manager.listSessions();
@@ -55,14 +55,14 @@ describe('SessionManager', () => {
   it('enforces the concurrent session cap (daemon-design §4)', async () => {
     const capped = new SessionManager({ store, adapters: [adapter], maxSessions: 1 });
     await capped.init();
-    await capped.createSession({ harness: 'mock', cwd: '/w' });
-    await expect(capped.createSession({ harness: 'mock', cwd: '/w' })).rejects.toMatchObject({
+    await capped.createSession({ harness: 'mock', cwd: process.cwd() });
+    await expect(capped.createSession({ harness: 'mock', cwd: process.cwd() })).rejects.toMatchObject({
       code: 'session_limit',
     });
   });
 
   it('emits manager-owned user_message + turn_started on prompt (FR-1.4)', async () => {
-    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: '/w' });
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     const { turnId } = await manager.prompt(sessionId, '파일 고쳐줘');
     const session = adapter.sessions[0]!;
     session.emit({ type: 'message_delta', turnId, delta: '네' });
@@ -91,13 +91,13 @@ describe('SessionManager', () => {
   });
 
   it('rejects a second prompt while a turn is active — 큐잉 없이 거부', async () => {
-    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: '/w' });
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     await manager.prompt(sessionId, '첫 턴');
     await expect(manager.prompt(sessionId, '둘째 턴')).rejects.toMatchObject({ code: 'busy' });
   });
 
   it('interrupt is idempotent (FR-1.6)', async () => {
-    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: '/w' });
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     // 활성 턴 없음 — 에러 없이 완료, 어댑터 호출도 없음
     await manager.interrupt(sessionId);
     expect(adapter.sessions[0]!.interruptCalls).toBe(0);
@@ -112,7 +112,7 @@ describe('SessionManager', () => {
   });
 
   it('tracks pending permissions and clears on resolution (FR-1.5)', async () => {
-    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: '/w' });
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     const session = adapter.sessions[0]!;
     const request = {
       requestId: 'p-1',
@@ -137,7 +137,7 @@ describe('SessionManager', () => {
   });
 
   it('rejects model switch when unsupported — silent 실패 금지', async () => {
-    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: '/w' });
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     await manager.setModel(sessionId, 'mock-model-2');
     expect(adapter.sessions[0]!.modelSet).toBe('mock-model-2');
 
@@ -146,7 +146,7 @@ describe('SessionManager', () => {
   });
 
   it('restarts: stale active statuses become closed, resume restores pending + seq (FR-1.3)', async () => {
-    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: '/w' });
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     const { turnId } = await manager.prompt(sessionId, '작업');
     adapter.sessions[0]!.emit({ type: 'turn_completed', turnId });
     await settled();
@@ -181,7 +181,7 @@ describe('SessionManager', () => {
   });
 
   it('close leaves data intact and prompt requires resume', async () => {
-    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: '/w' });
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     await manager.closeSession(sessionId);
     expect(adapter.sessions[0]!.closed).toBe(true);
     const [summary] = await manager.listSessions();

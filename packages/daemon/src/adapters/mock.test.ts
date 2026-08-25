@@ -7,7 +7,7 @@ async function factory(): Promise<AdapterHarness> {
     adapter: new MockAdapter(),
     makeConfig: (sessionId) => ({
       sessionId,
-      cwd: '/work',
+      cwd: process.cwd(),
       env: {},
       approvalPolicy: 'mediate',
     }),
@@ -27,7 +27,7 @@ describe('MockAdapter specifics', () => {
     const adapter = new MockAdapter({ pendingOnResume: [pending] });
     const session = await adapter.resumeSession(
       { harness: 'mock', nativeHandle: 'mock-native-s1' },
-      { sessionId: 's1', cwd: '/w', env: {}, approvalPolicy: 'mediate' },
+      { sessionId: 's1', cwd: process.cwd(), env: {}, approvalPolicy: 'mediate' },
     );
     expect(await session.getPendingPermissions()).toEqual([pending]);
   });

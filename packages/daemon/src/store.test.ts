@@ -7,7 +7,7 @@ import { SessionStore, type SessionMeta } from './store.js';
 const baseMeta: SessionMeta = {
   sessionId: 's-1',
   harness: 'mock',
-  cwd: '/work',
+  cwd: process.cwd(),
   status: 'idle',
   createdAt: '2026-08-25T00:00:00.000Z',
   updatedAt: '2026-08-25T00:00:00.000Z',
