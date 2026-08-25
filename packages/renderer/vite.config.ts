@@ -5,6 +5,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
+  // 셸이 file:// 로 loadFile 한다 — 절대 경로(/assets)는 드라이브 루트로 풀려 흰 화면이 되므로
+  // 상대 경로 필수 (2026-08-25 Windows 실기기 실측)
+  base: './',
   build: {
     outDir: 'dist-web',
     emptyOutDir: true,
