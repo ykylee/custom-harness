@@ -11,10 +11,10 @@
 | WBS | 작업 | 상태 | 비고 |
 |---|---|---|---|
 | 1.1.1 | 모노레포 골격 (workspaces·빌드·테스트·린트·CI) | done (로컬) | 2026-08-25 — 5패키지+bundle/, tsc project references, vitest·eslint·prettier, typecheck/test/lint 그린. CI 배선은 원격 저장소 확정 시 |
-| 1.1.2 | protocol 패키지 (zod 스키마·capability 헬퍼) | in_progress | hello 봉투·버전 상수 초판 + 라운드트립 테스트. FR-1.4 이벤트 유니온 작성 중 |
-| 1.2.* | 데몬 코어 (WS 서버·세션 매니저·영속화·spawn) | planned | |
-| 1.3.* | pi 어댑터 (JSONL RPC base·계약·승인·mock/계약 테스트) | planned | RPC 스키마 발견 포함 (0.7.1 이월분) |
-| 1.4.* | 게이트웨이 연결 (주입·프리셋·키) | planned | 격리 주입 전략 확정됨 |
+| 1.1.2 | protocol 패키지 (zod 스키마·capability 헬퍼) | done | 2026-08-25 — FR-1.4 이벤트 유니온 14종(어댑터/와이어 공유, sessionId+seq 봉투), RPC 17 method(session/config/harness/system, ok 판별 응답), hello.response·ping/pong, capability 협상 헬퍼(hasCapability), 순수성 eslint 게이트(발화 검증). 테스트 10건·typecheck·lint 그린. SessionSummary.pendingPermissions 로 FR-1.5 재조회 충족 |
+| 1.2.* | 데몬 코어 (WS 서버·세션 매니저·영속화·spawn) | done | 2026-08-25 — 1.2.1 WS 서버(127.0.0.1·토큰 2중 인증·hello 선행·RPC 디스패치·이벤트 브로드캐스트), 1.2.2 세션 매니저(상태 전이 소유·turn_started/user_message 직접 발행·interrupt 멱등·활성 턴 1개 거부·승인 pending 추적·재기동 closed 정정·seq 연속), 1.2.3 영속화(meta.json tmp+rename·timeline.jsonl append-only·파손 줄 드롭), 1.2.4 spawn 유틸(절대 경로 강제·env 오버레이·SIGTERM→SIGKILL 단계화·비정상 종료 감지·PID 원장). startDaemon 조립+수명주기 포함 테스트 31건 신규, 전체 41건·typecheck·lint 그린. 이벤트 `user_message` 와이어 전용 추가(additive). config.\* 는 1.4.3, stale reap 은 FR-1.1.4(M2) |
+| 1.3.* | pi 어댑터 (JSONL RPC base·계약·승인·mock/계약 테스트) | done | 2026-08-25 — RPC 스키마 실측 완료(pi 0.84.1 dist 소스: RpcCommand/RpcResponse/AgentEvent/extension_ui). 1.3.1 JSONL 전송 base(id 상관·타임아웃·관대 파싱, omp v2 청킹은 M2 확장점), 1.3.2 pi 어댑터(이벤트 정규화·툴콜 테이블 매핑·usage 정규화·세션 파일 핸들·--session 재개·비정상 종료 감지), 1.3.3 승인 배선(extension_ui_request confirm/select ↔ 중립 모델, input/editor 는 취소 격하), 1.3.4 mock 하네스 1급 + 공유 계약 스위트(9케이스 × mock/pi(fake) 동일 통과, 미지 툴 other·비 JSON 내성). 테스트 총 69건 그린. **실측 차이(개정 포인트)**: pi 0.84.1 에 --mcp-config 없음 → mcpInjection=false, steer/compact RPC 존재하나 계약 밖 → false 유지, 승인은 전용 프레임이 아닌 extension_ui 채널 |
+| 1.4.* | 게이트웨이 연결 (주입·프리셋·키) | done | 2026-08-25 — 1.4.1 pi models.json 주입(격리 홈, 관리 블록 병합·백업·드리프트 감지=자동 덮어쓰기 금지, apiKey 는 `$ENV` 보간만), 1.4.2 `PI_OFFLINE=1` env 프리셋 배선, 1.4.3 KeyStore(0600 폴백+SecretCipher 인터페이스 — safeStorage 는 셸 1.6 에서 주입, headless 시 복호화 불가 상태 보고)·spawn env 오버레이(PI_CODING_AGENT_DIR+키)·목 게이트웨이 연결 확인(200/401/네트워크 원인별) + config.\* RPC 4종 배선(키 값은 응답에 미노출). 테스트 총 86건 그린. 실 게이트웨이 검증은 C-1 회신 후 |
 | 1.5.* | 렌더러 (골격·대화 뷰·승인·온보딩) | planned | |
 | 1.6.* | Electron 셸·CLI | planned | |
 | 1.7.* | macOS 번들 v0·NFR-1 스모크·수용 | planned | 수용 전 조건: **C-1 게이트웨이 실측 (이월)** |

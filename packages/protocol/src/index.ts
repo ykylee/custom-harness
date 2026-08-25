@@ -1,20 +1,26 @@
 // @custom-harness/protocol — 와이어 스키마 단일 소스 (docs/design/protocol-design.md)
 // 규칙: 와이어 스키마에 .transform()/.catch()/.preprocess() 금지 (순수성 — 검증과 변환 분리)
 import { z } from 'zod';
+import { HelloResponseSchema, HelloSchema, PingSchema, PongSchema } from './connection.js';
+import { SessionEventSchema } from './events.js';
+import { RpcRequestSchema, RpcResponseSchema } from './rpc.js';
 
-/** 와이어 버전은 올리지 않는다 — 진화는 capability 협상으로 (protocol-design §3) */
-export const PROTOCOL_VERSION = 1 as const;
+export * from './base.js';
+export * from './capabilities.js';
+export * from './connection.js';
+export * from './events.js';
+export * from './rpc.js';
 
-export const HarnessIdSchema = z.enum(['pi', 'omp', 'grok', 'mock']);
-export type HarnessId = z.infer<typeof HarnessIdSchema>;
+/** 클라이언트 → 데몬 전체 프레임 */
+export const ClientMessageSchema = z.union([HelloSchema, PingSchema, PongSchema, RpcRequestSchema]);
+export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
-/** 연결 레벨 hello — 클라이언트 capability 는 알려지지 않은 키를 보존한다 */
-export const HelloSchema = z.object({
-  type: z.literal('hello'),
-  protocolVersion: z.literal(PROTOCOL_VERSION),
-  clientInfo: z.object({ name: z.string(), version: z.string() }),
-  capabilities: z.record(z.string(), z.boolean()),
-});
-export type Hello = z.infer<typeof HelloSchema>;
-
-// 세션 이벤트·RPC 스키마는 WBS 1.1.2 에서 채운다 (FR-1.4 유니온).
+/** 데몬 → 클라이언트 전체 프레임 */
+export const ServerMessageSchema = z.union([
+  HelloResponseSchema,
+  PingSchema,
+  PongSchema,
+  RpcResponseSchema,
+  SessionEventSchema,
+]);
+export type ServerMessage = z.infer<typeof ServerMessageSchema>;

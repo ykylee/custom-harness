@@ -3,7 +3,7 @@
 # 어댑터 설계서 — 공통 세션 계약 (M0 WBS 0.1.2~0.1.5)
 
 - 문서 목적: 하네스 어댑터의 공통 계약(인터페이스·상태·에러 모델), capability 플래그, 툴콜 정규화 매핑, 승인 흐름을 확정한다. FR-1 의 설계 구체화.
-- 상태: approved (v1, 2026-08-25 사용자 승인)
+- 상태: approved (v1.1, 2026-08-25 사용자 승인 — 개정: §2 pi capability 실측 보정 + §4 pi 승인 채널 실측 반영, WBS 1.3 구현 중 발견분)
 - 최종 수정일: 2026-08-25
 - 입력: [FR-1](../requirements/fr1-harness-sessions.md), [grok 경로 비교·실측](../reference/grok-integration-paths.md), [하네스 인터페이스 조사](../reference/harness-interfaces.md), paseo 패턴(분석 문서 매개 — 코드 참조 금지)
 - 확정 전제: grok 는 ACP 경로 (2026-08-25 승인). 시그니처는 설계 수준 TypeScript — 구현 시 세부 조정 허용, 의미 변경은 본 문서 개정 필요.
@@ -59,11 +59,11 @@ interface AgentSession {
 | `sessionResume` | ✓ (세션 파일) | ✓ (세션 파일 + 리플레이 드롭 필요) | ✓ (session/load — 실측 loadSession:true) | 실측 |
 | `runtimePermission` (런타임 승인 중재) | ✓ | **✗ 1차** (`--approval-mode` 고정 — §4) | ✓ (request_permission) | 결정 §4 |
 | `modelSwitch` (세션 중 전환) | ✓ (set_model) | ✓ (set_model) | ✓ (session/set_model — 실측) | 실측 |
-| `mcpInjection` (세션 단위 주입) | ✓ (`--mcp-config`) | ✗ (host tools 로 대체) | ✓ (session/new mcpServers) | 조사 |
+| `mcpInjection` (세션 단위 주입) | **✗ (v1.1 실측 보정)** — pi 0.84.1 에 `--mcp-config` 류 주입 플래그 부재. MCP 는 확장(extension) 경유만 | ✗ (host tools 로 대체) | ✓ (session/new mcpServers) | 실측(0.84.1) |
 | `nativeToolRegistration` | ✗ | ✓ (set_host_tools) | ✗ | 조사 |
-| `steering` (실행 중 조종) | ✗ | ✓ (steer) | ✗ (확인 안 됨) | 조사 |
+| `steering` (실행 중 조종) | ✗ 1차 (v1.1 주기: 0.84.1 에 steer/follow_up RPC 실존 — 계약에 메서드 없어 보류, 도입 시 계약 확장과 함께 상향) | ✓ (steer) | ✗ (확인 안 됨) | 실측(0.84.1)·조사 |
 | `usageReporting` | ✓ | ✓ | ✓ (turn_completed usage — 실측) | 실측 |
-| `compaction` | ✗ | ✓ (compact) | ✓ (/compact 커맨드) | 조사 |
+| `compaction` | ✗ 1차 (v1.1 주기: 0.84.1 에 compact RPC 실존 — steering 과 동일하게 보류) | ✓ (compact) | ✓ (/compact 커맨드) | 실측(0.84.1)·조사 |
 
 규칙:
 - UI 는 플래그로 기능 노출/숨김. **미지원 기능 호출은 silent no-op 금지** — `AdapterError('unsupported')`.
@@ -107,7 +107,7 @@ type PermissionOutcome = { optionId: string } | { cancelled: true };
 
 하네스별 배선:
 
-- **pi**: JSONL RPC 승인 요청 ↔ 중립 모델 직접 매핑. 옵션은 allow_once/reject_once 기본.
+- **pi** (v1.1 실측 보정): 전용 승인 프레임이 없다 — 승인·선택은 **`extension_ui_request`(confirm/select) 채널**로 도착하며, 어댑터가 이를 중립 모델로 매핑한다(confirm → allow_once/reject_once 2옵션, select → 옵션 목록 투영). `input`/`editor` 요청은 1차 취소 격하(M2 개정 포인트). 기본 내장 툴 실행 자체에는 승인 게이트가 없음(0.84.1 실측) — 툴 실행 중재 필요 시 pi 확장 훅 도입을 M2 에서 검토.
 - **omp — 1차 결정: 런타임 중재 포기, `--approval-mode` 고정** (`runtimePermission: false`). 근거: rpc-ui 모드의 승인이 범용 `extension_ui_request` 다이얼로그로 도착해 텍스트 휴리스틱 파싱이 필요(취약, paseo 도 동일 문제). 세션 생성 시 approvalPolicy 를 spawn 인자로 번역: `mediate → --approval-mode always-ask 불가하므로 write`(보수 프리셋), `auto → yolo`. **`extension_ui_request` 파싱 채택은 보류** — omp 가 전용 승인 프레임을 제공하면 재검토 (COMPAT 여지로 기록).
 - **grok**: ACP `session/request_permission` 의 options 를 그대로 중립 옵션으로 투영 (kind 4종). `allow_always` 의 영속 범위(세션 vs 홈)는 잔여 실측 — 영속이 홈 단위면 GROK_HOME 격리 덕에 번들 데이터로 한정됨.
 - 공통: 미응답 요청은 어댑터가 보관, `getPendingPermissions()` 로 재조회 (FR-1.5). `auto` 정책은 명시적 opt-in (FR-3.4.3)이며 감사 로그에 남긴다.

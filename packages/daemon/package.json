@@ -9,6 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@custom-harness/protocol": "0.1.0"
+    "@custom-harness/protocol": "0.1.0",
+    "ws": "^8.21.3",
+    "zod": "^4.4.3"
   }
 }

@@ -3,7 +3,7 @@
 # 데몬-렌더러 프로토콜 설계 (M0 WBS 0.2)
 
 - 문서 목적: 렌더러(및 CLI)가 데몬과 통신하는 프로토콜의 스키마 구조·진화 규칙·인증을 확정한다. OPEN-4 해소.
-- 상태: approved (v1, 2026-08-25 사용자 승인)
+- 상태: approved (v1.1, 2026-08-25 사용자 승인 — 개정: §2 와이어 전용 `user_message` 이벤트 추가, WBS 1.2 구현 중 발견분)
 - 최종 수정일: 2026-08-25
 - 입력: [어댑터 설계서](./adapter-contract.md), [FR-1.4](../requirements/fr1-harness-sessions.md), [NFR-3/5](../requirements/nfr.md)
 
@@ -17,6 +17,7 @@
 
 - **RPC**: `domain.verb.request` / `.response`, `requestId` 상관. 도메인: `session.*`(create/resume/list/close/prompt/interrupt/permission.respond/model.set), `config.*`(key.set/key.test/get/set), `harness.*`(list/probe), `system.*`(version/shutdown).
 - **이벤트**: FR-1.4 유니온을 그대로 와이어 스키마로 — `turn_*`, `message_delta`, `reasoning_delta`, `tool_execution_*`, `permission_*`, `usage_updated`, `session_status_changed`, `error`. 이벤트에는 `sessionId` + 단조 증가 `seq` 를 부여(재연결 시 갭 감지).
+- **와이어 전용 이벤트 `user_message`** (v1.1 추가): 사용자 메시지 타임라인 행은 데몬(세션 매니저)이 소유·발행한다(데몬 설계 §4). 어댑터 유니온(AgentEvent)에는 없고 와이어 유니온(SessionEvent)에만 존재하는 additive 확장 — `{ type: "user_message", turnId, text }` + 와이어 봉투.
 - **순수성 규칙**: 와이어 스키마에 `.transform()/.catch()/.preprocess()` 금지 — 검증과 변환 분리 (paseo 검증 전략 채택).
 - 어댑터 이벤트(AgentEvent)와 와이어 이벤트는 **동일 스키마를 공유**한다 — 데몬은 sessionId/seq 부여 외 재가공하지 않는다 (이중 정의 드리프트 방지).
 
