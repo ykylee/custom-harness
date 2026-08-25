@@ -118,10 +118,18 @@ class PiSession implements AgentSession {
   }
 
   async startTurn(prompt: string): Promise<{ turnId: string }> {
-    await this.transport.request({ type: 'prompt', message: prompt });
+    // turnId 는 전송 전에 선할당 — 응답과 첫 이벤트가 같은 stdout 청크로 도착하면
+    // 이벤트 처리가 응답 대기 재개(마이크로태스크)보다 먼저 실행되는 경합이 있다
     this.turnCounter += 1;
-    this.activeTurnId = `pi-turn-${this.turnCounter}`;
-    return { turnId: this.activeTurnId };
+    const turnId = `pi-turn-${this.turnCounter}`;
+    this.activeTurnId = turnId;
+    try {
+      await this.transport.request({ type: 'prompt', message: prompt });
+    } catch (error) {
+      this.activeTurnId = undefined;
+      throw error;
+    }
+    return { turnId };
   }
 
   subscribe(listener: (event: AgentEvent) => void): Unsubscribe {

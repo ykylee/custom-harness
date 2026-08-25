@@ -5,10 +5,18 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "custom-harness": "dist/index.js"
+  },
   "scripts": {
     "test": "vitest run"
   },
   "dependencies": {
-    "@custom-harness/protocol": "0.1.0"
+    "@custom-harness/daemon": "0.1.0",
+    "@custom-harness/protocol": "0.1.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }

@@ -18,6 +18,7 @@ export * from './errors.js';
 export * from './gateway/key-store.js';
 export * from './gateway/pi-injection.js';
 export * from './gateway/service.js';
+export * from './launcher.js';
 export * from './paths.js';
 export * from './processes.js';
 export * from './server.js';
@@ -25,10 +26,16 @@ export * from './session-manager.js';
 export * from './store.js';
 export * from './token.js';
 
+export interface AdapterFactoryContext {
+  paths: DaemonPaths;
+  supervisor: ProcessSupervisor;
+}
+
 export interface StartDaemonOptions {
   /** 데이터 루트 — 기본 ~/.custom-harness (CUSTOM_HARNESS_HOME 오버라이드 가능) */
   root?: string;
-  adapters?: AgentAdapter[];
+  /** 배열 또는 팩토리 — 팩토리는 데몬의 paths·supervisor 를 받아 어댑터를 조립 */
+  adapters?: AgentAdapter[] | ((ctx: AdapterFactoryContext) => AgentAdapter[]);
   port?: number;
   version?: string;
   /** daemon.pid 의 소유 구분 (FR-5.2) */
@@ -66,9 +73,13 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
   });
   const keyStore = new KeyStore(paths.credentialsFile, options.secretCipher);
   const gateway = new GatewayService(paths, keyStore);
+  const adapters =
+    typeof options.adapters === 'function'
+      ? options.adapters({ paths, supervisor })
+      : (options.adapters ?? []);
   const manager = new SessionManager({
     store,
-    adapters: options.adapters ?? [],
+    adapters,
     buildEnv: (harness) => gateway.buildEnv(harness),
     ...(options.maxSessions !== undefined ? { maxSessions: options.maxSessions } : {}),
   });
@@ -93,10 +104,12 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
   });
   const { port } = await server.start();
 
+  // port 는 additive 확장 — 셸·CLI 가 접속 지점을 발견하는 경로 (daemon.pid + daemon.token 페어)
   await writeFile(
     paths.pidFile,
     JSON.stringify({
       pid: process.pid,
+      port,
       managedBy: options.managedBy ?? 'standalone',
       bundleVersion: options.bundleVersion ?? null,
     }),

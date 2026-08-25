@@ -4,7 +4,8 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   ...tseslint.configs.recommended,
   {
-    ignores: ['**/dist/**', '**/node_modules/**'],
+    // *.fixture.cjs 는 테스트용 CommonJS 스크립트 — TS 규칙 대상 아님
+    ignores: ['**/dist/**', '**/dist-web/**', '**/node_modules/**', '**/*.fixture.cjs'],
   },
   {
     rules: {

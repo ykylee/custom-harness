@@ -3,12 +3,20 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
     "test": "vitest run"
   },
   "dependencies": {
-    "@custom-harness/protocol": "0.1.0"
+    "@custom-harness/protocol": "0.1.0",
+    "dompurify": "^3.4.14",
+    "marked": "^18.0.11",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "ws": "^8.19.0",
+    "@types/ws": "^8.18.1"
   }
 }

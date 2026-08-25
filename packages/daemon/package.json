@@ -12,5 +12,14 @@
     "@custom-harness/protocol": "0.1.0",
     "ws": "^8.21.3",
     "zod": "^4.4.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./main": "./dist/main.js",
+    "./package.json": "./package.json"
   }
 }

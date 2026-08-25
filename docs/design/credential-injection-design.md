@@ -3,7 +3,7 @@
 # 크리덴셜·설정 주입 설계 (M0 WBS 0.4.1 / 0.4.2 / 0.4.3)
 
 - 문서 목적: 게이트웨이 API 키의 저장 방식과 하네스별 설정 주입 전략을 확정한다. OPEN-2 처리.
-- 상태: approved (v1, 2026-08-25 사용자 승인)
+- 상태: approved (v1.1, 2026-08-25 사용자 승인 — 개정: §1 headless 실측 확정 반영, WBS 1.6 구현 중 실측)
 - 최종 수정일: 2026-08-25
 - 입력: [FR-2](../requirements/fr2-gateway.md), [grok 실측](../reference/grok-integration-paths.md) §3, [데몬 설계](./daemon-design.md)
 
@@ -13,7 +13,7 @@
 
 - 근거: 셸이 Electron 확정이라 추가 의존성 0. 3 OS 커버.
 - **폴백**: `safeStorage.isEncryptionAvailable() === false`(일부 Linux 데스크톱 — libsecret 부재) 시 평문 대신 **파일 권한 0600 + 경고 표기** 저장. 폴백 여부를 doctor(FR-5.3)와 설정 화면에 노출.
-- 데몬이 headless(셸 없이 CLI 기동) 인 경우에도 `ELECTRON_RUN_AS_NODE` 프로세스에서 safeStorage 사용 가능 여부는 **M1 첫 구현 태스크에서 실측** — 불가 시 키 복호화만 셸 경유 IPC 로 위임하는 대안 채택 (개정 포인트).
+- ~~데몬이 headless(셸 없이 CLI 기동) 인 경우에도 `ELECTRON_RUN_AS_NODE` 프로세스에서 safeStorage 사용 가능 여부는 **M1 첫 구현 태스크에서 실측**~~ → **실측 확정 (2026-08-25, v1.1)**: `ELECTRON_RUN_AS_NODE` 에서는 `require('electron')` 이 API 없는 바이너리 경로 문자열만 반환 — 데몬 프로세스에서 safeStorage 직접 사용 불가. **M1 은 0600 폴백으로 확정**(폴백 여부는 설정 화면·doctor 에 노출 — 구현됨), **safeStorage 는 셸 경유 IPC 위임(SecretCipher 주입 인터페이스는 구현 완료)으로 M2 에서 배선**.
 - 키는 어떤 설정 파일·로그에도 평문 기록 금지. 하네스에는 **spawn env 로만 전달** (FR-2.1.4).
 
 ## 2. 하네스별 주입 전략 (0.4.2 — 결정)

@@ -4,12 +4,6 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": [
-    "src"
-  ],
-  "references": [
-    {
-      "path": "../protocol"
-    }
-  ]
+  "include": ["src"],
+  "references": [{ "path": "../protocol" }, { "path": "../daemon" }]
 }
