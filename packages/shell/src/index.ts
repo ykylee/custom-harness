@@ -147,6 +147,9 @@ function createTray(): void {
 }
 
 app.whenReady().then(async () => {
+  // Windows/Linux 는 창 안에 기본 메뉴바(File/Edit…)가 그려진다 — 제품 UI 가 아니므로 제거.
+  // macOS 는 시스템 메뉴바 소속이라 유지 (Cmd+C/V 등 표준 편집 단축키가 메뉴에 의존)
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
   // safeStorage 실측 (credential-injection-design §1): 셸에선 가용, 데몬(RUN_AS_NODE)은 불가 —
   // M1 키 저장은 0600 폴백, safeStorage 위임(IPC)은 M2 개정 포인트.
   console.log('[shell] safeStorage available:', safeStorage.isEncryptionAvailable());

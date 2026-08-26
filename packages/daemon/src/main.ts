@@ -9,8 +9,9 @@
 //   CUSTOM_HARNESS_GROK_PATH   grok 실행 파일 절대 경로 (네이티브 바이너리)
 //   CUSTOM_HARNESS_MANIFEST    번들 manifest.json 절대 경로 (FR-1.8 버전 검증)
 //   전부 없으면 mock 만 등록
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { MockAdapter } from './adapters/mock.js';
 import { PiAdapter } from './adapters/jsonl-rpc/pi.js';
 import { OmpAdapter } from './adapters/jsonl-rpc/omp.js';
@@ -22,9 +23,9 @@ const packageJson = require('../package.json') as { version: string };
 
 async function main(): Promise<void> {
   const piPath = process.env.CUSTOM_HARNESS_PI_PATH;
-  const piEntry = process.env.CUSTOM_HARNESS_PI_ENTRY;
-  const ompPath = process.env.CUSTOM_HARNESS_OMP_PATH;
-  const grokPath = process.env.CUSTOM_HARNESS_GROK_PATH;
+  let piEntry = process.env.CUSTOM_HARNESS_PI_ENTRY;
+  let ompPath = process.env.CUSTOM_HARNESS_OMP_PATH;
+  let grokPath = process.env.CUSTOM_HARNESS_GROK_PATH;
   const manifestPath = process.env.CUSTOM_HARNESS_MANIFEST;
   for (const [name, value] of [
     ['CUSTOM_HARNESS_PI_PATH', piPath],
@@ -37,6 +38,31 @@ async function main(): Promise<void> {
       throw new Error(`${name} 는 절대 경로여야 함: ${value}`); // FR-1.1.1
     }
   }
+  // 하네스 경로 env 미설정 시 manifest 에서 유도 — 번들에서는 manifest 가 동봉물의 SSOT.
+  // (2026-08-26 win 실기기 실측: 래퍼 밖에서 기동된 데몬이 mock 만 등록되는 문제 방어)
+  if (manifestPath !== undefined) {
+    try {
+      const bundleRoot = dirname(manifestPath);
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+        harnesses?: { name?: string; path?: string; entry?: string }[];
+      };
+      for (const h of manifest.harnesses ?? []) {
+        if (h.name === 'pi' && piEntry === undefined && h.entry !== undefined) {
+          piEntry = join(bundleRoot, h.entry);
+        }
+        if (h.name === 'omp' && ompPath === undefined && h.path !== undefined) {
+          ompPath = join(bundleRoot, h.path);
+        }
+        if (h.name === 'grok' && grokPath === undefined && h.path !== undefined) {
+          grokPath = join(bundleRoot, h.path);
+        }
+      }
+    } catch (error) {
+      // 관대 — manifest 훼손 시 env 값만 사용 (doctor 가 별도 진단)
+      console.warn('[daemon] manifest 하네스 경로 유도 실패:', error);
+    }
+  }
+
   const portEnv = process.env.CUSTOM_HARNESS_PORT;
 
   const daemon = await startDaemon({
