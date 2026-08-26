@@ -30,6 +30,10 @@ export function Conversation({
   actions: ConversationActions;
 }): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 자동 스크롤이 유발한 onScroll 을 사용자 조작으로 오인하지 않기 위한 플래그 —
+  // 구분 없이는 스트리밍 중 매 델타의 바닥 강제 이동이 사용자 스크롤(드래그·휠)을
+  // 즉시 되돌려 "스크롤바가 안 움직이는" 경합이 된다 (2026-08-26 win 실기기 보고)
+  const programmaticScroll = useRef(false);
   const [tracking, setTracking] = useState(true);
   const [unseen, setUnseen] = useState(0);
   const running = view.status === 'running';
@@ -38,6 +42,7 @@ export function Conversation({
     const container = scrollRef.current;
     if (!container) return;
     if (tracking) {
+      programmaticScroll.current = true;
       container.scrollTop = container.scrollHeight;
       setUnseen(0);
     } else {
@@ -48,6 +53,10 @@ export function Conversation({
   const onScroll = (): void => {
     const container = scrollRef.current;
     if (!container) return;
+    if (programmaticScroll.current) {
+      programmaticScroll.current = false;
+      return;
+    }
     const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 24;
     setTracking(atBottom);
     if (atBottom) setUnseen(0);
