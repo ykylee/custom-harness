@@ -10,6 +10,7 @@ import { ProcessSupervisor } from './processes.js';
 import { DaemonServer } from './server.js';
 import { SessionManager } from './session-manager.js';
 import { SettingsStore } from './settings.js';
+import { TerminalManager } from './terminals.js';
 import { WorkspaceProvisioning } from './workspaces/registry.js';
 import { SessionStore } from './store.js';
 import { generateToken, removeTokenFile, writeTokenFile } from './token.js';
@@ -69,6 +70,8 @@ export interface DaemonHandle {
   keyStore: KeyStore;
   /** 프로젝트·워크스페이스 레지스트리 (WBS 5.2·5.3) */
   provisioning: WorkspaceProvisioning;
+  /** 데몬 소유 터미널 (WBS 6.3) */
+  terminals: TerminalManager;
   stop(): Promise<void>;
 }
 
@@ -108,6 +111,8 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
       : (options.adapters ?? []);
   // 프로젝트·워크스페이스 레지스트리 (WBS 5.2·5.3) — 레코드 생성의 단일 창구
   const provisioning = new WorkspaceProvisioning(paths);
+  // 데몬 소유 터미널 (WBS 6.3) — 클라이언트가 끊겨도 pty 는 살아 있다
+  const terminals = new TerminalManager();
   const manager = new SessionManager({
     store,
     adapters,
@@ -155,6 +160,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     gateway,
     keyStore,
     provisioning,
+    terminals,
     ...(options.port !== undefined ? { port: options.port } : {}),
     onShutdownRequest: () => void stop(),
   });
@@ -195,6 +201,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     stopped = true;
     // 셧다운 순서: 서버 → 세션 정리 → 프로세스 정리 → 원장·토큰·pid 정리 (daemon-design §3)
     await server.stop();
+    terminals.shutdown();
     await manager.shutdown();
     await supervisor.terminateAll();
     settings.close();
@@ -202,7 +209,18 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     await rm(paths.pidFile, { force: true });
   };
 
-  return { port, token, paths, manager, supervisor, gateway, keyStore, provisioning, stop };
+  return {
+    port,
+    token,
+    paths,
+    manager,
+    supervisor,
+    gateway,
+    keyStore,
+    provisioning,
+    terminals,
+    stop,
+  };
 }
 
 /**

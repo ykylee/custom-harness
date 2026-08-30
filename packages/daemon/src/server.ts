@@ -6,6 +6,10 @@ import { WebSocket, WebSocketServer } from 'ws';
 import {
   ClientMessageSchema,
   PROTOCOL_VERSION,
+  TERMINAL_OPCODE,
+  TERMINAL_SLOT_MAX,
+  decodeTerminalFrame,
+  encodeTerminalFrame,
   type CapabilityFlags,
   type ClientMessage,
   type ServerMessage,
@@ -14,6 +18,7 @@ import { DaemonError, toRpcError } from './errors.js';
 import type { KeyStore } from './gateway/key-store.js';
 import type { GatewayService } from './gateway/service.js';
 import type { SessionManager } from './session-manager.js';
+import type { TerminalManager } from './terminals.js';
 import type { WorkspaceProvisioning } from './workspaces/registry.js';
 
 export interface DaemonServerOptions {
@@ -28,6 +33,8 @@ export interface DaemonServerOptions {
   keyStore?: KeyStore;
   /** project.* / workspace.* 도메인 배선 (WBS 5.2.3·5.3.5) — 미공급 시 unimplemented 응답 */
   provisioning?: WorkspaceProvisioning;
+  /** terminal.* 도메인 배선 (WBS 6.3) — 미공급 시 unimplemented 응답 */
+  terminals?: TerminalManager;
   onShutdownRequest?: () => void;
 }
 
@@ -38,7 +45,16 @@ export class DaemonServer {
   private wss: WebSocketServer | undefined;
   private unsubscribe: (() => void) | undefined;
   private unsubscribeRegistry: (() => void) | undefined;
+  private unsubscribeTerminals: (() => void) | undefined;
   private readonly helloDone = new WeakSet<WebSocket>();
+  /**
+   * 연결별 터미널 슬롯 — 바이너리 프레임의 1바이트 핸들이 어느 터미널인지.
+   * 연결이 끊기면 통째로 사라진다(재접속은 다시 attach 해서 새 슬롯을 받는다).
+   */
+  private readonly slots = new WeakMap<
+    WebSocket,
+    { bySlot: Map<number, string>; bySession: Map<string, { slot: number; detach: () => void }> }
+  >();
 
   constructor(private readonly options: DaemonServerOptions) {}
 
@@ -57,9 +73,15 @@ export class DaemonServer {
         ws.close(CLOSE_UNAUTHORIZED, 'unauthorized');
         return;
       }
-      ws.on('message', (data) => {
+      ws.on('message', (data, isBinary) => {
+        if (isBinary) {
+          // 터미널 입력 — 스키마 검증 밖의 별도 채널 (protocol-design v1.2 §1)
+          this.onBinaryFrame(ws, new Uint8Array(data as Buffer));
+          return;
+        }
         void this.onFrame(ws, String(data));
       });
+      ws.on('close', () => this.releaseSlots(ws));
     });
 
     // 매니저 이벤트 → hello 완료 연결 전체에 브로드캐스트
@@ -73,6 +95,9 @@ export class DaemonServer {
     this.unsubscribe = this.options.manager.onEvent(broadcast);
     // 레지스트리 변경도 같은 경로로 — 클라이언트는 신호를 받고 목록을 다시 읽는다
     this.unsubscribeRegistry = this.options.provisioning?.onChange(broadcast);
+    this.unsubscribeTerminals = this.options.terminals?.onChange((reason, terminal) =>
+      broadcast({ type: 'terminal_changed', reason, terminal }),
+    );
 
     await new Promise<void>((resolve, reject) => {
       wss.once('listening', resolve);
@@ -84,6 +109,7 @@ export class DaemonServer {
   async stop(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribeRegistry?.();
+    this.unsubscribeTerminals?.();
     const wss = this.wss;
     if (!wss) return;
     for (const client of wss.clients) client.close(1001, 'daemon shutdown');
@@ -98,6 +124,91 @@ export class DaemonServer {
 
   private send(ws: WebSocket, message: ServerMessage): void {
     ws.send(JSON.stringify(message));
+  }
+
+  /** hello 를 마친 연결에만 터미널 채널을 연다 */
+  private onBinaryFrame(ws: WebSocket, data: Uint8Array): void {
+    if (!this.helloDone.has(ws)) return;
+    const frame = decodeTerminalFrame(data);
+    // 미지 opcode·길이 부족은 조용히 버린다 (관대 파싱, NFR-5)
+    if (!frame || frame.opcode !== TERMINAL_OPCODE.input) return;
+    const terminalId = this.slots.get(ws)?.bySlot.get(frame.slot);
+    if (terminalId === undefined) return; // 끊어진 슬롯으로 온 입력
+    this.options.terminals?.write(terminalId, frame.payload);
+  }
+
+  private releaseSlots(ws: WebSocket): void {
+    const table = this.slots.get(ws);
+    if (!table) return;
+    for (const entry of table.bySession.values()) entry.detach();
+    this.slots.delete(ws);
+  }
+
+  /**
+   * 슬롯을 배정하고 출력 구독을 연다. 스크롤백과 구독은 매니저가 한 번에 주므로
+   * 그 사이 출력이 새지 않는다 (workbench-tabs §2.5).
+   */
+  private attachTerminal(
+    ws: WebSocket,
+    terminals: TerminalManager,
+    params: { terminalId: string; cols: number; rows: number },
+  ): { slot: number; scrollback: string; truncated: boolean } {
+    if (terminals.find(params.terminalId) === undefined) {
+      throw new DaemonError('not_found', `터미널 없음: ${params.terminalId}`);
+    }
+    const table = this.slots.get(ws) ?? { bySlot: new Map(), bySession: new Map() };
+    this.slots.set(ws, table);
+
+    // 이미 붙어 있으면 슬롯을 재사용한다 — 중복 구독으로 출력이 두 번 가지 않게
+    const existing = table.bySession.get(params.terminalId);
+    if (existing) existing.detach();
+
+    const slot = existing?.slot ?? this.nextSlot(table);
+    if (slot === undefined) {
+      throw new DaemonError(
+        'bad_request',
+        `이 연결의 터미널 슬롯이 가득 참 (최대 ${TERMINAL_SLOT_MAX + 1}개)`,
+      );
+    }
+    const attached = terminals.attach(params.terminalId, (chunk) => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(encodeTerminalFrame({ opcode: TERMINAL_OPCODE.output, slot, payload: chunk }), {
+        binary: true,
+      });
+    });
+    if (!attached) throw new DaemonError('not_found', `터미널 없음: ${params.terminalId}`);
+
+    table.bySlot.set(slot, params.terminalId);
+    table.bySession.set(params.terminalId, { slot, detach: attached.detach });
+    terminals.resize(params.terminalId, params.cols, params.rows);
+
+    return {
+      slot,
+      scrollback: Buffer.from(attached.scrollback).toString('base64'),
+      truncated: attached.truncated,
+    };
+  }
+
+  private detachTerminal(ws: WebSocket, terminalId: string): void {
+    const table = this.slots.get(ws);
+    const entry = table?.bySession.get(terminalId);
+    if (!table || !entry) return;
+    entry.detach();
+    table.bySlot.delete(entry.slot);
+    table.bySession.delete(terminalId);
+  }
+
+  private nextSlot(table: { bySlot: Map<number, string> }): number | undefined {
+    for (let slot = 0; slot <= TERMINAL_SLOT_MAX; slot += 1) {
+      if (!table.bySlot.has(slot)) return slot;
+    }
+    return undefined;
+  }
+
+  private requireTerminals(): TerminalManager {
+    const { terminals } = this.options;
+    if (!terminals) throw new DaemonError('unimplemented', 'terminal 도메인이 배선되지 않음');
+    return terminals;
   }
 
   private async onFrame(ws: WebSocket, raw: string): Promise<void> {
@@ -126,7 +237,13 @@ export class DaemonServer {
         type: 'hello.response',
         protocolVersion: PROTOCOL_VERSION,
         serverInfo: { name: 'custom-harness-daemon', version: this.options.serverVersion },
-        features: this.options.features ?? {},
+        features: {
+          // 터미널 바이너리 프레임은 배선됐을 때만 광고한다 — 플래그가 없으면 클라이언트는
+          // 기능을 숨긴다(폴백 경로 금지, protocol-design §3)
+          ...(this.options.terminals !== undefined ? { terminalBinaryFrames: true } : {}),
+          ...(this.options.provisioning !== undefined ? { workspaces: true } : {}),
+          ...this.options.features,
+        },
       });
       return;
     }
@@ -167,7 +284,7 @@ export class DaemonServer {
   ): Promise<void> {
     const responseType = message.type.replace(/\.request$/, '.response');
     try {
-      const result = await this.handle(message);
+      const result = await this.handle(ws, message);
       ws.send(
         JSON.stringify({ type: responseType, requestId: message.requestId, ok: true, result }),
       );
@@ -184,6 +301,7 @@ export class DaemonServer {
   }
 
   private async handle(
+    ws: WebSocket,
     message: Exclude<ClientMessage, { type: 'hello' | 'ping' | 'pong' }>,
   ): Promise<unknown> {
     const { manager } = this.options;
@@ -266,6 +384,46 @@ export class DaemonServer {
       }
       case 'harness.probe.request':
         return { probe: await manager.probeHarness(message.params.harness) };
+      case 'terminal.create.request': {
+        const terminals = this.requireTerminals();
+        const { provisioning } = this.options;
+        const workspace = await provisioning?.workspaces.find(message.params.workspaceId);
+        if (!workspace) {
+          throw new DaemonError('not_found', `워크스페이스 없음: ${message.params.workspaceId}`);
+        }
+        return {
+          terminal: terminals.create({
+            workspaceId: workspace.id,
+            cwd: workspace.cwd,
+            cols: message.params.cols,
+            rows: message.params.rows,
+            ...(message.params.shell !== undefined ? { shell: message.params.shell } : {}),
+          }),
+        };
+      }
+      case 'terminal.list.request': {
+        const terminals = this.requireTerminals();
+        return { terminals: terminals.list(message.params.workspaceId) };
+      }
+      case 'terminal.attach.request': {
+        const terminals = this.requireTerminals();
+        return this.attachTerminal(ws, terminals, message.params);
+      }
+      case 'terminal.detach.request': {
+        this.requireTerminals();
+        this.detachTerminal(ws, message.params.terminalId);
+        return {};
+      }
+      case 'terminal.resize.request': {
+        const terminals = this.requireTerminals();
+        terminals.resize(message.params.terminalId, message.params.cols, message.params.rows);
+        return {};
+      }
+      case 'terminal.kill.request': {
+        const terminals = this.requireTerminals();
+        terminals.kill(message.params.terminalId);
+        return {};
+      }
       case 'system.version.request':
         return { version: this.options.serverVersion, protocolVersion: PROTOCOL_VERSION };
       case 'system.shutdown.request':

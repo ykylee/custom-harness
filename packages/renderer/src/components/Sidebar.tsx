@@ -38,6 +38,7 @@ export interface SidebarActions {
   openSettings(): void;
   selectWorkspace(workspaceId: string): void;
   newWorkspace(): void;
+  newTerminal(): void;
   archiveWorkspace(workspaceId: string): void;
   runSetup(workspaceId: string): void;
 }
@@ -277,6 +278,13 @@ export function Sidebar({
         </button>
         <button className="new-workspace" onClick={() => actions.newWorkspace()}>
           + 워크스페이스
+        </button>
+        <button
+          className="new-terminal"
+          data-testid="new-terminal"
+          onClick={() => actions.newTerminal()}
+        >
+          + 터미널
         </button>
         <button className="settings-link" onClick={() => actions.openSettings()}>
           설정

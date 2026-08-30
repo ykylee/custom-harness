@@ -6,15 +6,19 @@ import {
   PROTOCOL_VERSION,
   ServerMessageSchema,
   type HelloResponse,
+  decodeTerminalFrame,
   type RegistryEvent,
   type SessionEvent,
+  type TerminalEvent,
+  type TerminalFrame,
 } from '@custom-harness/protocol';
 
 export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed';
 
 /** 브라우저 WebSocket 최소 표면 — 테스트에서 node `ws` 주입 가능 */
 interface WebSocketLike {
-  send(data: string): void;
+  send(data: string | Uint8Array): void;
+  binaryType?: string;
   close(): void;
   onopen: ((event: unknown) => void) | null;
   onclose: ((event: unknown) => void) | null;
@@ -54,7 +58,7 @@ export class RpcFailure extends Error {
  * 데몬이 보내는 비동기 이벤트 — 세션 이벤트(sessionId·seq 봉투)와
  * 레지스트리 이벤트(프로젝트·워크스페이스 변경 신호)를 함께 받는다.
  */
-export type DaemonEvent = SessionEvent | RegistryEvent;
+export type DaemonEvent = SessionEvent | RegistryEvent | TerminalEvent;
 
 export class DaemonClient {
   private ws: WebSocketLike | undefined;
@@ -65,6 +69,7 @@ export class DaemonClient {
   private readonly pending = new Map<string, PendingRpc>();
   private readonly stateListeners = new Set<(state: ConnectionState) => void>();
   private readonly eventListeners = new Set<(event: DaemonEvent) => void>();
+  private readonly terminalListeners = new Set<(frame: TerminalFrame) => void>();
   private readonly reconnectListeners = new Set<() => void>();
   private helloResponse: HelloResponse | undefined;
   private everConnected = false;
@@ -86,6 +91,24 @@ export class DaemonClient {
   onState(listener: (state: ConnectionState) => void): () => void {
     this.stateListeners.add(listener);
     return () => this.stateListeners.delete(listener);
+  }
+
+  /** 터미널 출력 구독 — 프레임 단위(슬롯 포함)로 그대로 넘긴다 */
+  onTerminalData(listener: (frame: TerminalFrame) => void): () => void {
+    this.terminalListeners.add(listener);
+    return () => this.terminalListeners.delete(listener);
+  }
+
+  /** 터미널 입력 — 연결이 없으면 조용히 버린다(재연결 후 다시 attach 한다) */
+  sendTerminalFrame(frame: Uint8Array): void {
+    if (this.ws === undefined || this.state !== 'connected') return;
+    this.ws.send(frame);
+  }
+
+  private onBinary(data: Uint8Array): void {
+    const frame = decodeTerminalFrame(data);
+    if (!frame) return; // 미지 opcode·길이 부족은 조용히 버린다
+    for (const listener of this.terminalListeners) listener(frame);
   }
 
   onEvent(listener: (event: DaemonEvent) => void): () => void {
@@ -137,6 +160,7 @@ export class DaemonClient {
     const ws = factory(this.options.url, [this.options.token]);
     this.ws = ws;
 
+    ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       ws.send(
         JSON.stringify({
@@ -147,7 +171,19 @@ export class DaemonClient {
         }),
       );
     };
-    ws.onmessage = (event) => this.onMessage(String(event.data));
+    ws.onmessage = (event) => {
+      // 바이너리는 터미널 채널 — JSON 파서를 태우지 않는다 (protocol-design v1.2 §1)
+      const data = event.data;
+      if (data instanceof ArrayBuffer) {
+        this.onBinary(new Uint8Array(data));
+        return;
+      }
+      if (ArrayBuffer.isView(data)) {
+        this.onBinary(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+        return;
+      }
+      this.onMessage(String(data));
+    };
     ws.onerror = () => {
       // onclose 가 이어서 온다 — 재연결은 거기서
     };

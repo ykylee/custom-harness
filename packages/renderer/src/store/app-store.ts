@@ -9,10 +9,22 @@ import type {
   ProbeResult,
   Project,
   SessionSummary,
+  Terminal,
   Workspace,
   WorkspaceSetupState,
 } from '@custom-harness/protocol';
 import type { ConnectionState, DaemonClient } from '../ws/client.js';
+import {
+  closeTab as closeTabIn,
+  emptyLayout,
+  openTab,
+  restoreLayout as restoreLayoutFrom,
+  setActiveTab as setActiveTabIn,
+  setSplit as setSplitIn,
+  targetOf,
+  type LayoutState,
+  type TabTarget,
+} from '../workbench/tabs.js';
 import { applyEvent, applyEvents, emptySessionView, type SessionView } from '../timeline.js';
 import { Store } from './store.js';
 
@@ -29,15 +41,7 @@ export interface KeyState {
   fallback: boolean;
 }
 
-/** 탭 + 분할 페인 배치 (FR-3.3.2) — 1차는 2분할까지 */
-export interface LayoutState {
-  /** 열린 탭(세션 ID) 순서 — 탭 닫기는 세션 종료가 아니다 (FR-3.3.3) */
-  tabs: string[];
-  /** 포커스 탭 (주 페인) */
-  active: string | null;
-  /** 분할 시 보조 페인 세션 — row = 좌우, column = 상하 */
-  split: { direction: 'row' | 'column'; secondary: string } | null;
-}
+export type { LayoutState, TabTarget } from '../workbench/tabs.js';
 
 export interface AppState {
   connection: ConnectionState;
@@ -53,8 +57,11 @@ export interface AppState {
   /** 세션을 만들 대상 워크스페이스 — localStorage 영속 */
   activeWorkspaceId: string | null;
   sessions: SessionSummary[];
-  layout: LayoutState;
+  /** 워크스페이스별 배치 (workbench-tabs §1.3) — 워크스페이스를 바꾸면 그 배치가 돌아온다 */
+  layouts: Record<string, LayoutState>;
   views: Record<string, SessionView>;
+  /** 데몬 소유 터미널 목록 (WBS 6.3) */
+  terminals: Terminal[];
   /** 세션 한정 자동 승인 opt-in (FR-3.4.3) — 렌더러 수명, 영속화하지 않는다 */
   autoApprove: Record<string, boolean>;
   /** 네이티브 알림 on/off (FR-3.5.2) — localStorage 영속 */
@@ -108,8 +115,9 @@ export function initialAppState(): AppState {
     workspaces: [],
     activeWorkspaceId: loadPersisted<string>(WORKSPACE_KEY) ?? null,
     sessions: [],
-    layout: { tabs: [], active: null, split: null },
+    layouts: {},
     views: {},
+    terminals: [],
     autoApprove: {},
     notificationsEnabled: loadPersisted<boolean>(NOTIFICATIONS_KEY) ?? true,
     probes: {},
@@ -120,6 +128,9 @@ export function initialAppState(): AppState {
 /** DaemonClient 의 컨트롤러 사용 표면 — 테스트 fake 주입 지점 */
 export interface DaemonTransport {
   rpc(type: string, params?: Record<string, unknown>): Promise<unknown>;
+  /** 터미널 바이너리 채널 (WBS 6.3) — 배선되지 않은 전송(테스트 fake)에서는 없을 수 있다 */
+  onTerminalData?: DaemonClient['onTerminalData'];
+  sendTerminalFrame?: DaemonClient['sendTerminalFrame'];
   onEvent(listener: Parameters<DaemonClient['onEvent']>[0]): () => void;
   onState(listener: (state: ConnectionState) => void): () => void;
   onReconnected(listener: () => void): () => void;
@@ -147,6 +158,10 @@ export class AppController {
         void this.refreshWorkspaces();
         return;
       }
+      if (event.type === 'terminal_changed') {
+        void this.refreshTerminals();
+        return;
+      }
       this.store.set((prev) => {
         const view = prev.views[event.sessionId] ?? emptySessionView();
         return { ...prev, views: { ...prev.views, [event.sessionId]: applyEvent(view, event) } };
@@ -165,6 +180,19 @@ export class AppController {
     client.onReconnected(() => void this.resync());
   }
 
+  /** 터미널 뷰가 쓰는 전송 표면 — 바이너리 채널까지 포함한다 */
+  get terminalTransport(): {
+    rpc: DaemonTransport['rpc'];
+    onTerminalData: NonNullable<DaemonTransport['onTerminalData']>;
+    sendTerminalFrame: NonNullable<DaemonTransport['sendTerminalFrame']>;
+  } {
+    return {
+      rpc: (type, params) => this.client.rpc(type, params),
+      onTerminalData: (listener) => this.client.onTerminalData?.(listener) ?? (() => undefined),
+      sendTerminalFrame: (frame) => this.client.sendTerminalFrame?.(frame),
+    };
+  }
+
   start(): void {
     this.client.start();
   }
@@ -180,6 +208,7 @@ export class AppController {
       await this.refreshHarnesses();
       await this.refreshRegistries();
       await this.refreshSessions();
+      await this.refreshTerminals();
       this.restoreLayout();
       const { gateway, keyState } = this.store.get();
       this.store.set({
@@ -195,11 +224,12 @@ export class AppController {
   async resync(): Promise<void> {
     try {
       await this.refreshSessions();
-      const { layout } = this.store.get();
-      const open = [layout.active, layout.split?.secondary].filter(
-        (id): id is string => id !== null && id !== undefined,
-      );
-      for (const sessionId of open) await this.syncTimelineGap(sessionId);
+      await this.refreshTerminals();
+      // 열린 세션 페인의 타임라인 갭만 회수한다. 터미널은 재연결 후 뷰가 다시 attach 한다
+      for (const tabId of this.openTabIds()) {
+        const target = targetOf(this.layout, tabId);
+        if (target?.kind === 'session') await this.syncTimelineGap(target.sessionId);
+      }
     } catch (error) {
       this.reportError(error);
     }
@@ -270,6 +300,41 @@ export class AppController {
       if (active !== prev.activeWorkspaceId) persist(WORKSPACE_KEY, active);
       return { ...prev, workspaces, activeWorkspaceId: active };
     });
+  }
+
+  // ── 터미널 (WBS 6.3) ──────────────────────────────────────────────────────
+
+  async refreshTerminals(): Promise<void> {
+    try {
+      const result = (await this.client.rpc('terminal.list')) as { terminals?: Terminal[] };
+      this.store.set({ terminals: result.terminals ?? [] });
+    } catch {
+      this.store.set({ terminals: [] }); // 터미널 미배선 데몬에서도 나머지 화면은 살린다
+    }
+  }
+
+  /** 터미널을 만들고 바로 탭으로 연다 */
+  async createTerminal(cols = 80, rows = 24): Promise<void> {
+    const workspaceId = this.store.get().activeWorkspaceId;
+    if (workspaceId === null) return;
+    try {
+      const result = (await this.client.rpc('terminal.create', { workspaceId, cols, rows })) as {
+        terminal: Terminal;
+      };
+      await this.refreshTerminals();
+      this.openTarget({ kind: 'terminal', terminalId: result.terminal.id });
+    } catch (error) {
+      this.reportError(error);
+    }
+  }
+
+  async killTerminal(terminalId: string): Promise<void> {
+    try {
+      await this.client.rpc('terminal.kill', { terminalId });
+      await this.refreshTerminals();
+    } catch (error) {
+      this.reportError(error);
+    }
   }
 
   selectWorkspace(workspaceId: string): void {
@@ -367,32 +432,66 @@ export class AppController {
     this.store.set({ route });
   }
 
-  // ── 탭·분할 레이아웃 (FR-3.3.2/3, WBS 2.4.2) ─────────────────────────────
+  // ── 탭·분할 레이아웃 (FR-3.3.2/3, WBS 6.2) ───────────────────────────────
+
+  /** 활성 워크스페이스의 배치. 워크스페이스가 없으면 빈 배치를 준다 */
+  get layout(): LayoutState {
+    const state = this.store.get();
+    const key = state.activeWorkspaceId;
+    return (key !== null ? state.layouts[key] : undefined) ?? emptyLayout();
+  }
 
   private setLayout(mutate: (layout: LayoutState) => LayoutState): void {
     this.store.set((prev) => {
-      const layout = mutate(prev.layout);
-      persist(LAYOUT_KEY, layout);
-      return { ...prev, layout };
+      const key = prev.activeWorkspaceId;
+      if (key === null) return prev; // 워크스페이스 없이는 배치가 성립하지 않는다
+      const layouts = { ...prev.layouts, [key]: mutate(prev.layouts[key] ?? emptyLayout()) };
+      persist(LAYOUT_KEY, layouts);
+      return { ...prev, layouts };
     });
   }
 
+  /**
+   * 배치 복원 — 살아 있지 않은 타깃은 조용히 버린다.
+   * 구형(문자열 세션 ID 배열) 배치는 활성 워크스페이스로 1회 이관한다 (workbench-tabs §1.4).
+   */
   private restoreLayout(): void {
-    const saved = loadPersisted<LayoutState>(LAYOUT_KEY);
-    if (!saved) return;
-    const alive = new Set(this.store.get().sessions.map((s) => s.sessionId));
-    const tabs = (saved.tabs ?? []).filter((id) => alive.has(id));
-    const active =
-      saved.active !== null && alive.has(saved.active) ? saved.active : (tabs[0] ?? null);
-    const split =
-      saved.split && alive.has(saved.split.secondary) && saved.split.secondary !== active
-        ? saved.split
-        : null;
-    this.setLayout(() => ({ tabs, active, split }));
-    // 복원된 페인 타임라인 적재
-    for (const id of [active, split?.secondary]) {
-      if (id !== null && id !== undefined) void this.loadTimeline(id);
+    const saved = loadPersisted<Record<string, unknown>>(LAYOUT_KEY);
+    if (saved === undefined) return;
+    const state = this.store.get();
+    const alive = {
+      sessionIds: new Set(state.sessions.map((session) => session.sessionId)),
+      terminalIds: new Set(state.terminals.map((terminal) => terminal.id)),
+    };
+    // 구형은 { tabs, active, split } 단일 배치 — 새 형식은 워크스페이스 id 로 키가 잡힌다
+    const isLegacySingle = Array.isArray((saved as { tabs?: unknown }).tabs);
+    const layouts: Record<string, LayoutState> = {};
+    if (isLegacySingle) {
+      if (state.activeWorkspaceId !== null) {
+        layouts[state.activeWorkspaceId] = restoreLayoutFrom(saved, alive);
+      }
+    } else {
+      for (const [workspaceId, value] of Object.entries(saved)) {
+        layouts[workspaceId] = restoreLayoutFrom(value, alive);
+      }
     }
+    this.store.set({ layouts });
+    persist(LAYOUT_KEY, layouts);
+    for (const id of this.openTabIds()) void this.loadTabContent(id);
+  }
+
+  /** 현재 화면에 떠 있는 탭(주·보조 페인) */
+  private openTabIds(): string[] {
+    const layout = this.layout;
+    return [layout.active, layout.split?.secondary].filter(
+      (id): id is string => id !== null && id !== undefined,
+    );
+  }
+
+  /** 탭 타깃별 적재 — 세션은 타임라인, 그 외는 아직 없다 */
+  private async loadTabContent(tabId: string): Promise<void> {
+    const target = targetOf(this.layout, tabId);
+    if (target?.kind === 'session') await this.loadTimeline(target.sessionId);
   }
 
   /** 탭으로 열기 — 목록·재개 공용 진입점 */
@@ -402,18 +501,25 @@ export class AppController {
       await this.client.rpc('session.resume', { sessionId });
       await this.refreshSessions();
     }
-    this.setLayout((layout) => ({
-      ...layout,
-      tabs: layout.tabs.includes(sessionId) ? layout.tabs : [...layout.tabs, sessionId],
-      active: sessionId,
-    }));
+    // 세션이 다른 워크스페이스 소속이면 그쪽으로 옮겨서 연다 — 배치가 워크스페이스 단위라서다
+    if (
+      summary?.workspaceId !== undefined &&
+      summary.workspaceId !== this.store.get().activeWorkspaceId
+    ) {
+      this.selectWorkspace(summary.workspaceId);
+    }
+    this.openTarget({ kind: 'session', sessionId });
     await this.loadTimeline(sessionId);
   }
 
-  setActiveTab(sessionId: string): void {
-    this.setLayout((layout) =>
-      layout.tabs.includes(sessionId) ? { ...layout, active: sessionId } : layout,
-    );
+  /** 임의 타깃을 탭으로 연다 (WBS 6.2.1) */
+  openTarget(target: TabTarget): void {
+    this.setLayout((layout) => openTab(layout, target));
+  }
+
+  setActiveTab(tabId: string): void {
+    this.setLayout((layout) => setActiveTabIn(layout, tabId));
+    void this.loadTabContent(tabId);
   }
 
   /** 새 세션 뷰 — 활성 탭 해제 (탭은 유지) */
@@ -422,36 +528,23 @@ export class AppController {
     this.setLayout((layout) => ({ ...layout, active: null }));
   }
 
-  /** 탭 닫기 — 세션은 데몬에 유지 (FR-3.3.3) */
-  closeTab(sessionId: string): void {
-    this.setLayout((layout) => {
-      const tabs = layout.tabs.filter((id) => id !== sessionId);
-      const split = layout.split?.secondary === sessionId ? null : layout.split;
-      const active =
-        layout.active === sessionId
-          ? (tabs[Math.min(layout.tabs.indexOf(sessionId), tabs.length - 1)] ?? null)
-          : layout.active;
-      return { tabs, active, split };
-    });
+  /** 탭 닫기 — 대상(세션·터미널)의 수명과 무관한 레이아웃 변경이다 (FR-8.1) */
+  closeTab(tabId: string): void {
+    this.setLayout((layout) => closeTabIn(layout, tabId));
   }
 
   /** 명시적 세션 종료 (FR-3.3.3) — 하네스 프로세스 정리, 이력은 유지(재개 가능) */
   async closeSession(sessionId: string): Promise<void> {
     await this.client.rpc('session.close', { sessionId });
-    this.closeTab(sessionId);
+    this.closeTab(`session:${sessionId}`);
     await this.refreshSessions();
   }
 
   /** 분할 토글 — secondary 미지정 시 active 외 첫 탭 (없으면 무시) */
   setSplit(direction: 'row' | 'column' | null, secondary?: string): void {
-    this.setLayout((layout) => {
-      if (direction === null) return { ...layout, split: null };
-      const candidate = secondary ?? layout.tabs.find((id) => id !== layout.active);
-      if (candidate === undefined || candidate === layout.active) return { ...layout, split: null };
-      return { ...layout, split: { direction, secondary: candidate } };
-    });
-    const target = this.store.get().layout.split?.secondary;
-    if (target !== undefined) void this.loadTimeline(target);
+    this.setLayout((layout) => setSplitIn(layout, direction, secondary));
+    const target = this.layout.split?.secondary;
+    if (target !== undefined) void this.loadTabContent(target);
   }
 
   private async loadTimeline(sessionId: string): Promise<void> {
@@ -488,11 +581,7 @@ export class AppController {
         [session.sessionId]: prev.views[session.sessionId] ?? emptySessionView(session.status),
       },
     }));
-    this.setLayout((layout) => ({
-      ...layout,
-      tabs: [...layout.tabs, session.sessionId],
-      active: session.sessionId,
-    }));
+    this.openTarget({ kind: 'session', sessionId: session.sessionId });
     await this.refreshSessions();
   }
 
@@ -551,8 +640,12 @@ export class AppController {
   private maybeNotify(sessionId: string, title: string, body: string): void {
     const state = this.store.get();
     if (!state.notificationsEnabled) return;
-    const isVisible =
-      state.layout.active === sessionId || state.layout.split?.secondary === sessionId;
+    const layout = this.layout;
+    const visibleSessions = [layout.active, layout.split?.secondary]
+      .map((id) => targetOf(layout, id))
+      .filter((target) => target?.kind === 'session')
+      .map((target) => (target as { sessionId: string }).sessionId);
+    const isVisible = visibleSessions.includes(sessionId);
     const windowFocused = typeof document !== 'undefined' && document.hasFocus();
     if (isVisible && windowFocused) return;
     if (typeof Notification === 'undefined') return; // 테스트·비지원 환경
@@ -601,7 +694,7 @@ export class AppController {
     this.store.set({ lastError: null });
   }
 
-  private reportError(error: unknown): void {
+  reportError(error: unknown): void {
     this.store.set({ lastError: error instanceof Error ? error.message : String(error) });
   }
 }

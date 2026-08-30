@@ -4,7 +4,7 @@
 
 - 문서 목적: 로드맵 WBS 기준 진척 현황의 단일 보드. 모든 작업은 여기 등재된 WBS ID 로 추적한다.
 - 갱신 규칙: 작업 상태 변화 시마다 갱신 (planned / in_progress / blocked / done). 계획 변경 발생 시 원 문서(ROADMAP·roadmap/·REQUIREMENTS 등) 동기화 후 여기 비고에 링크.
-- 최종 수정일: 2026-08-30 (**M5 전 구간 완료** — WP5.0~5.7)
+- 최종 수정일: 2026-08-30 (M5 완료 / M6 착수 — 설계·탭 모델·터미널 완료)
 
 ## 신설 마일스톤: M5~M7 — paseo 서비스 도입 웨이브 (2026-08-30 승인)
 
@@ -41,7 +41,15 @@
 | 5.7.1 | 정합화 불변식 테스트 | done | 2026-08-30 — 식별자·cwd·표시 이름 불변, 형제 워크스페이스 독립성, 아카이브 부활 금지 |
 | 5.7.2 | worktree 수명주기 e2e | done | 2026-08-30 — 생성→setup(신뢰 확인)→아카이브→teardown→체크아웃·git 원장 정리. 작업 브랜치의 미커밋 설정 변경이 실행 경로에 새 나가지 않음을 포함 |
 | 5.7.3 | 회귀 (테스트·번들·NFR-1) | done | 2026-08-30 — 테스트 279건·typecheck·lint·format 그린. **NFR-1 스모크가 실 결함 1건 검출**: omp 17.3.8 이 lm-studio/ollama/llama.cpp/vllm 을 내장 프로바이더로 자동 탐지해 로컬 `:1234`(LM Studio)에 접속 — 게이트웨이 우회 통로. models.yml 에 해당 id 를 도달 불가 루프백으로 **선점**해 차단(사용자가 이미 설정한 id 는 보존, 그런 항목은 FR-2.5 경계 검사가 경고). 스모크 도구도 개선: 위반 시 소유 프로세스(COMMAND/PID) 표기. 적용 후 NFR-1 PASS |
-| 6.* | 탭 다형화·터미널·파일·diff·스크립트 | planned | **M5 완료 — 착수 가능**. 6.1.2 는 M0 0.2.4(바이너리 프레임 불채택) 재개정 |
+| 6.1.1~6.1.3 | 탭·레이아웃 모델 + 터미널 전송 설계·승인 | done | 2026-08-30 — [workbench-tabs.md](../design/workbench-tabs.md) approved. E-1 node-pty prebuilt / E-2 스크롤백 256KiB / E-3 기본 셸(POSIX `$SHELL`·Windows PowerShell) 확정 |
+| (개정) | protocol-design v1.2 — 바이너리 프레임 채택 | done | 2026-08-30 사용자 승인 — M0 0.2.4 는 "필요 시점에 capability 로 추가"를 함께 남긴 결정이라 **방향 전환이 아니라 그 조항의 발동**. 와이어 버전 불변, `features.terminalBinaryFrames` 로 협상(없으면 기능 숨김) |
+| 6.3.0 | node-pty prebuilt 성립 스파이크 | done | 2026-08-30 — `@lydell/node-pty` 는 N-API 라 **같은 prebuilt 가 Node ABI 141·Electron ABI 149 에서 동일 동작**(실측). 3 OS prebuilt 전부 레지스트리 조달 가능(integrity 고정). Electron 재빌드 불필요 = 서명 절차 영향 최소 |
+| 6.2.1~6.2.3 | 탭 타깃 일반화 | done | 2026-08-30 — `workbench/tabs.ts` 순수 모듈(타깃 6종·결정적 id·열기/닫기/분할/복원). 구형 배치(문자열 세션 ID)는 읽어서 이관하고 저장은 새 형식. **배치는 워크스페이스 단위**로 보존한다. 탭 닫기 = 레이아웃 변경(대상 수명과 무관) |
+| 6.3.1~6.3.4 | 터미널 (데몬 pty·바이너리 전송·복원·UI) | done | 2026-08-30 — `TerminalManager`(pty 소유·256KiB 링 버퍼·다중 구독), 서버 바이너리 채널(연결별 슬롯 테이블·끊김 시 해제), `terminal.*` RPC 6종 + `terminal_changed`, xterm 뷰(언마운트=detach). **attach 는 스냅샷+구독을 한 번에** 주어 사이 출력이 새지 않는다 |
+| 6.3.5 | 폐쇄망 보안 검토 | done | 2026-08-30 — workbench-tabs §4: 하네스와 같은 권한 수준이라 권한 상승은 아니나 생성·종료를 로그에 남기고(입력은 로깅하지 않음) 설정으로 전체 비활성 가능하게 설계 기록 |
+| 6.7.2 | 번들 오프라인 성립 검증 | done | 2026-08-30 — sources.json 에 node-pty 본체·3 OS prebuilt 고정(npm integrity), 빌드가 레지스트리에서 직접 조달(호스트 한 대로 3 OS 조립). NOTICE 에 고지 2행 추가. 3 OS 재조립: darwin 207.9MB(+2.2) / linux 309.2MB(+0.3) / win 266.2MB(+3.4). **`npm run smoke:terminal` 신설** — 번들 Electron 에서 pty 왕복 PASS(개발 트리가 아니라 동봉 prebuilt 를 쓰는지 확인) |
+| 6.7.3 | 회귀 | done | 2026-08-30 — 테스트 310건·typecheck·lint·format 그린, NFR-1 스모크 PASS |
+| 6.4~6.6, 6.7.1 | 파일·diff·스크립트·터미널 부하 | planned | 탭 모델은 이미 이 타깃들을 받아들인다(플레이스홀더 페인) |
 | 7.* | 주의 상태·역방향 툴·서브에이전트·검색·CLI 자동화 | planned | **M5 완료 — 착수 가능**. 7.2.1(하네스 MCP 실측)은 선행 게이트 |
 
 ## M3 — 선행 착수 (M2 완료 선언 전 사외 가능분)

@@ -30,7 +30,10 @@
   "grok": {
     "version": "1.0.5",
     "assets": {
-      "darwin-arm64": { "localFile": "~/.grok/bin/grok", "binaryName": "grok" },
+      "darwin-arm64": {
+        "localFile": "~/.grok/bin/grok",
+        "binaryName": "grok"
+      },
       "linux-x64": {
         "url": "https://x.ai/cli/grok-1.0.5-linux-x86_64",
         "fallbackUrl": "https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-1.0.5-linux-x86_64",
@@ -40,6 +43,28 @@
       },
       "win32-x64": {
         "unavailable": "Windows 번들 grok 제외 확정 (2026-08-25 승인, windows-support.md)"
+      }
+    }
+  },
+  "nodePty": {
+    "//": "터미널 pty (WBS 6.3, workbench-tabs E-1) — N-API prebuilt 라 Electron ABI 재빌드가 필요 없다(스파이크 실측: Node ABI 141·Electron ABI 149 동일 바이너리 동작).",
+    "version": "1.2.0-beta.15",
+    "npmTarball": "https://registry.npmjs.org/@lydell/node-pty/-/node-pty-1.2.0-beta.15.tgz",
+    "assets": {
+      "darwin-arm64": {
+        "url": "https://registry.npmjs.org/@lydell/node-pty-darwin-arm64/-/node-pty-darwin-arm64-1.2.0-beta.15.tgz",
+        "integrity": "sha512-6TSBbzdcLiNTHl1mTuzflqXrkmcC36USVGvERoDgvHk2ItEDaMaFZuAJ1CqPmwYj0DyhCS16TVS8OGK9xZnjyQ==",
+        "package": "@lydell/node-pty-darwin-arm64"
+      },
+      "linux-x64": {
+        "url": "https://registry.npmjs.org/@lydell/node-pty-linux-x64/-/node-pty-linux-x64-1.2.0-beta.15.tgz",
+        "integrity": "sha512-+U/5AVvHT6W+8OCYcnJgN0Qgc0ycO3TfD6aaFJHK+WHij797f8gsi5dV1HEO9l6YQmWCD+VL5gaLDhx3mxHwCA==",
+        "package": "@lydell/node-pty-linux-x64"
+      },
+      "win32-x64": {
+        "url": "https://registry.npmjs.org/@lydell/node-pty-win32-x64/-/node-pty-win32-x64-1.2.0-beta.15.tgz",
+        "integrity": "sha512-2f8twEmDVxZ7drchAXjtevpmSPhFok0avAnzXro4t5gmz0xsPNKkoZvymwtuIS3xo7PzQqZOPQ/YzwEMb7oIzQ==",
+        "package": "@lydell/node-pty-win32-x64"
       }
     }
   }

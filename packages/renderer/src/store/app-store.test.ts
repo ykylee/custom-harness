@@ -112,45 +112,47 @@ describe('AppController 탭·분할 (FR-3.3.2/3)', () => {
   it('opens sessions as tabs, resumes closed ones, and closing a tab keeps the session', async () => {
     const { transport, calls } = makeFakeTransport();
     const controller = new AppController(transport);
-    await controller.refreshSessions();
+    await controller.bootstrap(); // 워크스페이스가 있어야 배치가 성립한다
 
     await controller.openSession('s-1');
-    expect(controller.store.get().layout).toMatchObject({ tabs: ['s-1'], active: 's-1' });
+    expect(controller.layout.tabs.map((tab) => tab.id)).toEqual(['session:s-1']);
+    expect(controller.layout.active).toBe('session:s-1');
     // closed 세션은 resume 경유 (FR-1.3)
     await controller.openSession('s-2');
     expect(calls.some((c) => c.type === 'session.resume')).toBe(true);
-    expect(controller.store.get().layout.tabs).toEqual(['s-1', 's-2']);
+    expect(controller.layout.tabs.map((tab) => tab.id)).toEqual(['session:s-1', 'session:s-2']);
 
     // 탭 닫기 — session.close RPC 가 나가면 안 된다 (FR-3.3.3)
     const before = calls.length;
-    controller.closeTab('s-2');
+    controller.closeTab('session:s-2');
     expect(calls.slice(before).some((c) => c.type === 'session.close')).toBe(false);
-    expect(controller.store.get().layout).toMatchObject({ tabs: ['s-1'], active: 's-1' });
+    expect(controller.layout.tabs.map((tab) => tab.id)).toEqual(['session:s-1']);
+    expect(controller.layout.active).toBe('session:s-1');
 
     // 명시적 세션 종료는 RPC 호출
     await controller.closeSession('s-1');
     expect(calls.some((c) => c.type === 'session.close')).toBe(true);
-    expect(controller.store.get().layout.tabs).toEqual([]);
+    expect(controller.layout.tabs).toEqual([]);
   });
 
   it('splits with another tab and clears split when that tab closes', async () => {
     const { transport } = makeFakeTransport();
     const controller = new AppController(transport);
-    await controller.refreshSessions();
+    await controller.bootstrap();
     await controller.openSession('s-1');
     await controller.openSession('s-2');
 
     controller.setSplit('row');
     // active(s-2) 외 첫 탭이 보조 페인
-    expect(controller.store.get().layout.split).toEqual({ direction: 'row', secondary: 's-1' });
-    controller.closeTab('s-1');
-    expect(controller.store.get().layout.split).toBeNull();
+    expect(controller.layout.split).toEqual({ direction: 'row', secondary: 'session:s-1' });
+    controller.closeTab('session:s-1');
+    expect(controller.layout.split).toBeNull();
   });
 
   it('persists and restores the layout, dropping dead sessions (배치 복원)', async () => {
     const first = makeFakeTransport();
     const c1 = new AppController(first.transport);
-    await c1.refreshSessions();
+    await c1.bootstrap();
     await c1.openSession('s-1');
     await c1.openSession('s-2');
     c1.setSplit('column');
@@ -160,7 +162,9 @@ describe('AppController 탭·분할 (FR-3.3.2/3)', () => {
     second.sessions.splice(1, 1);
     const c2 = new AppController(second.transport);
     await c2.bootstrap();
-    expect(c2.store.get().layout).toMatchObject({ tabs: ['s-1'], active: 's-1', split: null });
+    expect(c2.layout.tabs.map((tab) => tab.id)).toEqual(['session:s-1']);
+    expect(c2.layout.active).toBe('session:s-1');
+    expect(c2.layout.split).toBeNull(); // 사라진 보조 페인은 정리된다
   });
 });
 

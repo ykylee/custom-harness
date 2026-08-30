@@ -79,6 +79,42 @@ async function fetchPinned(url, expectedSha256, cacheName) {
   return cached;
 }
 
+/**
+ * npm 레지스트리 tarball — integrity(sha512 base64)로 검증하고 `package/` 를 벗겨 배치한다.
+ * 타깃별 prebuilt 를 호스트에서 조달해야 하므로(3 OS 를 한 머신에서 조립) npm 설치에 기대지 않는다.
+ */
+async function fetchNpmTarball(url, integrity, cacheName, extractTo) {
+  const cached = join(cacheDir, `${cacheName}.tgz`);
+  const verify = (buffer) => {
+    if (!integrity) return true;
+    const expected = integrity.replace(/^sha512-/, '');
+    return createHash('sha512').update(buffer).digest('base64') === expected;
+  };
+  let body;
+  try {
+    body = await readFile(cached);
+    if (!verify(body)) {
+      console.warn(`[bundle] 캐시 integrity 불일치 — 재다운로드: ${cacheName}`);
+      body = undefined;
+    } else {
+      console.log(`[bundle] 캐시 사용: ${cacheName}.tgz`);
+    }
+  } catch {
+    /* 캐시 없음 */
+  }
+  if (body === undefined) {
+    console.log(`[bundle] 다운로드: ${url}`);
+    const response = await fetch(url, { redirect: 'follow' });
+    if (!response.ok) throw new Error(`다운로드 실패 (${response.status}): ${url}`);
+    body = Buffer.from(await response.arrayBuffer());
+    if (!verify(body)) throw new Error(`integrity 불일치: ${url}`);
+    await writeFile(cached, body);
+  }
+  await mkdir(extractTo, { recursive: true });
+  // npm tarball 은 최상위가 package/ — 한 겹 벗긴다
+  execFileSync('tar', ['-xzf', cached, '-C', extractTo, '--strip-components=1']);
+}
+
 /** Electron 공식 릴리스 zip — SHASUMS256.txt 로 해시 확정 후 fetchPinned */
 async function fetchElectronZip() {
   const version = electronPackage.version;
@@ -138,6 +174,40 @@ for (const dep of RUNTIME_DEPS) {
   await cp(join(repoRoot, 'node_modules', dep), join(appDir, 'node_modules', dep), {
     recursive: true,
   });
+}
+
+// node-pty — 터미널 pty (WBS 6.3). 네이티브지만 N-API 라 Electron ABI 재빌드가 필요 없다.
+// 타깃별 prebuilt 를 레지스트리에서 직접 조달한다 — 호스트 한 대로 3 OS 를 조립해야 하므로
+// npm 의 optionalDependencies 플랫폼 해석에 기대지 않는다.
+{
+  const ptyRoot = join(appDir, 'node_modules', '@lydell');
+  await fetchNpmTarball(
+    sources.nodePty.npmTarball,
+    undefined,
+    `node-pty-${sources.nodePty.version}`,
+    join(ptyRoot, 'node-pty'),
+  );
+  const asset = sources.nodePty.assets[target];
+  if (!asset) throw new Error(`node-pty prebuilt 없음: ${target}`);
+  await fetchNpmTarball(
+    asset.url,
+    asset.integrity,
+    `${asset.package.replace('@lydell/', '')}-${sources.nodePty.version}`,
+    join(ptyRoot, asset.package.replace('@lydell/', '')),
+  );
+  // spawn-helper 는 실행 권한이 있어야 pty 가 뜬다 (tar 권한은 보존되지만 명시적으로 보장)
+  const helperPath = join(
+    ptyRoot,
+    asset.package.replace('@lydell/', ''),
+    'prebuilds',
+    target === 'win32-x64' ? 'win32-x64' : target,
+    'spawn-helper',
+  );
+  try {
+    await chmod(helperPath, 0o755);
+  } catch {
+    /* Windows 등 — spawn-helper 가 없는 플랫폼 */
+  }
 }
 
 // ── harnesses/ ────────────────────────────────────────────────────────────
@@ -382,6 +452,30 @@ for (const dep of RUNTIME_DEPS) {
   await mkdir(join(licensesDir, 'deps', dep), { recursive: true });
   await cp(join(repoRoot, 'node_modules', dep, 'LICENSE'), join(licensesDir, 'deps', dep, 'LICENSE'));
   noticeRows.push([dep, depPackage.version, depPackage.license, `licenses/deps/${dep}/LICENSE`]);
+}
+
+// node-pty — 동봉 네이티브 모듈 (WBS 6.3). 본체와 타깃별 prebuilt 둘 다 고지 대상이다.
+{
+  const ptyDir = join(appDir, 'node_modules', '@lydell', 'node-pty');
+  await mkdir(join(licensesDir, 'deps', 'node-pty'), { recursive: true });
+  await cp(join(ptyDir, 'LICENSE'), join(licensesDir, 'deps', 'node-pty', 'LICENSE'));
+  noticeRows.push([
+    '@lydell/node-pty',
+    sources.nodePty.version,
+    'MIT',
+    'licenses/deps/node-pty/LICENSE',
+  ]);
+  const prebuiltPackage = sources.nodePty.assets[target].package;
+  const prebuiltName = prebuiltPackage.replace('@lydell/', '');
+  const prebuiltDir = join(appDir, 'node_modules', '@lydell', prebuiltName);
+  await mkdir(join(licensesDir, 'deps', 'node-pty-prebuilt'), { recursive: true });
+  await cp(join(prebuiltDir, 'LICENSE'), join(licensesDir, 'deps', 'node-pty-prebuilt', 'LICENSE'));
+  noticeRows.push([
+    prebuiltPackage,
+    sources.nodePty.version,
+    'MIT',
+    'licenses/deps/node-pty-prebuilt/LICENSE',
+  ]);
 }
 
 await cp(join(bundleDir, 'licenses-src', 'PROVENANCE.md'), join(licensesDir, 'PROVENANCE.md'));

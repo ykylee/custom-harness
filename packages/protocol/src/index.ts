@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { HelloResponseSchema, HelloSchema, PingSchema, PongSchema } from './connection.js';
 import { SessionEventSchema } from './events.js';
 import { RpcRequestSchema, RpcResponseSchema } from './rpc.js';
+import { TerminalEventSchema } from './terminal.js';
 import { RegistryEventSchema } from './workspaces.js';
 
 export * from './base.js';
@@ -11,6 +12,7 @@ export * from './capabilities.js';
 export * from './connection.js';
 export * from './events.js';
 export * from './rpc.js';
+export * from './terminal.js';
 export * from './workspaces.js';
 
 /** 클라이언트 → 데몬 전체 프레임 */
@@ -25,5 +27,6 @@ export const ServerMessageSchema = z.union([
   RpcResponseSchema,
   SessionEventSchema,
   RegistryEventSchema,
+  TerminalEventSchema,
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;

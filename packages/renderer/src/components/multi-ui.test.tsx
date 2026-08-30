@@ -54,6 +54,7 @@ const sidebarActions = () => ({
   runSetup: vi.fn(),
   renameWorkspace: vi.fn(),
   setWorkspaceLabels: vi.fn(),
+  newTerminal: vi.fn(),
 });
 
 describe('Sidebar (FR-3.3.1)', () => {
@@ -205,38 +206,53 @@ describe('Sidebar (FR-3.3.1)', () => {
   });
 });
 
-describe('Tabs (FR-3.3.2)', () => {
-  const sessions = [
-    summary({ sessionId: 't-1', cwd: '/w/one', status: 'running' }),
-    summary({ sessionId: 't-2', cwd: '/w/two', status: 'idle' }),
+describe('Tabs (FR-8.1 — 다형 타깃)', () => {
+  const sessions = [summary({ sessionId: 't-1', cwd: '/w/one', status: 'running' })];
+  const terminals = [
+    {
+      id: 'trm_1',
+      workspaceId: 'wsp_1',
+      shell: '/bin/zsh',
+      cols: 80,
+      rows: 24,
+      createdAt: 'n',
+    },
   ];
+  const layout = {
+    tabs: [
+      { id: 'session:t-1', target: { kind: 'session' as const, sessionId: 't-1' } },
+      { id: 'terminal:trm_1', target: { kind: 'terminal' as const, terminalId: 'trm_1' } },
+      { id: 'diff:working', target: { kind: 'diff' as const, scope: 'working' as const } },
+    ],
+    active: 'session:t-1',
+    split: null,
+  };
 
-  it('renders tabs with close buttons and split controls for 2+ tabs', () => {
-    const actions = { activate: vi.fn(), closeTab: vi.fn(), setSplit: vi.fn() };
+  it('타깃별로 다른 라벨을 그린다', () => {
     render(
       <Tabs
-        layout={{ tabs: ['t-1', 't-2'], active: 't-1', split: null }}
+        layout={layout}
         sessions={sessions}
-        actions={actions}
-      />,
-    );
-    fireEvent.click(screen.getByText('two'));
-    expect(actions.activate).toHaveBeenCalledWith('t-2');
-    const closeButtons = screen.getAllByTitle('탭 닫기 (세션은 유지)');
-    fireEvent.click(closeButtons[0]!);
-    expect(actions.closeTab).toHaveBeenCalledWith('t-1');
-    fireEvent.click(screen.getByTitle('좌우 분할'));
-    expect(actions.setSplit).toHaveBeenCalledWith('row');
-  });
-
-  it('hides split controls with a single tab', () => {
-    render(
-      <Tabs
-        layout={{ tabs: ['t-1'], active: 't-1', split: null }}
-        sessions={sessions}
+        terminals={terminals}
         actions={{ activate: vi.fn(), closeTab: vi.fn(), setSplit: vi.fn() }}
       />,
     );
-    expect(screen.queryByTitle('좌우 분할')).toBeNull();
+    expect(screen.getByTestId('tab-session:t-1')).toBeTruthy();
+    expect(screen.getByTestId('tab-terminal:trm_1').textContent).toContain('zsh');
+    expect(screen.getByTestId('tab-diff:working').textContent).toContain('변경사항');
+  });
+
+  it('탭 닫기는 대상 종료가 아니다 — 닫기 액션만 부른다', () => {
+    const actions = { activate: vi.fn(), closeTab: vi.fn(), setSplit: vi.fn() };
+    render(<Tabs layout={layout} sessions={sessions} terminals={terminals} actions={actions} />);
+    fireEvent.click(screen.getAllByTitle('탭 닫기 (대상은 유지)')[1]!);
+    expect(actions.closeTab).toHaveBeenCalledWith('terminal:trm_1');
+  });
+
+  it('탭이 2개 이상이면 분할 컨트롤이 나온다', () => {
+    const actions = { activate: vi.fn(), closeTab: vi.fn(), setSplit: vi.fn() };
+    render(<Tabs layout={layout} sessions={sessions} terminals={terminals} actions={actions} />);
+    fireEvent.click(screen.getByTitle('좌우 분할'));
+    expect(actions.setSplit).toHaveBeenCalledWith('row');
   });
 });

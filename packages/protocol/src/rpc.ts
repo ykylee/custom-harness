@@ -1,5 +1,5 @@
 // 세션 레벨 RPC — `domain.verb.request` / `.response`, requestId 상관 (protocol-design §2)
-// 도메인: session.* / config.* / harness.* / project.* / workspace.* / system.*
+// 도메인: session.* / config.* / harness.* / project.* / workspace.* / terminal.* / system.*
 import { z } from 'zod';
 import { HarnessIdSchema, PROTOCOL_VERSION } from './base.js';
 import { CapabilityFlagsSchema } from './capabilities.js';
@@ -16,6 +16,7 @@ import {
   WorkspaceSchema,
   WorkspaceSetupStateSchema,
 } from './workspaces.js';
+import { TerminalSchema } from './terminal.js';
 
 export const RpcErrorSchema = z.looseObject({
   /** 어댑터 에러 kind('spawn'|'protocol'|…) 또는 데몬 에러 코드 */
@@ -309,6 +310,55 @@ export const rpc = {
       }),
     ),
   },
+  // 데몬 소유 터미널 (WBS 6.3, workbench-tabs §2.4)
+  terminal: {
+    create: rpcPair(
+      'terminal.create',
+      z.looseObject({
+        workspaceId: z.string(),
+        cols: z.number().int().positive(),
+        rows: z.number().int().positive(),
+        shell: z.string().optional(),
+      }),
+      z.looseObject({ terminal: TerminalSchema }),
+    ),
+    list: rpcPair(
+      'terminal.list',
+      z.looseObject({ workspaceId: z.string().optional() }),
+      z.looseObject({ terminals: z.array(TerminalSchema) }),
+    ),
+    attach: rpcPair(
+      'terminal.attach',
+      z.looseObject({
+        terminalId: z.string(),
+        cols: z.number().int().positive(),
+        rows: z.number().int().positive(),
+      }),
+      z.looseObject({
+        /** 이 연결에서 쓸 1바이트 핸들 — 바이너리 프레임의 slot */
+        slot: z.number().int().nonnegative(),
+        /** 링 버퍼 스냅샷 (base64) — 이후 출력은 바이너리 프레임으로 이어진다 */
+        scrollback: z.string(),
+        /** 링 버퍼가 넘쳐 앞이 잘렸는지 — 클라이언트가 상단에 알린다 */
+        truncated: z.boolean(),
+      }),
+    ),
+    detach: rpcPair(
+      'terminal.detach',
+      z.looseObject({ terminalId: z.string() }),
+      z.looseObject({}),
+    ),
+    resize: rpcPair(
+      'terminal.resize',
+      z.looseObject({
+        terminalId: z.string(),
+        cols: z.number().int().positive(),
+        rows: z.number().int().positive(),
+      }),
+      z.looseObject({}),
+    ),
+    kill: rpcPair('terminal.kill', z.looseObject({ terminalId: z.string() }), z.looseObject({})),
+  },
   system: {
     version: rpcPair(
       'system.version',
@@ -346,6 +396,12 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.workspace.update.request,
   rpc.workspace.archive.request,
   rpc.workspace.labelsList.request,
+  rpc.terminal.create.request,
+  rpc.terminal.list.request,
+  rpc.terminal.attach.request,
+  rpc.terminal.detach.request,
+  rpc.terminal.resize.request,
+  rpc.terminal.kill.request,
   rpc.workspace.setupRun.request,
   rpc.system.version.request,
   rpc.system.shutdown.request,
@@ -378,6 +434,12 @@ export const RpcResponseSchema = z.union([
   rpc.workspace.update.response,
   rpc.workspace.archive.response,
   rpc.workspace.labelsList.response,
+  rpc.terminal.create.response,
+  rpc.terminal.list.response,
+  rpc.terminal.attach.response,
+  rpc.terminal.detach.response,
+  rpc.terminal.resize.response,
+  rpc.terminal.kill.response,
   rpc.workspace.setupRun.response,
   rpc.system.version.response,
   rpc.system.shutdown.response,
