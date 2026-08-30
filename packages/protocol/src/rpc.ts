@@ -64,6 +64,19 @@ export const SessionSummarySchema = z.looseObject({
   usage: UsageSchema.optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+  // ── 워크스페이스 모델 선반영 (WBS 5.0.2, workspace-model §3.3) ──
+  // 전부 optional additive — 이전 번들의 클라이언트가 이 필드를 모른 채로도 파싱된다.
+  /** 소유 워크스페이스. 5.4.1 이후 소유권 판정의 유일한 근거가 된다 (cwd 추론 금지) */
+  workspaceId: z.string().optional(),
+  /** 사용자·시스템 라벨 (부모-자식 관계 등) */
+  labels: z.record(z.string(), z.string()).optional(),
+  /** 소프트 삭제 시각 */
+  archivedAt: z.string().optional(),
+  /** 사용자 주의 필요 여부 — 데몬이 정본으로 계산한다 (M7 7.1) */
+  requiresAttention: z.boolean().optional(),
+  attentionReason: z.enum(['finished', 'error', 'permission']).optional(),
+  /** 사용자 표시 제목 (M7 7.6 이 채운다) */
+  title: z.string().optional(),
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
@@ -100,6 +113,16 @@ export const McpServerConfigSchema = z.looseObject({
 export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 
 // ── method 정의 ────────────────────────────────────────────────────────────
+//
+// 네임스페이스 규약 (WBS 5.0.3): `<domain>.<verb>` 또는 `<domain>.<namespace>.<verb>`.
+// 예약 도메인 — 구현 전이라도 다른 용도로 쓰지 않는다:
+//   project.*    프로젝트 레지스트리 (M5 5.2)
+//   workspace.*  워크스페이스 레지스트리·worktree·setup (M5 5.3·5.5)
+//   terminal.*   데몬 소유 터미널 (M6 6.3)
+//   file.*       워크스페이스 파일 탐색·열람 (M6 6.4)
+//   diff.*       working/커밋 변경사항 (M6 6.5)
+//   tool.*       역방향 툴 카탈로그 (M7 7.2)
+// 신규 필드는 optional 로만 추가하고 제거·축소하지 않는다 (protocol-design §3).
 
 export const rpc = {
   session: {

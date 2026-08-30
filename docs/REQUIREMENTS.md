@@ -4,13 +4,13 @@
 
 - 문서 목적: 확정된 컨셉([CONCEPT](./CONCEPT.md))을 정제한 요구사항의 **인덱스**. 상세는 [requirements/](./requirements/) 의 카테고리별 문서가 SSOT 다.
 - 상태: **approved** (v2 — 카테고리별 상세 문서로 세분화, 2026-08-25 사용자 승인. 이후 변경은 개정 이력으로 관리)
-- 최종 수정일: 2026-08-25
+- 최종 수정일: 2026-08-30
 - 관련 문서: [ROADMAP](./ROADMAP.md), design/ 3종, reference/ 4종
 
 ## 표기
 
 - 우선순위: **M**(Must, 1차 릴리스 필수) / **S**(Should, 1차 릴리스 내 목표) / **C**(Could, 확장) / **L**(Later, 후순위 확정)
-- 단계: [ROADMAP](./ROADMAP.md) 의 M1~M4 마일스톤. 상세 문서의 하위 ID(FR-x.y.z)가 개별 요구사항 단위다.
+- 단계: [ROADMAP](./ROADMAP.md) 의 M1~M7 마일스톤. 상세 문서의 하위 ID(FR-x.y.z)가 개별 요구사항 단위다.
 
 ## 카테고리
 
@@ -22,6 +22,9 @@
 | **FR-4** 패키징·설치·업데이트 | [fr4-packaging.md](./requirements/fr4-packaging.md) | 번들 레이아웃, manifest 스키마, 설치/제거 스크립트(원자적 심링크 전환), 전체 교체 업데이트·롤백, NOTICE, 저장소 연동(선택), 빌드 파이프라인 | M1–M3 |
 | **FR-5** 관리 CLI | [fr5-cli.md](./requirements/fr5-cli.md) | daemon start/stop/status/version, 소유권 구분, doctor 진단, logs. 에이전트 조작은 범위 외 | M1–M2 |
 | **FR-6** 확장 (후순위) | [fr6-extensions.md](./requirements/fr6-extensions.md) | opencode(사전 캐시 전제), claude/codex(변환 계층·재배포 재확인), 조직 공용 스킬/MCP 세트(정본 번들 + 복사 동기화) | M4 |
+| **FR-7** 프로젝트·워크스페이스 | [fr7-workspaces.md](./requirements/fr7-workspaces.md) | 프로젝트 레지스트리(불투명 ID·정합화 계약), 워크스페이스(cwd/checkoutRoot 분리·아카이브·라벨), 세션 귀속(workspaceId 1급), git worktree 격리, 프로젝트 설정 파일, 사이드바 3계층 | M5 |
+| **FR-8** 작업 공간 | [fr8-workbench.md](./requirements/fr8-workbench.md) | 탭 타깃 일반화, 데몬 소유 터미널(바이너리 프레임·복원), 파일 탐색·뷰어, working/커밋 diff, 워크스페이스 스크립트 실행, (조건부) forge/PR | M6 |
+| **FR-9** 오케스트레이션 | [fr9-orchestration.md](./requirements/fr9-orchestration.md) | 주의 상태 1급화, 역방향 툴 카탈로그(MCP 폴백), 서브에이전트 위임, 검색·커맨드 팔레트, 세션 제목 자동 생성, CLI 자동화 표면 | M7 |
 | **NFR** 비기능 | [nfr.md](./requirements/nfr.md) | 폐쇄망 자기완결(외부 요청 0), 게이트웨이 경유 강제, localhost 한정, 라이선스(clean-room·고지), 호환성(관대 파싱·COMPAT), 스트리밍 체감, 토큰 절약, 설치 무결성, 플랫폼 일관성 | 전 구간 |
 
 ## 제약 (확정 사항 — 변경 시 컨셉 개정 필요)

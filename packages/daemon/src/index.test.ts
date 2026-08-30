@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
@@ -7,6 +7,25 @@ import { PROTOCOL_VERSION } from '@custom-harness/protocol';
 import { startDaemon } from './index.js';
 
 describe('startDaemon', () => {
+  it('설정 우선순위를 기동에 적용한다 — env > settings.json > 기본값 (WBS 5.0.1)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ch-daemon-'));
+    await mkdir(join(root, 'data'), { recursive: true });
+    await writeFile(join(root, 'data', 'settings.json'), JSON.stringify({ maxSessions: 3 }));
+
+    const fromFile = await startDaemon({ root, version: '0.1.0', managedBy: 'test' });
+    expect(fromFile.manager.getMaxSessions()).toBe(3);
+    await fromFile.stop();
+
+    process.env.CUSTOM_HARNESS_MAX_SESSIONS = '11';
+    try {
+      const fromEnv = await startDaemon({ root, version: '0.1.0', managedBy: 'test' });
+      expect(fromEnv.manager.getMaxSessions()).toBe(11); // env 가 파일을 이긴다
+      await fromEnv.stop();
+    } finally {
+      delete process.env.CUSTOM_HARNESS_MAX_SESSIONS;
+    }
+  });
+
   it('boots, authenticates via the token file, and cleans up on stop', async () => {
     const root = await mkdtemp(join(tmpdir(), 'ch-daemon-'));
     const daemon = await startDaemon({ root, version: '0.1.0', managedBy: 'test' });

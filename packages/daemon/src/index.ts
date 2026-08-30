@@ -8,6 +8,7 @@ import { resolvePaths, type DaemonPaths } from './paths.js';
 import { ProcessSupervisor } from './processes.js';
 import { DaemonServer } from './server.js';
 import { SessionManager } from './session-manager.js';
+import { SettingsStore } from './settings.js';
 import { SessionStore } from './store.js';
 import { generateToken, removeTokenFile, writeTokenFile } from './token.js';
 
@@ -91,7 +92,10 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     );
   }
   const keyStore = new KeyStore(paths.credentialsFile, options.secretCipher);
-  const gateway = new GatewayService(paths, keyStore);
+  // 설정 우선순위·핫 리로드의 단일 지점 (WBS 5.0.1) — 게이트웨이 서비스와 데몬이 같은 인스턴스를 본다
+  const settings = new SettingsStore(paths.settingsFile);
+  await settings.load();
+  const gateway = new GatewayService(paths, keyStore, settings);
   const manifest =
     options.manifestPath !== undefined ? await loadBundleManifest(options.manifestPath) : undefined;
   const adapters =
@@ -156,6 +160,24 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     }),
   );
 
+  // 핫 리로드 — 설정 파일 외부 편집(사용자가 직접 연 에디터)도 즉시 반영한다.
+  // 옵션으로 상한이 고정된 기동에서는 파일이 이겨서는 안 되므로 감시하지 않는다.
+  if (options.maxSessions === undefined) {
+    settings.onChange((changes) => {
+      for (const change of changes) {
+        if (change.requiresRestart) {
+          console.warn(`[daemon] 설정 ${change.key} 변경은 재기동 후 반영된다`);
+          continue;
+        }
+        if (change.key === 'maxSessions' && typeof change.next === 'number') {
+          manager.setMaxSessions(change.next);
+          console.warn(`[daemon] maxSessions 재적용: ${change.next}`);
+        }
+      }
+    });
+    settings.watchFile();
+  }
+
   let stopped = false;
   const stop = async (): Promise<void> => {
     if (stopped) return;
@@ -164,6 +186,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     await server.stop();
     await manager.shutdown();
     await supervisor.terminateAll();
+    settings.close();
     await removeTokenFile(paths.tokenFile);
     await rm(paths.pidFile, { force: true });
   };

@@ -7,6 +7,7 @@ import { parse as parseYaml } from 'yaml';
 import { parse as parseToml } from 'smol-toml';
 import type { HarnessId, ModelInfo } from '@custom-harness/protocol';
 import type { DaemonPaths } from '../paths.js';
+import { SettingsStore } from '../settings.js';
 import type { KeyStore } from './key-store.js';
 import { injectPiGateway, type GatewayModel, type PiInjectionResult } from './pi-injection.js';
 import { injectOmpGateway, type OmpInjectionResult } from './omp-injection.js';
@@ -48,11 +49,16 @@ export interface KeyTestResult {
 
 export class GatewayService {
   private modelsCache: { at: number; models: ModelInfo[] } | undefined;
+  /** 설정 우선순위(env > 파일 > 기본값)의 단일 지점 — WBS 5.0.1 */
+  private readonly settings: SettingsStore;
 
   constructor(
     private readonly paths: DaemonPaths,
     private readonly keyStore: KeyStore,
-  ) {}
+    settings?: SettingsStore,
+  ) {
+    this.settings = settings ?? new SettingsStore(paths.settingsFile);
+  }
 
   async getConfig(): Promise<GatewayConfig | undefined> {
     const settings = await this.readSettings();
@@ -182,20 +188,17 @@ export class GatewayService {
     }
   }
 
-  /** 동시 세션 상한 (WBS 2.3.1) — settings.json, 기본 8 */
+  /** 동시 세션 상한 (WBS 2.3.1) — 우선순위는 SettingsStore 가 소유한다 (env > 파일 > 기본 8) */
   async getMaxSessions(): Promise<number> {
-    const settings = await this.readSettings();
-    const value = settings.maxSessions;
-    return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : 8;
+    await this.settings.load();
+    return this.settings.get('maxSessions');
   }
 
   async setMaxSessions(value: number): Promise<void> {
     if (!Number.isInteger(value) || value < 1 || value > 64) {
       throw new Error(`maxSessions 는 1~64 정수여야 함: ${value}`);
     }
-    const settings = await this.readSettings();
-    settings.maxSessions = value;
-    await this.writeSettings(settings);
+    await this.settings.set('maxSessions', value);
   }
 
   /**

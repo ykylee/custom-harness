@@ -4,7 +4,29 @@
 
 - 문서 목적: 로드맵 WBS 기준 진척 현황의 단일 보드. 모든 작업은 여기 등재된 WBS ID 로 추적한다.
 - 갱신 규칙: 작업 상태 변화 시마다 갱신 (planned / in_progress / blocked / done). 계획 변경 발생 시 원 문서(ROADMAP·roadmap/·REQUIREMENTS 등) 동기화 후 여기 비고에 링크.
-- 최종 수정일: 2026-08-25 (M3 선행 착수분 3.3.1·3.5.2 완료 반영)
+- 최종 수정일: 2026-08-30 (M5 — WP5.0·5.1 완료, 5.2·5.3 레지스트리 구현)
+
+## 신설 마일스톤: M5~M7 — paseo 서비스 도입 웨이브 (2026-08-30 승인)
+
+근거: [paseo 서비스 구성 전수 분석](../reference/paseo-service-inventory.md) — 18 도메인 대조 결과 전면 도입 7 / 축소 6 / 보류 4 / 제외 5.
+진행 순서는 **A→B→C 순차**, 착수 시점은 **즉시**(M1·M2 완료 선언은 사내 협조 C-1·C-5 대기라 병행). 계획 문서: [M5](./m5-workspace.md) · [M6](./m6-canvas.md) · [M7](./m7-orchestration.md), 요구사항: FR-7 / FR-8 / FR-9.
+
+| WBS | 작업 | 상태 | 비고 |
+|---|---|---|---|
+| 5.0.1 | 설정 우선순위·핫 리로드 규칙 정의 | done | 2026-08-30 — [설정 계약](../design/settings-contract.md) + `packages/daemon/src/settings.ts`: env > settings.json > 기본값(출처·env 덮음 여부 보고), 선언 레지스트리(미선언 키 무시·키/값 타입 이중 선언으로 컴파일 강제), scope live/restart(restart 는 경고만·값 미반영), 파일 감시 50ms 디바운스 재적용, 원자적 쓰기+쓰기 직렬화(2.7.3 경합 교훈). GatewayService maxSessions 를 이 스토어로 일원화, startDaemon 이 인스턴스 공유·종료 시 감시 해제. 테스트 18건(우선순위·관대 파싱·중첩 키·동시 set·재적용·env 고정) |
+| 5.0.2 | 세션 레코드 additive 필드 선반영 | done | 2026-08-30 — `SessionSummarySchema`(와이어)·`SessionMetaSchema`(영속) 양쪽에 optional 6종 추가: `workspaceId`·`labels`·`archivedAt`·`requiresAttention`·`attentionReason`·`title`. 전부 additive 라 이전 번들 클라이언트 파싱 무영향. 값을 채우는 주체는 5.4(귀속)·M7 7.1(주의)·7.6(제목) |
+| 5.0.3 | RPC 네임스페이스 확장 규약 | done | 2026-08-30 — `packages/protocol/src/rpc.ts` 에 규약·예약 도메인 명시: `project.*`(5.2)·`workspace.*`(5.3·5.5)·`terminal.*`(6.3)·`file.*`(6.4)·`diff.*`(6.5)·`tool.*`(7.2). 구현 전이라도 다른 용도로 쓰지 않는다 |
+| 5.1.1 | 워크스페이스 모델 설계서 | done | 2026-08-30 — [workspace-model.md](../design/workspace-model.md) approved: 설계 원칙 4개(식별자 불변/메타 가변, 소유권은 ID 로만, lexical 정규화만, 스토어가 원자성 소유), 3계층 정의·식별자 정책·레코드 스키마 3종·정합화 계약(갱신 가능/불변 분리)·저장 배치·프로비저닝 단일 창구·RPC 표면·마이그레이션 |
+| 5.1.2 | 프로젝트 설정 파일 스키마 설계 (`harness.json`) | done | 2026-08-30 — workspace-model §7: 베이스 브랜치 커밋본에서 로드, setup/teardown/scripts, **신뢰 경계**(프로젝트+내용 해시에 묶인 확인, 자동 실행 기본 off, 미신뢰 시 `setupState: pending`) |
+| 5.1.3 | 설계 리뷰·승인 | done | 2026-08-30 사용자 승인 — 열린 결정 3건 확정: D-1 worktree 위치=데이터 디렉토리 내부(`data/worktrees/<workspaceId>`), D-2 기본 워크스페이스=프로젝트 열기 즉시 생성, D-3 아카이브 타임라인=무기한 보존 |
+| 5.2.1 | 프로젝트 스토어 (불투명 ID·lexical 정규화·멱등 생성·아카이브) | done | 2026-08-30 — `workspaces/{records,registry-store,registry}.ts`: `prj_<16hex>` 불투명 ID(경로 미유도), `path.resolve`+드라이브 문자 정규화만(**realpath 금지**), 같은 루트 재요청 멱등, 아카이브는 부활 없이 새 ID. 스토어가 원자성·직렬화 소유(tmp+rename, 쓰기 체인) |
+| 5.2.2 | git 메타데이터 관측·정합화 | done | 2026-08-30 — `git-facts.ts`(셸 미경유 execFile·5s 타임아웃): kind·defaultBranch(origin/HEAD → 없으면 현재 브랜치, 폐쇄망 로컬 저장소 고려)·remoteUrl·projectKey 유도. 정합화는 가변 사실만 갱신하고 id·root·displayName 불변 — 테스트로 고정 |
+| 5.2.3 | `project.*` RPC + 이벤트 | planned | 네임스페이스는 5.0.3 에서 예약 완료 |
+| 5.3.1 | 워크스페이스 스토어 (cwd/checkoutRoot 분리·상태·라벨) | done | 2026-08-30 — 형제 워크스페이스 독립성(같은 cwd 2개 공존), 소프트 아카이브, 라벨·setupState 갱신, 동시 생성 8건 무유실 검증 |
+| 5.3.2 | 프로비저닝 서비스 단일 창구 | done (핵심) | 2026-08-30 — `WorkspaceProvisioning`: openProject(프로젝트+기본 워크스페이스 즉시 생성·멱등, D-2), addDirectoryWorkspace(하위 디렉토리 편입 시 checkoutRoot=저장소 루트), worktreePath(D-1 데이터 디렉토리 내부). **설계 충돌 1건 해소**: `rev-parse --show-toplevel` 이 심링크를 푼 경로를 돌려줘(macOS /tmp→/private/tmp) lexical 원칙과 충돌 → `--show-prefix` 로 상대 접두사만 걷어내도록 변경. 잔여: worktree 생성 경로(5.5) |
+| 5.3.3~5.3.5, 5.4~5.7 | 아카이브 teardown·라벨 카탈로그·RPC·세션 귀속·worktree·UI 재편·검증 | planned | [m5-workspace.md](./m5-workspace.md) 참조 |
+| 6.* | 탭 다형화·터미널·파일·diff·스크립트 | planned | M5 완료 후. 6.1.2 는 M0 0.2.4(바이너리 프레임 불채택) 재개정 |
+| 7.* | 주의 상태·역방향 툴·서브에이전트·검색·CLI 자동화 | planned | M5 완료 후. 7.2.1(하네스 MCP 실측)은 선행 게이트 |
 
 ## M3 — 선행 착수 (M2 완료 선언 전 사외 가능분)
 

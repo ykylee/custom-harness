@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-08-25",
+  "generated_at": "2026-08-30",
   "purpose_digest": "폐쇄망(사내망)에서 여러 오픈소스 코딩 에이전트 하네스를 하나의 데스크톱 UI 로 선택·사용할 수 있게 하는 오케스트레이션 도구를 만든다. 에이전트 루프는 래핑된 하네스가 소유하고, 이 도구는 하네스의 실행·상태·UI 를 소유한다.",
   "purpose_digest_rev": "2026-08-24",
   "source_of_truth": {
@@ -10,7 +10,7 @@
     "daily_backlog_dir": "ai-workflow/memory/active/main/backlog",
     "tasks_dir": "ai-workflow/memory/active/main/backlog/tasks",
     "sessions_dir": "ai-workflow/memory/active/main/sessions",
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-25.md",
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-30.md",
     "repository_assessment_path": null
   },
   "project": {
@@ -27,70 +27,49 @@
     "runtime_checks": null
   },
   "session": {
-    "current_baseline": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.",
-    "current_axis": "컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.",
-    "current_focus": "TASK-2026-08-25-main-026",
+    "current_baseline": "(2026-08-30 현재 기준선) **M0 설계 → M1 구현 → M2 구현(2.1~2.7) + M3 선행 2건 완료, 그 위에 M5 착수.** 1차 하네스 3종(pi/omp/grok)·데몬 멀티 세션·렌더러·셸/CLI·3 OS 오프라인 번들·doctor/logs 동작, NFR-1(외부 접속 0) darwin 실측 PASS. **2026-08-30 방향 확장**: paseo 서비스 구성 전수 분석(18 도메인) → 도입 웨이브 A~C 승인 → 로드맵 **M5(워크스페이스)·M6(캔버스)·M7(오케스트레이션)** 신설, 요구사항 FR-7/8/9 신설. M5 는 WP5.0(선반영)·5.1(설계)·5.2/5.3(레지스트리 핵심) 완료. 테스트 230건 그린. **M1·M2 완료 선언 잔여는 전부 사내 협조 대기(C-1 게이트웨이 실측, C-5 실기기 linux/win) — M5 는 이와 독립이라 병행 중.**",
+    "current_axis": "(2026-08-30 현재 기준선) **M0 설계 → M1 구현 → M2 구현(2.1~2.7) + M3 선행 2건 완료, 그 위에 M5 착수.** 1차 하네스 3종(pi/omp/grok)·데몬 멀티 세션·렌더러·셸/CLI·3 OS 오프라인 번들·doctor/logs 동작, NFR-1(외부 접속 0) darwin 실측 PASS. **2026-08-30 방향 확장**: paseo 서비스 구성 전수 분석(18 도메인) → 도입 웨이브 A~C 승인 → 로드맵 **M5(워크스페이스)·M6(캔버스)·M7(오케스트레이션)** 신설, 요구사항 FR-7/8/9 신설. M5 는 WP5.0(선반영)·5.1(설계)·5.2/5.3(레지스트리 핵심) 완료. 테스트 230건 그린. **M1·M2 완료 선언 잔여는 전부 사내 협조 대기(C-1 게이트웨이 실측, C-5 실기기 linux/win) — M5 는 이와 독립이라 병행 중.**",
+    "current_focus": "TASK-2026-08-30-main-004 M5 5.2·5.3 프로젝트·워크스페이스 레지스트리 구현",
     "in_progress_items": [
-      "TASK-2026-08-25-main-026",
-      "TASK-2026-08-25-main-027"
+      "TASK-2026-08-30-main-004 M5 5.2·5.3 프로젝트·워크스페이스 레지스트리 구현",
+      "TASK-2026-08-30-main-002"
     ],
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
+      "TASK-2026-08-30-main-003 — M5 5.0 선반영 — 설정 계약·세션 스키마 additive·RPC 네임스페이스 예약",
+      "TASK-2026-08-30-main-001 — paseo 서비스 구성 전수 분석 — 기능 갭 대조 + 도입 계획 수립",
+      "TASK-2026-08-25-main-027 — 렌더러 디자인 정비 — 다크 우선 토큰 기반 디자인 시스템",
+      "TASK-2026-08-25-main-026 — Windows 대응 보강 — grok 제외 일관화·lint POSIX 의존 제거·테스트 플랫폼 조건화",
       "TASK-2026-08-25-main-025 — M3 3.5.2 제거 스크립트 (uninstall)",
       "TASK-2026-08-25-main-024 — M3 3.3.1 라이선스 고지 — NOTICE·원문 수집 동봉 자동화",
       "TASK-2026-08-25-main-023 — grok Linux 조달 — x.ai CDN 미러링 + 자체 해시 고정",
       "TASK-2026-08-25-main-022 — M2 2.7 검증 (NFR-1 확장·매트릭스·부하)",
       "TASK-2026-08-25-main-021 — M2 2.6 CLI·진단 (doctor·logs)",
-      "TASK-2026-08-25-main-020 — M2 2.5 번들·설치 완성",
-      "TASK-2026-08-25-main-019 — M2 2.4 멀티 세션 UI",
-      "TASK-2026-08-25-main-018 — M2 2.3 데몬 멀티 세션 완성",
-      "TASK-2026-08-25-main-017 — M2 2.2 grok 어댑터 (ACP·설정 주입·승인 배선)",
-      "TASK-2026-08-25-main-016 — M2 2.1 omp 어댑터 (전송 v2·어댑터·설정 주입)"
+      "TASK-2026-08-25-main-020 — M2 2.5 번들·설치 완성"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-25.md",
-    "task_count": 27,
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-30.md",
+    "task_count": 6,
     "in_progress_items": [
-      "TASK-2026-08-25-main-026 — Windows 대응 보강 — grok 제외 일관화·lint POSIX 의존 제거·테스트 플랫폼 조건화",
-      "TASK-2026-08-25-main-027 — 렌더러 디자인 정비 — 다크 우선 토큰 기반 디자인 시스템"
+      "TASK-2026-08-30-main-002 — M5 5.1 워크스페이스 모델 설계서 작성",
+      "TASK-2026-08-30-main-004 — M5 5.2·5.3 프로젝트·워크스페이스 레지스트리 구현"
     ],
     "blocked_items": [],
     "done_items": [
-      "TASK-2026-08-25-main-001 — 요구사항 상세 세분화 (카테고리별 문서 분리)",
-      "TASK-2026-08-25-main-002 — 로드맵 세분화 (마일스톤별 세부 계획 + WBS)",
-      "TASK-2026-08-25-main-003 — 요구사항·로드맵 문서 일괄 승인 반영",
-      "TASK-2026-08-25-main-004 — M0 착수 — 트랙 B 조사(0.5.1, 0.1.1) + 진척 보드·사내 체크리스트 구축",
-      "TASK-2026-08-25-main-005 — grok 커스텀 LLM 설정 실측 (0.1.1 스파이크 일부)",
-      "TASK-2026-08-25-main-006 — 결정 2건 확정 반영 + 어댑터 설계서 작성 (0.1.2~0.1.5)",
-      "TASK-2026-08-25-main-007 — M0 설계 일괄 진행 (0.2 프로토콜, 0.3 데몬, 0.4 크리덴셜·주입, 0.6.2 테스트 전략, 0.7.1 pi 스파이크)",
-      "TASK-2026-08-25-main-008 — M0 완료 선언 + 이월 승인 반영, M1 착수 (1.1.1 모노레포 골격)",
-      "TASK-2026-08-25-main-009 — M1 1.1.2 protocol 이벤트 유니온·RPC 스키마 작성",
-      "TASK-2026-08-25-main-010 — M1 1.2 데몬 코어 (WS 서버·세션 매니저·영속화·spawn)",
-      "TASK-2026-08-25-main-011 — M1 1.3 pi 어댑터 (JSONL RPC base·계약·승인·mock/계약 테스트)",
-      "TASK-2026-08-25-main-012 — M1 1.4 게이트웨이 연결 (pi 주입·오프라인 프리셋·키 관리)",
-      "TASK-2026-08-25-main-013 — M1 1.5 렌더러 (골격·세션 생성·대화 뷰·승인·온보딩)",
-      "TASK-2026-08-25-main-014 — M1 1.6 Electron 셸·CLI (detached 데몬·RUN_AS_NODE 진입점·daemon 제어)",
-      "TASK-2026-08-25-main-015 — M1 1.7 번들 프로토타입·NFR-1 스모크 (수용은 C-1 대기)",
-      "TASK-2026-08-25-main-016 — M2 2.1 omp 어댑터 (전송 v2·어댑터·설정 주입)",
-      "TASK-2026-08-25-main-017 — M2 2.2 grok 어댑터 (ACP·설정 주입·승인 배선)",
-      "TASK-2026-08-25-main-018 — M2 2.3 데몬 멀티 세션 완성",
-      "TASK-2026-08-25-main-019 — M2 2.4 멀티 세션 UI",
-      "TASK-2026-08-25-main-020 — M2 2.5 번들·설치 완성",
-      "TASK-2026-08-25-main-021 — M2 2.6 CLI·진단 (doctor·logs)",
-      "TASK-2026-08-25-main-022 — M2 2.7 검증 (NFR-1 확장·매트릭스·부하)",
-      "TASK-2026-08-25-main-023 — grok Linux 조달 — x.ai CDN 미러링 + 자체 해시 고정",
-      "TASK-2026-08-25-main-024 — M3 3.3.1 라이선스 고지 — NOTICE·원문 수집 동봉 자동화",
-      "TASK-2026-08-25-main-025 — M3 3.5.2 제거 스크립트 (uninstall)"
+      "TASK-2026-08-25-main-027 — 렌더러 디자인 정비 — 다크 우선 토큰 기반 디자인 시스템",
+      "TASK-2026-08-25-main-026 — Windows 대응 보강 — grok 제외 일관화·lint POSIX 의존 제거·테스트 플랫폼 조건화",
+      "TASK-2026-08-30-main-001 — paseo 서비스 구성 전수 분석 — 기능 갭 대조 + 도입 계획 수립",
+      "TASK-2026-08-30-main-003 — M5 5.0 선반영 — 설정 계약·세션 스키마 additive·RPC 네임스페이스 예약"
     ]
   },
   "next_documents": [
     "docs/PROJECT_PROFILE.md",
     "ai-workflow/memory/active/main/session_handoff.md",
-    "ai-workflow/memory/active/main/backlog/2026-08-25.md",
+    "ai-workflow/memory/active/main/backlog/2026-08-30.md",
     "ai-workflow/memory/active/main/work_backlog.md"
   ],
   "repository_assessment": {

@@ -19,6 +19,13 @@ export const SessionMetaSchema = z.looseObject({
   createdAt: z.string(),
   updatedAt: z.string(),
   approvalPolicy: z.enum(['mediate', 'auto']).optional(),
+  // ── 워크스페이스 모델 선반영 (WBS 5.0.2, workspace-model §3.3) — 전부 optional additive ──
+  workspaceId: z.string().optional(),
+  labels: z.record(z.string(), z.string()).optional(),
+  archivedAt: z.string().optional(),
+  requiresAttention: z.boolean().optional(),
+  attentionReason: z.enum(['finished', 'error', 'permission']).optional(),
+  title: z.string().optional(),
   /** 세션 누적 토큰 (FR-3.7, WBS 2.4.5) — 턴 종료 usage 를 합산 (additive) */
   usageTotals: z
     .looseObject({
