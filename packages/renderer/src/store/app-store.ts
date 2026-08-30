@@ -7,13 +7,16 @@ import type {
   HarnessInfo,
   PermissionOutcome,
   ProbeResult,
+  Project,
   SessionSummary,
+  Workspace,
+  WorkspaceSetupState,
 } from '@custom-harness/protocol';
 import type { ConnectionState, DaemonClient } from '../ws/client.js';
 import { applyEvent, applyEvents, emptySessionView, type SessionView } from '../timeline.js';
 import { Store } from './store.js';
 
-export type Route = 'onboarding' | 'main' | 'settings';
+export type Route = 'onboarding' | 'main' | 'settings' | 'workspace-create';
 
 export interface GatewaySettings {
   baseUrl: string;
@@ -44,6 +47,11 @@ export interface AppState {
   keyState: KeyState | null;
   maxSessions: number | null;
   harnesses: HarnessInfo[];
+  /** 프로젝트 → 워크스페이스 → 세션 3계층 (WBS 5.6.1) */
+  projects: Project[];
+  workspaces: Workspace[];
+  /** 세션을 만들 대상 워크스페이스 — localStorage 영속 */
+  activeWorkspaceId: string | null;
   sessions: SessionSummary[];
   layout: LayoutState;
   views: Record<string, SessionView>;
@@ -58,6 +66,7 @@ export interface AppState {
 }
 
 const LAYOUT_KEY = 'custom-harness.layout';
+const WORKSPACE_KEY = 'custom-harness.active-workspace';
 const NOTIFICATIONS_KEY = 'custom-harness.notifications';
 
 /** window.localStorage 명시 참조 — Node 22 의 전역 localStorage(제한 구현)와 혼동 방지 */
@@ -95,6 +104,9 @@ export function initialAppState(): AppState {
     keyState: null,
     maxSessions: null,
     harnesses: [],
+    projects: [],
+    workspaces: [],
+    activeWorkspaceId: loadPersisted<string>(WORKSPACE_KEY) ?? null,
     sessions: [],
     layout: { tabs: [], active: null, split: null },
     views: {},
@@ -126,6 +138,15 @@ export class AppController {
       }
     });
     client.onEvent((event) => {
+      // 레지스트리 이벤트는 세션 봉투가 없다 — 신호만 받고 목록을 다시 읽는다 (WBS 5.2.3)
+      if (event.type === 'project_changed') {
+        void this.refreshProjects();
+        return;
+      }
+      if (event.type === 'workspace_changed') {
+        void this.refreshWorkspaces();
+        return;
+      }
       this.store.set((prev) => {
         const view = prev.views[event.sessionId] ?? emptySessionView();
         return { ...prev, views: { ...prev.views, [event.sessionId]: applyEvent(view, event) } };
@@ -157,6 +178,7 @@ export class AppController {
     try {
       await this.refreshConfig();
       await this.refreshHarnesses();
+      await this.refreshRegistries();
       await this.refreshSessions();
       this.restoreLayout();
       const { gateway, keyState } = this.store.get();
@@ -213,6 +235,126 @@ export class AppController {
   async refreshSessions(): Promise<void> {
     const result = (await this.client.rpc('session.list')) as { sessions: SessionSummary[] };
     this.store.set({ sessions: result.sessions });
+  }
+
+  // ── 프로젝트·워크스페이스 (WBS 5.6) ───────────────────────────────────────
+
+  /**
+   * 프로젝트·워크스페이스 적재. 데몬이 이 도메인을 배선하지 않았어도(구버전·축소 기동)
+   * 기동 자체는 성공해야 한다 — 실패는 빈 목록으로 흡수하고 나머지 화면을 살린다.
+   */
+  async refreshRegistries(): Promise<void> {
+    try {
+      await this.refreshProjects();
+      await this.refreshWorkspaces();
+    } catch {
+      this.store.set({ projects: [], workspaces: [] });
+    }
+  }
+
+  async refreshProjects(): Promise<void> {
+    const result = (await this.client.rpc('project.list')) as { projects?: Project[] };
+    this.store.set({ projects: result.projects ?? [] });
+  }
+
+  async refreshWorkspaces(): Promise<void> {
+    const result = (await this.client.rpc('workspace.list')) as { workspaces?: Workspace[] };
+    const workspaces = result.workspaces ?? [];
+    this.store.set((prev) => {
+      // 활성 워크스페이스가 사라졌으면(아카이브 등) 첫 워크스페이스로 내려앉는다
+      const active =
+        prev.activeWorkspaceId !== null &&
+        workspaces.some((workspace) => workspace.id === prev.activeWorkspaceId)
+          ? prev.activeWorkspaceId
+          : (workspaces[0]?.id ?? null);
+      if (active !== prev.activeWorkspaceId) persist(WORKSPACE_KEY, active);
+      return { ...prev, workspaces, activeWorkspaceId: active };
+    });
+  }
+
+  selectWorkspace(workspaceId: string): void {
+    persist(WORKSPACE_KEY, workspaceId);
+    this.store.set({ activeWorkspaceId: workspaceId });
+  }
+
+  /** 디렉토리를 프로젝트로 연다 — 기본 워크스페이스가 함께 생긴다 (D-2) */
+  async openProject(root: string): Promise<void> {
+    const result = (await this.client.rpc('project.open', { root })) as {
+      project: Project;
+      workspace: Workspace;
+    };
+    await this.refreshProjects();
+    await this.refreshWorkspaces();
+    this.selectWorkspace(result.workspace.id);
+  }
+
+  async createWorkspace(params: {
+    projectId: string;
+    isolation: 'directory' | 'worktree';
+    cwd?: string;
+    branch?: string;
+    baseBranch?: string;
+    displayName?: string;
+  }): Promise<void> {
+    const result = (await this.client.rpc('workspace.create', { ...params })) as {
+      workspace: Workspace;
+    };
+    await this.refreshWorkspaces();
+    this.selectWorkspace(result.workspace.id);
+  }
+
+  async renameWorkspace(workspaceId: string, displayName: string): Promise<void> {
+    await this.client.rpc('workspace.update', { workspaceId, displayName });
+    await this.refreshWorkspaces();
+  }
+
+  async setWorkspaceLabels(workspaceId: string, labels: Record<string, string>): Promise<void> {
+    await this.client.rpc('workspace.update', { workspaceId, labels });
+    await this.refreshWorkspaces();
+  }
+
+  async archiveWorkspace(workspaceId: string, removeCheckout = false): Promise<void> {
+    await this.client.rpc('workspace.archive', { workspaceId, removeCheckout });
+    await this.refreshWorkspaces();
+    await this.refreshSessions();
+  }
+
+  /**
+   * setup 실행 흐름 (FR-7.5 신뢰 경계의 UI 측 절반) — 먼저 신뢰 없이 시도해 데몬이
+   * `pending` 을 돌려주면 사용자에게 동의를 구하고, 동의한 경우에만 신뢰를 부여해 재시도한다.
+   * 사용자가 거절하면 워크스페이스는 pending 인 채로 남는다.
+   */
+  async confirmAndRunSetup(
+    workspaceId: string,
+    confirm: (detail: string) => boolean = (detail) =>
+      typeof window !== 'undefined' && window.confirm(detail),
+  ): Promise<void> {
+    try {
+      const first = await this.runWorkspaceSetup(workspaceId);
+      if (first.setupState !== 'pending') return;
+      const workspace = this.store.get().workspaces.find((entry) => entry.id === workspaceId);
+      const detail = `이 프로젝트의 설정 파일(setup)을 실행합니다. 저장소에 담긴 명령이 그대로 실행되므로 내용을 확인한 뒤 동의하세요.\n\n워크스페이스: ${workspace?.displayName ?? workspaceId}`;
+      if (!confirm(detail)) return;
+      const second = await this.runWorkspaceSetup(workspaceId, true);
+      if (second.setupState === 'failed') {
+        this.store.set({ lastError: `setup 실패: ${second.detail ?? ''}` });
+      }
+    } catch (error) {
+      this.reportError(error);
+    }
+  }
+
+  /** 프로젝트 설정 파일 setup 실행 — `trust` 는 사용자가 내용을 보고 동의했을 때만 true */
+  async runWorkspaceSetup(
+    workspaceId: string,
+    trust = false,
+  ): Promise<{ setupState: WorkspaceSetupState; detail?: string }> {
+    const result = (await this.client.rpc('workspace.setup.run', { workspaceId, trust })) as {
+      setupState: WorkspaceSetupState;
+      detail?: string;
+    };
+    await this.refreshWorkspaces();
+    return result;
   }
 
   /** 하네스 상태 패널 (FR-3.6.3) — 버전·검증·가용성 probe */
@@ -326,9 +468,13 @@ export class AppController {
     }
   }
 
+  /**
+   * 세션 생성 — 소유 워크스페이스를 명시한다 (WBS 5.6.4).
+   * cwd 는 데몬이 워크스페이스에서 가져오므로 렌더러가 보내지 않는다.
+   */
   async createSession(params: {
     harness: HarnessId;
-    cwd: string;
+    workspaceId: string;
     modelId?: string;
   }): Promise<void> {
     const result = (await this.client.rpc('session.create', { ...params })) as {

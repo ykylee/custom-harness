@@ -25,12 +25,44 @@ function makeFakeTransport(): {
   calls: { type: string; params?: Record<string, unknown> }[];
   pushEvent(event: SessionEvent): void;
   sessions: Record<string, unknown>[];
+  workspaces: Record<string, unknown>[];
 } {
   const calls: { type: string; params?: Record<string, unknown> }[] = [];
   const listeners: EventListener[] = [];
   const sessions: Record<string, unknown>[] = [
-    { sessionId: 's-1', harness: 'mock', cwd: '/w/one', status: 'idle', seq: 0 },
-    { sessionId: 's-2', harness: 'pi', cwd: '/w/two', status: 'closed', seq: 0 },
+    {
+      sessionId: 's-1',
+      harness: 'mock',
+      cwd: '/w/one',
+      status: 'idle',
+      seq: 0,
+      workspaceId: 'wsp_1',
+    },
+    {
+      sessionId: 's-2',
+      harness: 'pi',
+      cwd: '/w/two',
+      status: 'closed',
+      seq: 0,
+      workspaceId: 'wsp_1',
+    },
+  ];
+  const projects: Record<string, unknown>[] = [
+    { id: 'prj_1', root: '/w', displayName: 'w', kind: 'plain', createdAt: 'n', updatedAt: 'n' },
+  ];
+  const workspaces: Record<string, unknown>[] = [
+    {
+      id: 'wsp_1',
+      projectId: 'prj_1',
+      cwd: '/w/one',
+      checkoutRoot: '/w/one',
+      isolation: 'directory',
+      displayName: 'one',
+      labels: {},
+      setupState: 'none',
+      createdAt: 'n',
+      updatedAt: 'n',
+    },
   ];
   const transport: DaemonTransport = {
     rpc: (type, params) => {
@@ -47,6 +79,8 @@ function makeFakeTransport(): {
         });
       }
       if (type === 'harness.list') return Promise.resolve({ harnesses: [] });
+      if (type === 'project.list') return Promise.resolve({ projects });
+      if (type === 'workspace.list') return Promise.resolve({ workspaces });
       if (type === 'session.create') {
         return Promise.resolve({
           session: { sessionId: 's-new', harness: 'mock', cwd: '/w/new', status: 'idle', seq: 0 },
@@ -63,7 +97,13 @@ function makeFakeTransport(): {
     start: vi.fn(),
     stop: vi.fn(),
   };
-  return { transport, calls, pushEvent: (e) => listeners.forEach((l) => l(e)), sessions };
+  return {
+    transport,
+    calls,
+    pushEvent: (e) => listeners.forEach((l) => l(e)),
+    sessions,
+    workspaces,
+  };
 }
 
 describe('AppController 탭·분할 (FR-3.3.2/3)', () => {
@@ -165,5 +205,83 @@ describe('AppController 자동 승인 (FR-3.4.3)', () => {
     pushEvent(permissionEvent('s-2', 'p-2')); // opt-in 안 된 세션 — 자동 응답 금지
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(calls.filter((c) => c.type === 'session.permission.respond').length).toBe(before);
+  });
+});
+
+describe('AppController 3계층 (WBS 5.6)', () => {
+  beforeEach(() => installMemoryStorage());
+
+  it('부트스트랩이 프로젝트·워크스페이스를 적재하고 활성 워크스페이스를 정한다', async () => {
+    const { transport } = makeFakeTransport();
+    const controller = new AppController(transport);
+    await controller.bootstrap();
+    const state = controller.store.get();
+    expect(state.projects).toHaveLength(1);
+    expect(state.workspaces).toHaveLength(1);
+    expect(state.activeWorkspaceId).toBe('wsp_1');
+  });
+
+  it('세션 생성은 cwd 가 아니라 workspaceId 를 보낸다 (WBS 5.6.4)', async () => {
+    const { transport, calls } = makeFakeTransport();
+    const controller = new AppController(transport);
+    await controller.bootstrap();
+    await controller.createSession({ harness: 'mock', workspaceId: 'wsp_1' });
+
+    const create = calls.find((call) => call.type === 'session.create');
+    expect(create?.params).toEqual({ harness: 'mock', workspaceId: 'wsp_1' });
+    expect(create?.params).not.toHaveProperty('cwd');
+  });
+
+  it('레지스트리 이벤트를 받으면 목록을 다시 읽는다 (세션 봉투가 없어도 안전)', async () => {
+    const { transport, calls, pushEvent } = makeFakeTransport();
+    const controller = new AppController(transport);
+    await controller.bootstrap();
+    const before = calls.filter((call) => call.type === 'workspace.list').length;
+
+    pushEvent({
+      type: 'workspace_changed',
+      reason: 'updated',
+      workspace: { id: 'wsp_1' },
+    } as never);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(calls.filter((call) => call.type === 'workspace.list').length).toBeGreaterThan(before);
+    // 세션 타임라인 상태를 오염시키지 않는다
+    expect(Object.keys(controller.store.get().views)).toEqual([]);
+  });
+
+  it('setup 실행은 동의 없이는 신뢰를 부여하지 않는다 (FR-7.5)', async () => {
+    const { transport, calls } = makeFakeTransport();
+    const controller = new AppController(transport);
+    await controller.bootstrap();
+
+    // 데몬이 pending 을 돌려주고, 사용자가 거절하는 흐름
+    const original = transport.rpc.bind(transport);
+    transport.rpc = (type, params) => {
+      if (type === 'workspace.setup.run') {
+        calls.push({ type, ...(params !== undefined ? { params } : {}) });
+        return Promise.resolve({ setupState: 'pending', detail: '동의가 필요함' });
+      }
+      return original(type, params);
+    };
+
+    await controller.confirmAndRunSetup('wsp_1', () => false);
+    const setupCalls = calls.filter((call) => call.type === 'workspace.setup.run');
+    expect(setupCalls).toHaveLength(1);
+    expect(setupCalls[0]?.params).toEqual({ workspaceId: 'wsp_1', trust: false });
+
+    await controller.confirmAndRunSetup('wsp_1', () => true);
+    const after = calls.filter((call) => call.type === 'workspace.setup.run');
+    expect(after.at(-1)?.params).toEqual({ workspaceId: 'wsp_1', trust: true });
+  });
+
+  it('활성 워크스페이스가 사라지면 남은 워크스페이스로 내려앉는다', async () => {
+    const fake = makeFakeTransport();
+    const controller = new AppController(fake.transport);
+    await controller.bootstrap();
+    fake.workspaces.splice(0, 1);
+    await controller.refreshWorkspaces();
+    expect(controller.store.get().activeWorkspaceId).toBeNull();
   });
 });

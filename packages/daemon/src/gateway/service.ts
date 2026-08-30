@@ -10,7 +10,11 @@ import type { DaemonPaths } from '../paths.js';
 import { SettingsStore } from '../settings.js';
 import type { KeyStore } from './key-store.js';
 import { injectPiGateway, type GatewayModel, type PiInjectionResult } from './pi-injection.js';
-import { injectOmpGateway, type OmpInjectionResult } from './omp-injection.js';
+import {
+  UNREACHABLE_LOCAL_BASE_URL,
+  injectOmpGateway,
+  type OmpInjectionResult,
+} from './omp-injection.js';
 import { injectGrokGateway, type GrokInjectionResult } from './grok-injection.js';
 
 export interface GatewayConfig {
@@ -21,6 +25,9 @@ export interface GatewayConfig {
   models: GatewayModel[];
   compat?: Record<string, unknown>;
 }
+
+/** 무력화 엔드포인트 — 주입(omp-injection)이 선점한 값. 경계 검사에서 위반으로 세지 않는다 */
+const UNREACHABLE_LOCAL_ENDPOINT = UNREACHABLE_LOCAL_BASE_URL;
 
 export const GATEWAY_DEFAULTS = {
   providerName: 'gateway',
@@ -253,6 +260,8 @@ export class GatewayService {
     const violations: BoundaryViolation[] = [];
     const record = (harness: HarnessId, url: unknown, location: string): void => {
       if (typeof url !== 'string' || !url) return;
+      // 우리가 선점한 무력화 엔드포인트는 위반이 아니다 — 도달 불가 주소를 일부러 박아둔 것이다
+      if (url === UNREACHABLE_LOCAL_ENDPOINT) return;
       const origin = originOf(url);
       if (origin === undefined || !allowedOrigins.has(origin)) {
         violations.push({ harness, url: String(url), location });

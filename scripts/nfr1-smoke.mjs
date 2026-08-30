@@ -48,7 +48,8 @@ function which(cmd) {
 }
 
 const piEntry = argValue('--pi-entry') ?? process.env.CUSTOM_HARNESS_PI_ENTRY;
-const piPath = argValue('--pi') ?? process.env.CUSTOM_HARNESS_PI_PATH ?? (piEntry ? undefined : which('pi'));
+const piPath =
+  argValue('--pi') ?? process.env.CUSTOM_HARNESS_PI_PATH ?? (piEntry ? undefined : which('pi'));
 const ompPath = argValue('--omp') ?? process.env.CUSTOM_HARNESS_OMP_PATH ?? which('omp');
 const grokDefault = join(homedir(), '.grok/bin/grok');
 const grokPath =
@@ -56,7 +57,11 @@ const grokPath =
   process.env.CUSTOM_HARNESS_GROK_PATH ??
   ((await exists(grokDefault)) ? grokDefault : which('grok'));
 
-for (const [name, p] of [['pi', piEntry ?? piPath], ['omp', ompPath], ['grok', grokPath]]) {
+for (const [name, p] of [
+  ['pi', piEntry ?? piPath],
+  ['omp', ompPath],
+  ['grok', grokPath],
+]) {
   if (!p) {
     console.error(`${name} 실행 파일을 찾지 못함 — --${name} 지정 필요`);
     process.exit(2);
@@ -111,7 +116,11 @@ const mockGateway = createServer((req, res) => {
             created: 0,
             model: 'mock-model',
             choices: [
-              { index: 0, message: { role: 'assistant', content: '스모크 통과' }, finish_reason: 'stop' },
+              {
+                index: 0,
+                message: { role: 'assistant', content: '스모크 통과' },
+                finish_reason: 'stop',
+              },
             ],
             usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 },
           }),
@@ -213,10 +222,13 @@ const monitor = (async () => {
       const match = /TCP\s+([\d.]+):(\d+)->([\d.]+):(\d+)\s+\(ESTABLISHED\)/.exec(line);
       if (!match) continue;
       const [, localAddr, localPort, remoteAddr, remotePort] = match;
+      // 위반은 "무엇이" 나갔는지까지 알려줘야 조치할 수 있다 — lsof 첫 두 열이 COMMAND·PID
+      const owner = line.trim().split(/\s+/).slice(0, 2).join('/');
       if (!remoteAddr.startsWith('127.')) {
-        violations.set(`${remoteAddr}:${remotePort}`, (violations.get(`${remoteAddr}:${remotePort}`) ?? 0) + 1);
+        const key = `${remoteAddr}:${remotePort} (${owner})`;
+        violations.set(key, (violations.get(key) ?? 0) + 1);
       } else if (!listenPorts.has(remotePort) && !listenPorts.has(localPort)) {
-        violations.set(`${localAddr}:${localPort}->${remoteAddr}:${remotePort}`, 1);
+        violations.set(`${localAddr}:${localPort}->${remoteAddr}:${remotePort} (${owner})`, 1);
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -226,7 +238,11 @@ const monitor = (async () => {
 // ── 공통: 세션 1턴 실행기 ─────────────────────────────────────────────────
 const events = [];
 daemon.manager.onEvent((event) => events.push(event));
-const MODEL_BY_HARNESS = { pi: 'gateway/mock-model', omp: 'gateway/mock-model', grok: 'mock-model' };
+const MODEL_BY_HARNESS = {
+  pi: 'gateway/mock-model',
+  omp: 'gateway/mock-model',
+  grok: 'mock-model',
+};
 
 async function runTurn(harness, label, timeoutMs = 120_000) {
   const session = await daemon.manager.createSession({

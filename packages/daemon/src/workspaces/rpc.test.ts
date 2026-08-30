@@ -172,14 +172,22 @@ describe('project/workspace RPC', () => {
     expect(response.error?.code).toBe('bad_request');
   });
 
-  it('미구현 경로(worktree 생성·setup 실행)는 unimplemented 로 명시 거절한다', async () => {
+  it('없는 프로젝트·워크스페이스 대상 요청은 not_found 다 (worktree·setup 경로 포함)', async () => {
     const worktree = await rpc('workspace.create.request', {
       projectId: 'prj_x',
       isolation: 'worktree',
     });
-    expect(worktree.error?.code).toBe('unimplemented');
+    expect(worktree.error?.code).toBe('not_found');
     const setup = await rpc('workspace.setup.run.request', { workspaceId: 'wsp_x' });
-    expect(setup.error?.code).toBe('unimplemented');
+    expect(setup.error?.code).toBe('not_found');
+  });
+
+  it('directory 격리는 cwd 가 없으면 bad_request 다 (WBS 5.5.4 — 비 worktree 모드도 1급)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ch-proj-'));
+    const opened = await rpc('project.open.request', { root: dir });
+    const projectId = (opened.result?.project as { id: string }).id;
+    const response = await rpc('workspace.create.request', { projectId, isolation: 'directory' });
+    expect(response.error?.code).toBe('bad_request');
   });
 
   it('아카이브는 소프트 삭제이고, 관리 밖 체크아웃은 제거하지 않는다', async () => {

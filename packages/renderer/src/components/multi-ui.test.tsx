@@ -18,6 +18,44 @@ const summary = (over: Partial<SessionSummary>): SessionSummary =>
     ...over,
   }) as SessionSummary;
 
+/** 3계층 픽스처 — 프로젝트 1개, 워크스페이스 2개 (WBS 5.6.1) */
+const project = {
+  id: 'prj_1',
+  root: '/w',
+  displayName: 'w',
+  kind: 'git' as const,
+  defaultBranch: 'main',
+  createdAt: 'now',
+  updatedAt: 'now',
+};
+function workspace(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'wsp_1',
+    projectId: 'prj_1',
+    cwd: '/w/alpha',
+    checkoutRoot: '/w/alpha',
+    isolation: 'directory' as const,
+    displayName: 'alpha',
+    labels: {},
+    setupState: 'none' as const,
+    createdAt: 'now',
+    updatedAt: 'now',
+    ...overrides,
+  };
+}
+const sidebarActions = () => ({
+  open: vi.fn(),
+  closeSession: vi.fn(),
+  newSession: vi.fn(),
+  openSettings: vi.fn(),
+  selectWorkspace: vi.fn(),
+  newWorkspace: vi.fn(),
+  archiveWorkspace: vi.fn(),
+  runSetup: vi.fn(),
+  renameWorkspace: vi.fn(),
+  setWorkspaceLabels: vi.fn(),
+});
+
 describe('Sidebar (FR-3.3.1)', () => {
   const sessions: SessionSummary[] = [
     summary({ sessionId: 'run-1', harness: 'pi', cwd: '/w/alpha', status: 'running' }),
@@ -46,36 +84,118 @@ describe('Sidebar (FR-3.3.1)', () => {
     expect(bucketOf(sessions[3]!)).toBe('idle');
   });
 
-  it('renders buckets, harness badges, pending badge, and usage summary (FR-3.7)', () => {
+  it('프로젝트 → 워크스페이스 → 세션 3계층으로 그린다 (WBS 5.6.1)', () => {
+    const owned = sessions.map((session) => ({ ...session, workspaceId: 'wsp_1' }));
     render(
       <Sidebar
-        sessions={sessions}
+        projects={[project]}
+        workspaces={[workspace()]}
+        sessions={owned}
+        activeWorkspaceId="wsp_1"
         activeSessionId="run-1"
-        actions={{
-          open: vi.fn(),
-          closeSession: vi.fn(),
-          newSession: vi.fn(),
-          openSettings: vi.fn(),
-        }}
+        actions={sidebarActions()}
       />,
     );
-    expect(screen.getByText('승인 대기')).toBeTruthy();
-    expect(screen.getByText('실행 중')).toBeTruthy();
-    expect(screen.getByText('완료·보관')).toBeTruthy();
+    expect(screen.getByTestId('project-prj_1')).toBeTruthy();
+    expect(screen.getByTestId('workspace-wsp_1')).toBeTruthy();
     expect(screen.getByText('pi')).toBeTruthy(); // 하네스 배지
     expect(screen.getByTestId('pending-badge').textContent).toContain('승인 1');
     expect(screen.getByText('1,234tk')).toBeTruthy(); // 목록 사용량 요약
-    expect(screen.getByText('alpha')).toBeTruthy(); // 디렉토리 표시
+  });
+
+  it('상태 버킷은 계층을 대체하지 않고 횡단 필터로 남는다', () => {
+    const owned = sessions.map((session) => ({ ...session, workspaceId: 'wsp_1' }));
+    render(
+      <Sidebar
+        projects={[project]}
+        workspaces={[workspace()]}
+        sessions={owned}
+        activeWorkspaceId="wsp_1"
+        activeSessionId={null}
+        actions={sidebarActions()}
+      />,
+    );
+    expect(screen.getByTestId('session-closed-1')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('filter-approval'));
+    // 필터를 걸어도 계층(프로젝트·워크스페이스)은 그대로다
+    expect(screen.getByTestId('project-prj_1')).toBeTruthy();
+    expect(screen.queryByTestId('session-closed-1')).toBeNull();
+    expect(screen.getByTestId('session-perm-1')).toBeTruthy();
+  });
+
+  it('워크스페이스 소속은 workspaceId 로만 판정한다 — 미지정 세션은 별도로 보인다', () => {
+    const mixed = [
+      { ...sessions[0]!, workspaceId: 'wsp_1' },
+      { ...sessions[3]! }, // workspaceId 없음 (백필 실패 등)
+    ];
+    render(
+      <Sidebar
+        projects={[project]}
+        workspaces={[workspace()]}
+        sessions={mixed}
+        activeWorkspaceId="wsp_1"
+        activeSessionId={null}
+        actions={sidebarActions()}
+      />,
+    );
+    expect(screen.getByTestId('orphan-sessions')).toBeTruthy();
+    expect(screen.getByTestId('session-idle-1')).toBeTruthy();
+  });
+
+  it('이름·라벨을 인라인으로 편집한다 (WBS 5.6.3)', () => {
+    const actions = sidebarActions();
+    render(
+      <Sidebar
+        projects={[project]}
+        workspaces={[workspace({ labels: { team: 'platform' } })]}
+        sessions={[]}
+        activeWorkspaceId="wsp_1"
+        activeSessionId={null}
+        actions={actions}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('edit-wsp_1'));
+    fireEvent.change(screen.getByLabelText('표시 이름'), { target: { value: '  결제 작업  ' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /라벨/ }), {
+      target: { value: 'team=payments\nenv=dev\n잘못된줄' },
+    });
+    fireEvent.click(screen.getByTestId('editor-save-wsp_1'));
+
+    expect(actions.renameWorkspace).toHaveBeenCalledWith('wsp_1', '결제 작업');
+    // key=value 가 아닌 줄은 버린다
+    expect(actions.setWorkspaceLabels).toHaveBeenCalledWith('wsp_1', {
+      team: 'payments',
+      env: 'dev',
+    });
+  });
+
+  it('setup 대기 워크스페이스에만 실행 버튼을 노출한다 (FR-7.5 신뢰 경계)', () => {
+    const actions = sidebarActions();
+    render(
+      <Sidebar
+        projects={[project]}
+        workspaces={[workspace({ setupState: 'pending' })]}
+        sessions={[]}
+        activeWorkspaceId="wsp_1"
+        activeSessionId={null}
+        actions={actions}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('setup-wsp_1'));
+    expect(actions.runSetup).toHaveBeenCalledWith('wsp_1');
   });
 
   it('separates open vs explicit close actions (FR-3.3.3)', () => {
-    const open = vi.fn();
-    const closeSession = vi.fn();
+    const actions = sidebarActions();
+    const { open, closeSession } = actions;
     render(
       <Sidebar
-        sessions={[sessions[0]!]}
+        projects={[project]}
+        workspaces={[workspace()]}
+        sessions={[{ ...sessions[0]!, workspaceId: 'wsp_1' }]}
+        activeWorkspaceId="wsp_1"
         activeSessionId={null}
-        actions={{ open, closeSession, newSession: vi.fn(), openSettings: vi.fn() }}
+        actions={actions}
       />,
     );
     fireEvent.click(screen.getByTestId('session-run-1'));

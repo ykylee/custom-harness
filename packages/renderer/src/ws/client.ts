@@ -6,6 +6,7 @@ import {
   PROTOCOL_VERSION,
   ServerMessageSchema,
   type HelloResponse,
+  type RegistryEvent,
   type SessionEvent,
 } from '@custom-harness/protocol';
 
@@ -49,6 +50,12 @@ export class RpcFailure extends Error {
   }
 }
 
+/**
+ * 데몬이 보내는 비동기 이벤트 — 세션 이벤트(sessionId·seq 봉투)와
+ * 레지스트리 이벤트(프로젝트·워크스페이스 변경 신호)를 함께 받는다.
+ */
+export type DaemonEvent = SessionEvent | RegistryEvent;
+
 export class DaemonClient {
   private ws: WebSocketLike | undefined;
   private state: ConnectionState = 'closed';
@@ -57,7 +64,7 @@ export class DaemonClient {
   private nextRequestId = 0;
   private readonly pending = new Map<string, PendingRpc>();
   private readonly stateListeners = new Set<(state: ConnectionState) => void>();
-  private readonly eventListeners = new Set<(event: SessionEvent) => void>();
+  private readonly eventListeners = new Set<(event: DaemonEvent) => void>();
   private readonly reconnectListeners = new Set<() => void>();
   private helloResponse: HelloResponse | undefined;
   private everConnected = false;
@@ -81,7 +88,7 @@ export class DaemonClient {
     return () => this.stateListeners.delete(listener);
   }
 
-  onEvent(listener: (event: SessionEvent) => void): () => void {
+  onEvent(listener: (event: DaemonEvent) => void): () => void {
     this.eventListeners.add(listener);
     return () => this.eventListeners.delete(listener);
   }
@@ -199,7 +206,7 @@ export class DaemonClient {
         );
       return;
     }
-    for (const listener of this.eventListeners) listener(message as SessionEvent);
+    for (const listener of this.eventListeners) listener(message as DaemonEvent);
   }
 
   private onClose(): void {

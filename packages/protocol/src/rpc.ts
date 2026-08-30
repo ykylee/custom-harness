@@ -138,8 +138,11 @@ export const rpc = {
         harness: HarnessIdSchema,
         /**
          * 소유 워크스페이스 (WBS 5.4.1). 소유권 판정의 근거는 이 값뿐이다.
-         * COMPAT(sessionCreateCwd): 미지정 시 cwd 로 프로젝트를 열어 기본 워크스페이스에 귀속시킨다.
-         * 렌더러가 워크스페이스를 보내게 되는 5.6 이후 제거 — remove after 2027-02-28.
+         *
+         * 미지정 시 데몬이 `cwd` 로 프로젝트를 열어 **기본 워크스페이스에 귀속**시킨다.
+         * 이는 호환 폴백이 아니라 의도된 편의 경로다 — 스크립트·CLI 가 "이 디렉토리에서
+         * 한 번 돌려라"를 워크스페이스 선행 생성 없이 표현할 수 있어야 한다(FR-9.6).
+         * UI 는 5.6 이후 항상 workspaceId 를 보낸다.
          */
         workspaceId: z.string().optional(),
         cwd: z.string(),
@@ -299,7 +302,11 @@ export const rpc = {
     setupRun: rpcPair(
       'workspace.setup.run',
       z.looseObject({ workspaceId: z.string(), trust: z.boolean().optional() }),
-      z.looseObject({ setupState: WorkspaceSetupStateSchema }),
+      z.looseObject({
+        setupState: WorkspaceSetupStateSchema,
+        /** pending 사유·실패 지점 — UI 가 무엇을 물어야 하는지 알 수 있게 */
+        detail: z.string().optional(),
+      }),
     ),
   },
   system: {

@@ -190,8 +190,8 @@ export class DaemonServer {
     switch (message.type) {
       case 'session.create.request': {
         // 소유권은 workspaceId 로만 판정한다 (WBS 5.4.1). cwd 만 온 요청은 그 경로로
-        // 프로젝트를 열어 기본 워크스페이스에 귀속시킨다 — COMPAT(sessionCreateCwd),
-        // 렌더러가 워크스페이스를 보내는 5.6 이후 제거.
+        // 프로젝트를 열어 기본 워크스페이스에 귀속시킨다 — 추론이 아니라 "프로젝트 열기"라는
+        // 명시적 행위이며, 스크립트·CLI 용 편의 경로로 유지한다(FR-9.6).
         const { provisioning } = this.options;
         let workspaceId = message.params.workspaceId;
         let cwd = message.params.cwd;
@@ -301,8 +301,20 @@ export class DaemonServer {
       case 'workspace.create.request': {
         const { provisioning } = this.requireProvisioning();
         if (message.params.isolation === 'worktree') {
-          // worktree 생성은 WBS 5.5 — 계약만 열어두고 구현 전까지 명시적으로 거절한다
-          throw new DaemonError('unimplemented', 'worktree 워크스페이스는 아직 지원하지 않음');
+          return {
+            workspace: await this.mapNotFound(() =>
+              provisioning.createWorktreeWorkspace({
+                projectId: message.params.projectId,
+                ...(message.params.baseBranch !== undefined
+                  ? { baseBranch: message.params.baseBranch }
+                  : {}),
+                ...(message.params.branch !== undefined ? { branch: message.params.branch } : {}),
+                ...(message.params.displayName !== undefined
+                  ? { displayName: message.params.displayName }
+                  : {}),
+              }),
+            ),
+          };
         }
         const cwd = message.params.cwd;
         if (cwd === undefined) {
@@ -364,9 +376,14 @@ export class DaemonServer {
         const { provisioning } = this.requireProvisioning();
         return { labels: await provisioning.labels.list() };
       }
-      case 'workspace.setup.run.request':
-        // 프로젝트 설정 파일 실행은 WBS 5.5.3 (신뢰 경계 포함) — 계약만 예약
-        throw new DaemonError('unimplemented', '워크스페이스 setup 실행은 아직 지원하지 않음');
+      case 'workspace.setup.run.request': {
+        const { provisioning } = this.requireProvisioning();
+        return await this.mapNotFound(() =>
+          provisioning.runWorkspaceSetup(message.params.workspaceId, {
+            ...(message.params.trust !== undefined ? { trust: message.params.trust } : {}),
+          }),
+        );
+      }
       case 'config.key.set.request': {
         const { keyStore, gateway } = this.requireConfigServices();
         await keyStore.set(message.params.apiKey);

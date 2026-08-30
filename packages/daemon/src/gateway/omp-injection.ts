@@ -34,6 +34,26 @@ export interface OmpInjectionResult {
   backupPaths: string[];
 }
 
+/**
+ * omp 내장 로컬 프로바이더 (WBS 5.7.3 회귀에서 검출).
+ *
+ * omp 17.3.8 은 `lm-studio-local` / `llama-cpp-local` / `vllm-local` 을 **내장 프로바이더**로
+ * 두고 기본 엔드포인트(LM Studio 는 `http://127.0.0.1:1234/v1`)를 자동 탐지한다. 사용자 PC 에
+ * 로컬 추론 서버가 떠 있으면 그 모델이 목록에 섞이고 그 트래픽은 게이트웨이를 지나지 않는다.
+ * models.yml 에 같은 프로바이더 id 를 열리지 않는 루프백으로 **선점 기입**해 무력화한다 —
+ * NFR-1 스모크로 검증된 경로다(적용 전 :1234 커넥션 검출 → 적용 후 0건).
+ *
+ * 단, 사용자가 그 id 를 이미 설정해 뒀다면 **건드리지 않는다**. 사용자 설정을 조용히 덮는 것은
+ * 이 모듈의 보존 정책 위반이고, 그런 항목은 트래픽 경계 검사(FR-2.5)가 경고로 드러낸다.
+ */
+const LOCAL_PROVIDER_IDS = ['lm-studio', 'ollama', 'llama.cpp', 'vllm'] as const;
+/** 경계 검사(service.ts)와 같은 값을 써야 한다 — 다르면 우리 주입이 위반으로 잡힌다 */
+export const UNREACHABLE_LOCAL_BASE_URL = 'http://127.0.0.1:1/v1';
+/** 프로바이더마다 새 객체를 만든다 — 같은 참조를 재사용하면 YAML 앵커(&a1/*a1)로 직렬화된다 */
+function neutralizedLocalProvider(): Record<string, unknown> {
+  return { baseUrl: UNREACHABLE_LOCAL_BASE_URL, models: [] };
+}
+
 function managedProviderBlock(config: OmpInjectionConfig): Record<string, unknown> {
   return {
     baseUrl: config.baseUrl,
@@ -119,6 +139,11 @@ export async function injectOmpGateway(
   const currentProvider = existingModels
     ? getPath(existingModels, ['providers', config.providerName])
     : undefined;
+  // 아직 존재하지 않는 로컬 프로바이더 id 만 선점 대상이다
+  const localIdsToBlock = LOCAL_PROVIDER_IDS.filter(
+    (id) =>
+      existingModels === undefined || getPath(existingModels, ['providers', id]) === undefined,
+  );
   const modelsDrift = currentProvider !== undefined && !same(currentProvider, desiredProvider);
   const configDrift =
     existingConfig !== undefined &&
@@ -127,7 +152,7 @@ export async function injectOmpGateway(
       return current !== undefined && !same(current, desired);
     });
 
-  const modelsChanged = currentProvider === undefined || modelsDrift;
+  const modelsChanged = currentProvider === undefined || modelsDrift || localIdsToBlock.length > 0;
   const configChanged =
     existingConfig === undefined ||
     desiredEntries.some(([path, desired]) => !same(getPath(existingConfig, path), desired));
@@ -147,6 +172,10 @@ export async function injectOmpGateway(
   if (modelsChanged) {
     const nextModels: Record<string, unknown> = { ...(existingModels ?? {}) };
     setPath(nextModels, ['providers', config.providerName], desiredProvider);
+    // 내장 로컬 프로바이더 선점 — 사용자가 설정한 id 는 보존한다 (NFR-1 + 보존 정책)
+    for (const id of localIdsToBlock) {
+      setPath(nextModels, ['providers', id], neutralizedLocalProvider());
+    }
     if (existingModels !== undefined) {
       const backup = `${modelsPath}.bak`;
       await writeFile(backup, stringifyYaml(existingModels));

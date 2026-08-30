@@ -5,6 +5,7 @@ import type { SessionEvent } from '@custom-harness/protocol';
 import { applyEvents, emptySessionView } from '../timeline.js';
 import { Conversation } from './Conversation.js';
 import { Onboarding } from './Onboarding.js';
+import { WorkspaceCreate } from './WorkspaceCreate.js';
 import { SessionCreate } from './SessionCreate.js';
 
 afterEach(cleanup);
@@ -96,27 +97,77 @@ describe('Conversation (FR-3.2)', () => {
   });
 });
 
-describe('SessionCreate (FR-3.1)', () => {
+describe('SessionCreate (FR-3.1 · WBS 5.6.4)', () => {
   const harnesses = [{ id: 'pi' as const, capabilities: { streaming: true } }];
+  const gateway = {
+    baseUrl: 'http://gw/v1',
+    defaultModel: 'grok-4.6',
+    models: [{ id: 'grok-4.6' }],
+  };
+  const workspace = {
+    id: 'wsp_1',
+    projectId: 'prj_1',
+    cwd: '/work',
+    checkoutRoot: '/work',
+    isolation: 'directory' as const,
+    displayName: 'work',
+    labels: {},
+    setupState: 'none' as const,
+    createdAt: 'now',
+    updatedAt: 'now',
+  };
 
-  it('creates a session with harness/cwd/model and surfaces failure causes', async () => {
+  it('워크스페이스에 귀속해 세션을 만들고 실패 원인을 표시한다', async () => {
     const onCreate = vi.fn().mockRejectedValueOnce(new Error('pi 실행 파일 없음'));
     render(
       <SessionCreate
         harnesses={harnesses}
-        gateway={{
-          baseUrl: 'http://gw/v1',
-          defaultModel: 'grok-4.6',
-          models: [{ id: 'grok-4.6' }],
-        }}
+        gateway={gateway}
+        workspace={workspace}
         onCreate={onCreate}
+        onNewWorkspace={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText('작업 디렉토리'), { target: { value: '/work' } });
+    // 작업 디렉토리 직접 입력은 폐지됐다 — cwd 는 워크스페이스에서 온다
+    expect(screen.queryByLabelText('작업 디렉토리')).toBeNull();
+    expect(screen.getByTestId('target-workspace').textContent).toContain('/work');
+
     fireEvent.click(screen.getByText('세션 생성'));
-    expect(onCreate).toHaveBeenCalledWith({ harness: 'pi', cwd: '/work', modelId: 'grok-4.6' });
+    expect(onCreate).toHaveBeenCalledWith({
+      harness: 'pi',
+      workspaceId: 'wsp_1',
+      modelId: 'grok-4.6',
+    });
     // 원인별 안내 (FR-3.1.2)
     expect((await screen.findByTestId('create-error')).textContent).toContain('pi 실행 파일 없음');
+  });
+
+  it('워크스페이스가 없으면 먼저 만들도록 안내한다', () => {
+    const onNewWorkspace = vi.fn();
+    render(
+      <SessionCreate
+        harnesses={harnesses}
+        gateway={gateway}
+        workspace={null}
+        onCreate={vi.fn()}
+        onNewWorkspace={onNewWorkspace}
+      />,
+    );
+    fireEvent.click(screen.getByText('워크스페이스 만들기'));
+    expect(onNewWorkspace).toHaveBeenCalled();
+  });
+
+  it('setup 대기 상태를 알린다 (FR-7.5)', () => {
+    render(
+      <SessionCreate
+        harnesses={harnesses}
+        gateway={gateway}
+        workspace={{ ...workspace, setupState: 'pending' }}
+        onCreate={vi.fn()}
+        onNewWorkspace={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('setup-pending-hint')).toBeTruthy();
   });
 });
 
@@ -159,5 +210,90 @@ describe('Onboarding (FR-3.8)', () => {
     expect((await screen.findByTestId('harness-list')).textContent).toContain('pi');
     fireEvent.click(screen.getByText('시작'));
     expect(actions.finish).toHaveBeenCalled();
+  });
+});
+
+describe('WorkspaceCreate (WBS 5.6.2)', () => {
+  const gitProject = {
+    id: 'prj_1',
+    root: '/repo',
+    displayName: 'repo',
+    kind: 'git' as const,
+    defaultBranch: 'main',
+    createdAt: 'n',
+    updatedAt: 'n',
+  };
+  const plainProject = { ...gitProject, id: 'prj_2', kind: 'plain' as const, displayName: 'plain' };
+
+  it('디렉토리를 열어 프로젝트를 만든다', () => {
+    const openProject = vi.fn().mockResolvedValue(undefined);
+    render(
+      <WorkspaceCreate
+        projects={[]}
+        actions={{ openProject, createWorkspace: vi.fn(), cancel: vi.fn() }}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('프로젝트 경로'), { target: { value: '/repo' } });
+    fireEvent.click(screen.getByTestId('open-project'));
+    expect(openProject).toHaveBeenCalledWith('/repo');
+  });
+
+  it('git 프로젝트에서 새 브랜치 worktree 를 만든다', () => {
+    const createWorkspace = vi.fn().mockResolvedValue(undefined);
+    render(
+      <WorkspaceCreate
+        projects={[gitProject]}
+        actions={{ openProject: vi.fn(), createWorkspace, cancel: vi.fn() }}
+      />,
+    );
+    fireEvent.change(screen.getByTestId('isolation-mode'), { target: { value: 'worktree-new' } });
+    fireEvent.click(screen.getByTestId('create-workspace'));
+    expect(createWorkspace).toHaveBeenCalledWith({
+      projectId: 'prj_1',
+      isolation: 'worktree',
+      baseBranch: 'main',
+    });
+  });
+
+  it('비 git 프로젝트는 worktree 선택지를 막는다 (FR-7.4)', () => {
+    render(
+      <WorkspaceCreate
+        projects={[plainProject]}
+        actions={{ openProject: vi.fn(), createWorkspace: vi.fn(), cancel: vi.fn() }}
+      />,
+    );
+    const options = screen.getByTestId('isolation-mode').querySelectorAll('option');
+    expect([...options].find((o) => o.value === 'worktree-new')?.disabled).toBe(true);
+    expect([...options].find((o) => o.value === 'directory')?.disabled).toBe(false);
+  });
+
+  it('디렉토리 격리는 비우면 프로젝트 루트를 쓴다', () => {
+    const createWorkspace = vi.fn().mockResolvedValue(undefined);
+    render(
+      <WorkspaceCreate
+        projects={[gitProject]}
+        actions={{ openProject: vi.fn(), createWorkspace, cancel: vi.fn() }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('create-workspace'));
+    expect(createWorkspace).toHaveBeenCalledWith({
+      projectId: 'prj_1',
+      isolation: 'directory',
+      cwd: '/repo',
+    });
+  });
+
+  it('실패 사유를 표시한다', async () => {
+    const createWorkspace = vi.fn().mockRejectedValue(new Error('브랜치 이미 존재'));
+    render(
+      <WorkspaceCreate
+        projects={[gitProject]}
+        actions={{ openProject: vi.fn(), createWorkspace, cancel: vi.fn() }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('create-workspace'));
+    expect((await screen.findByTestId('workspace-create-error')).textContent).toContain(
+      '브랜치 이미 존재',
+    );
   });
 });

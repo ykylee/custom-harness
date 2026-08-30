@@ -27,7 +27,7 @@ describe('injectOmpGateway (WBS 2.1.3, FR-2.1.2/FR-2.2)', () => {
     expect(result.status).toBe('created');
 
     const models = await readYaml(result.modelsPath);
-    expect(models.providers).toEqual({
+    expect(models.providers).toMatchObject({
       gateway: {
         baseUrl: 'http://gateway.internal/v1',
         api: 'openai-completions',
@@ -126,5 +126,33 @@ describe('injectOmpGateway (WBS 2.1.3, FR-2.1.2/FR-2.2)', () => {
     expect((models.providers as Record<string, Record<string, unknown>>).gateway!.compat).toEqual({
       supportsDeveloperRole: false,
     });
+  });
+
+  it('내장 로컬 프로바이더 id 를 선점해 무력화한다 (NFR-1, WBS 5.7.3)', async () => {
+    const result = await injectOmpGateway(home, config);
+    const models = await readYaml(result.modelsPath);
+    const providers = models.providers as Record<string, unknown>;
+
+    // omp 는 lm-studio/ollama/llama.cpp/vllm 을 내장 프로바이더로 자동 탐지한다 —
+    // 열리지 않는 루프백으로 선점해 게이트웨이 외 목적지를 남기지 않는다
+    for (const id of ['lm-studio', 'ollama', 'llama.cpp', 'vllm']) {
+      expect(providers[id]).toEqual({ baseUrl: 'http://127.0.0.1:1/v1', models: [] });
+    }
+    // 두 번째 주입은 무변경 (멱등)
+    expect((await injectOmpGateway(home, config)).status).toBe('unchanged');
+  });
+
+  it('사용자가 이미 설정한 로컬 프로바이더는 덮지 않는다 (보존 정책)', async () => {
+    await writeFile(
+      join(home, 'models.yml'),
+      'providers:\n  ollama:\n    baseUrl: http://localhost:11434/v1\n',
+    );
+    const result = await injectOmpGateway(home, config);
+    const providers = (await readYaml(result.modelsPath)).providers as Record<string, unknown>;
+
+    // 사용자 항목은 그대로 — 게이트웨이 외 목적지라는 사실은 트래픽 경계 검사(FR-2.5)가 알린다
+    expect(providers.ollama).toEqual({ baseUrl: 'http://localhost:11434/v1' });
+    // 나머지 내장 id 는 선점된다
+    expect(providers['lm-studio']).toEqual({ baseUrl: 'http://127.0.0.1:1/v1', models: [] });
   });
 });

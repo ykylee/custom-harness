@@ -10,6 +10,7 @@ import { Tabs } from './components/Tabs.js';
 import { Conversation } from './views/Conversation.js';
 import { Onboarding } from './views/Onboarding.js';
 import { SessionCreate } from './views/SessionCreate.js';
+import { WorkspaceCreate } from './views/WorkspaceCreate.js';
 import { Settings } from './views/Settings.js';
 
 const CONNECTION_LABEL: Record<string, string> = {
@@ -110,17 +111,37 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
         </div>
       )}
       <Sidebar
+        projects={state.projects}
+        workspaces={state.workspaces}
         sessions={state.sessions}
+        activeWorkspaceId={state.activeWorkspaceId}
         activeSessionId={layout.active}
         actions={{
           open: (sessionId) => void controller.openSession(sessionId),
           closeSession: (sessionId) => void controller.closeSession(sessionId),
           newSession: () => controller.showNewSessionView(),
           openSettings: () => controller.navigate('settings'),
+          selectWorkspace: (workspaceId) => controller.selectWorkspace(workspaceId),
+          newWorkspace: () => controller.navigate('workspace-create'),
+          archiveWorkspace: (workspaceId) => void controller.archiveWorkspace(workspaceId),
+          renameWorkspace: (workspaceId, displayName) =>
+            void controller.renameWorkspace(workspaceId, displayName),
+          setWorkspaceLabels: (workspaceId, labels) =>
+            void controller.setWorkspaceLabels(workspaceId, labels),
+          runSetup: (workspaceId) => void controller.confirmAndRunSetup(workspaceId),
         }}
       />
       <main className="main-pane">
-        {state.route === 'settings' ? (
+        {state.route === 'workspace-create' ? (
+          <WorkspaceCreate
+            projects={state.projects}
+            actions={{
+              openProject: (root) => controller.openProject(root),
+              createWorkspace: (params) => controller.createWorkspace(params),
+              cancel: () => controller.navigate('main'),
+            }}
+          />
+        ) : state.route === 'settings' ? (
           <Settings
             gateway={state.gateway}
             keyState={state.keyState}
@@ -154,7 +175,12 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
               <SessionCreate
                 harnesses={state.harnesses}
                 gateway={state.gateway}
+                workspace={
+                  state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ??
+                  null
+                }
                 onCreate={(params) => controller.createSession(params)}
+                onNewWorkspace={() => controller.navigate('workspace-create')}
               />
             ) : (
               <div

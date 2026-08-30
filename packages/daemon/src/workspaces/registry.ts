@@ -3,10 +3,18 @@
 // 불변식 2개가 이 파일의 존재 이유다:
 //   ① 정합화는 git 파생 메타데이터만 갱신한다 — id·root·cwd·displayName·baseBranch 는 불변.
 //   ② 워크스페이스 레코드를 만드는 경로는 프로비저닝 서비스 하나다 — 생성 경로가 셋이면 불변식도 셋이 된다.
-import { rm } from 'node:fs/promises';
-import { basename, join, sep } from 'node:path';
+import { mkdir, rm, stat } from 'node:fs/promises';
+import { basename, join, relative, sep } from 'node:path';
 import type { DaemonPaths } from '../paths.js';
 import { LabelCatalog, labelId } from './labels.js';
+import {
+  TrustStore,
+  loadProjectConfig,
+  runCommands,
+  setupCommands,
+  teardownCommands,
+} from './project-config.js';
+import { addWorktree, generateBranchName, removeWorktree, restoreWorktree } from './worktree.js';
 import { RegistryStore } from './registry-store.js';
 import { checkoutRootFor, currentBranch, deriveProjectKey, readProjectFacts } from './git-facts.js';
 import type { RegistryEvent, WorkspaceIsolation } from '@custom-harness/protocol';
@@ -142,7 +150,10 @@ export class ProjectRegistry {
 }
 
 export interface CreateWorkspaceInput {
+  /** 미리 발급한 id — 백킹 경로가 id 기반이라 프로비저닝이 먼저 확보한다 */
+  id?: string;
   projectId: string;
+  branch?: string;
   cwd: string;
   checkoutRoot?: string;
   isolation: WorkspaceIsolation;
@@ -168,7 +179,7 @@ export class WorkspaceRegistry {
     const checkoutRoot = normalizeRoot(input.checkoutRoot ?? input.cwd);
     const timestamp = now();
     const record: WorkspaceRecord = {
-      id: newWorkspaceId(),
+      id: input.id ?? newWorkspaceId(),
       projectId: input.projectId,
       cwd,
       checkoutRoot,
@@ -178,6 +189,7 @@ export class WorkspaceRegistry {
       setupState: input.setupState ?? 'none',
       createdAt: timestamp,
       updatedAt: timestamp,
+      ...(input.branch !== undefined ? { branch: input.branch } : {}),
       ...(input.baseBranch !== undefined ? { baseBranch: input.baseBranch } : {}),
       ...(input.mainRepoRoot !== undefined ? { mainRepoRoot: input.mainRepoRoot } : {}),
     };
@@ -285,6 +297,7 @@ export class WorkspaceProvisioning {
   readonly projects: ProjectRegistry;
   readonly workspaces: WorkspaceRegistry;
   readonly labels: LabelCatalog;
+  readonly trust: TrustStore;
   private readonly listeners = new Set<RegistryEmitter>();
 
   constructor(private readonly paths: DaemonPaths) {
@@ -294,6 +307,7 @@ export class WorkspaceProvisioning {
     this.projects = new ProjectRegistry(paths.projectsDir, emit);
     this.workspaces = new WorkspaceRegistry(paths.projectsDir, emit);
     this.labels = new LabelCatalog(paths.projectsDir);
+    this.trust = new TrustStore(paths.projectsDir);
   }
 
   /**
@@ -366,6 +380,147 @@ export class WorkspaceProvisioning {
   }
 
   /**
+   * worktree 백킹 워크스페이스 생성 (WBS 5.5.1).
+   *
+   * 순서가 중요하다: 레코드를 **먼저** 만들어 id 를 확보하고(백킹 경로가 id 기반이라),
+   * 체크아웃 생성이 실패하면 그 레코드를 아카이브해 유령 워크스페이스를 남기지 않는다.
+   */
+  async createWorktreeWorkspace(input: {
+    projectId: string;
+    /** 새 브랜치를 분기할 기준. 미지정이면 `branch` 를 기존 브랜치로 체크아웃한다 */
+    baseBranch?: string;
+    branch?: string;
+    displayName?: string;
+  }): Promise<WorkspaceRecord> {
+    const project = await this.projects.find(input.projectId);
+    if (!project) throw new Error(`프로젝트 없음: ${input.projectId}`);
+    if (project.kind !== 'git') {
+      throw new Error('git 프로젝트가 아니면 worktree 격리를 쓸 수 없음');
+    }
+    const baseBranch = input.baseBranch ?? project.defaultBranch;
+    const branch =
+      input.branch ?? (await generateBranchName(project.root, input.displayName ?? 'work'));
+
+    // id 를 먼저 발급한다 — 백킹 경로가 id 기반이고, cwd 는 레코드 생성 후 바뀌지 않아야 한다
+    const workspaceId = newWorkspaceId();
+    const path = this.worktreePath(workspaceId);
+    await mkdir(this.paths.worktreesDir, { recursive: true });
+    await addWorktree({
+      repoRoot: project.root,
+      path,
+      branch,
+      // 기존 브랜치 체크아웃이면 -b 를 쓰지 않는다
+      ...(input.branch !== undefined && input.baseBranch === undefined
+        ? {}
+        : { baseBranch: baseBranch ?? 'HEAD' }),
+    });
+
+    try {
+      return await this.workspaces.create({
+        id: workspaceId,
+        projectId: project.id,
+        cwd: path,
+        checkoutRoot: path,
+        isolation: 'worktree',
+        branch,
+        mainRepoRoot: project.root,
+        setupState: 'pending',
+        displayName: input.displayName ?? branch,
+        ...(baseBranch !== undefined ? { baseBranch } : {}),
+      });
+    } catch (error) {
+      // 레코드가 안 생겼는데 체크아웃만 남으면 고아가 된다 — 되돌린다
+      await removeWorktree(project.root, path);
+      await rm(path, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  /**
+   * 백킹 체크아웃 복구 (WBS 5.5.2) — 외부에서 지워진 worktree 를 메인 저장소에서 재생성하고
+   * checkoutRoot → cwd 상대 경로를 되살린다(모노레포 하위 패키지를 가리키던 경우).
+   */
+  async restoreWorkspaceCheckout(workspaceId: string): Promise<WorkspaceRecord> {
+    const workspace = await this.workspaces.find(workspaceId);
+    if (!workspace) throw new Error(`워크스페이스 없음: ${workspaceId}`);
+    if (workspace.isolation !== 'worktree') {
+      throw new Error('worktree 워크스페이스만 복구할 수 있음');
+    }
+    const { mainRepoRoot, branch } = workspace;
+    if (mainRepoRoot === undefined || branch === undefined) {
+      throw new Error('복구에 필요한 메인 저장소·브랜치 정보가 없음');
+    }
+    try {
+      await stat(workspace.checkoutRoot);
+      return workspace; // 멀쩡하면 아무것도 하지 않는다
+    } catch {
+      // 사라짐 — 재생성
+    }
+    await restoreWorktree({ repoRoot: mainRepoRoot, path: workspace.checkoutRoot, branch });
+    // 경로는 그대로 되살아난다 — cwd 는 불변이므로 레코드는 손대지 않는다.
+    // checkoutRoot 아래의 상대 경로(모노레포 하위 패키지)는 체크아웃 복구로 함께 돌아온다.
+    const relativeCwd = relative(workspace.checkoutRoot, workspace.cwd);
+    if (relativeCwd !== '') {
+      try {
+        await stat(workspace.cwd);
+      } catch {
+        console.warn(
+          `[daemon] 복구된 체크아웃에 하위 경로가 없음: ${relativeCwd} (${workspace.id})`,
+        );
+      }
+    }
+    return workspace;
+  }
+
+  /**
+   * 프로젝트 설정 파일의 setup 실행 (WBS 5.5.3).
+   * 신뢰가 없으면 실행하지 않고 `pending` 을 유지한다 — 호출자가 내용을 보여주고 동의를 받아야 한다.
+   */
+  async runWorkspaceSetup(
+    workspaceId: string,
+    options: { trust?: boolean } = {},
+  ): Promise<{ setupState: WorkspaceRecord['setupState']; detail?: string }> {
+    const workspace = await this.workspaces.find(workspaceId);
+    if (!workspace) throw new Error(`워크스페이스 없음: ${workspaceId}`);
+    const project = await this.projects.find(workspace.projectId);
+    if (!project) throw new Error(`프로젝트 없음: ${workspace.projectId}`);
+
+    const ref = workspace.baseBranch ?? project.defaultBranch ?? 'HEAD';
+    const loaded = await loadProjectConfig(project.root, ref);
+    if (!loaded) {
+      await this.workspaces.setSetupState(workspaceId, 'none');
+      return { setupState: 'none' }; // 설정 파일은 선택 — 없으면 할 일이 없다
+    }
+    const commands = setupCommands(loaded.config);
+    if (commands.length === 0) {
+      await this.workspaces.setSetupState(workspaceId, 'none');
+      return { setupState: 'none' };
+    }
+    if (options.trust === true) await this.trust.grant(project.id, loaded.contentHash);
+    if (!(await this.trust.isTrusted(project.id, loaded.contentHash))) {
+      await this.workspaces.setSetupState(workspaceId, 'pending');
+      return { setupState: 'pending', detail: '설정 파일 실행 동의가 필요함' };
+    }
+
+    const outcome = await runCommands(commands, {
+      cwd: workspace.cwd,
+      env: {
+        ...process.env,
+        CUSTOM_HARNESS_SOURCE_CHECKOUT: project.root,
+        CUSTOM_HARNESS_WORKSPACE_ID: workspace.id,
+      },
+    });
+    const setupState = outcome.ok ? 'ok' : 'failed';
+    await this.workspaces.setSetupState(workspaceId, setupState);
+    return {
+      setupState,
+      ...(outcome.failed !== undefined
+        ? { detail: `실패: ${outcome.failed.command} (exit ${String(outcome.failed.exitCode)})` }
+        : {}),
+    };
+  }
+
+  /**
    * 아카이브 단일 창구 (WBS 5.3.3). 레코드는 소프트 삭제로 남고, 백킹 디렉토리 제거는
    * **우리가 만든 worktree 에 한정**한다 — 사용자가 고른 체크아웃은 어떤 경우에도 지우지 않는다.
    *
@@ -377,6 +532,10 @@ export class WorkspaceProvisioning {
   ): Promise<WorkspaceRecord> {
     const existing = await this.workspaces.find(workspaceId);
     if (!existing) throw new Error(`워크스페이스 없음: ${workspaceId}`);
+
+    // teardown 은 아카이브 *전에*, 아직 디렉토리가 있을 때 돈다 (WBS 5.5.3)
+    await this.runTeardown(existing);
+
     const archived = await this.workspaces.archive(workspaceId);
     if (options.removeCheckout !== true) return archived;
 
@@ -386,8 +545,40 @@ export class WorkspaceProvisioning {
     if (!isManaged) {
       throw new Error(`관리 밖 체크아웃은 제거하지 않음: ${target}`);
     }
+    // git 원장까지 정리해야 같은 경로를 다시 쓸 수 있다
+    if (archived.mainRepoRoot !== undefined) {
+      await removeWorktree(archived.mainRepoRoot, target);
+    }
     await rm(target, { recursive: true, force: true });
     return archived;
+  }
+
+  /** 아카이브 직전 teardown — 신뢰된 설정에서만 실행하고, 실패해도 아카이브를 막지 않는다 */
+  private async runTeardown(workspace: WorkspaceRecord): Promise<void> {
+    const project = await this.projects.find(workspace.projectId);
+    if (!project || project.kind !== 'git') return;
+    const ref = workspace.baseBranch ?? project.defaultBranch ?? 'HEAD';
+    const loaded = await loadProjectConfig(project.root, ref);
+    if (!loaded) return;
+    const commands = teardownCommands(loaded.config);
+    if (commands.length === 0) return;
+    if (!(await this.trust.isTrusted(project.id, loaded.contentHash))) return;
+    try {
+      await stat(workspace.cwd);
+    } catch {
+      return; // 디렉토리가 이미 없으면 돌릴 것이 없다
+    }
+    const outcome = await runCommands(commands, {
+      cwd: workspace.cwd,
+      env: {
+        ...process.env,
+        CUSTOM_HARNESS_SOURCE_CHECKOUT: project.root,
+        CUSTOM_HARNESS_WORKSPACE_ID: workspace.id,
+      },
+    });
+    if (!outcome.ok) {
+      console.warn(`[daemon] teardown 실패 (${workspace.id}) — 아카이브는 계속한다`);
+    }
   }
 
   /** worktree 백킹 디렉토리 경로 (D-1 확정: 데이터 디렉토리 내부) */

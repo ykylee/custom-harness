@@ -1,56 +1,56 @@
-// 세션 생성 화면 (WBS 1.5.2, FR-3.1) — 하네스·작업 디렉토리·모델 선택.
-// 네이티브 폴더 픽커는 셸 통합(1.6)에서 — 1차는 직접 입력 + 최근 목록(localStorage).
+// 세션 생성 화면 (WBS 1.5.2 → 5.6.4, FR-3.1·FR-7.3) — 하네스·모델 선택.
+//
+// 작업 디렉토리 직접 입력은 폐지됐다: 세션은 워크스페이스에 귀속되고 cwd 는 거기서 온다.
+// 워크스페이스를 고르는 곳은 사이드바다 — 여기서는 무엇으로 일할지만 정한다.
 import { useState } from 'react';
-import type { HarnessId, HarnessInfo } from '@custom-harness/protocol';
+import type { HarnessId, HarnessInfo, Workspace } from '@custom-harness/protocol';
 import type { GatewaySettings } from '../store/app-store.js';
-
-const RECENT_KEY = 'custom-harness.recent-cwds';
-
-function loadRecentCwds(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentCwd(cwd: string): void {
-  try {
-    const next = [cwd, ...loadRecentCwds().filter((c) => c !== cwd)].slice(0, 8);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // localStorage 불가 환경 — 최근 목록만 포기
-  }
-}
 
 export function SessionCreate({
   harnesses,
   gateway,
+  workspace,
   onCreate,
+  onNewWorkspace,
 }: {
   harnesses: HarnessInfo[];
   gateway: GatewaySettings | null;
-  onCreate: (params: { harness: HarnessId; cwd: string; modelId?: string }) => Promise<void>;
+  /** 세션이 귀속될 워크스페이스. 없으면 먼저 만들어야 한다 */
+  workspace: Workspace | null;
+  onCreate: (params: {
+    harness: HarnessId;
+    workspaceId: string;
+    modelId?: string;
+  }) => Promise<void>;
+  onNewWorkspace: () => void;
 }): React.JSX.Element {
   const [harness, setHarness] = useState<HarnessId | ''>(harnesses[0]?.id ?? '');
-  const [cwd, setCwd] = useState('');
   const [modelId, setModelId] = useState(gateway?.defaultModel ?? '');
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const recents = loadRecentCwds();
+
+  if (workspace === null) {
+    return (
+      <div className="session-create">
+        <h2>새 세션</h2>
+        <p className="hint">
+          세션은 워크스페이스 안에서 만들어집니다. 먼저 프로젝트를 열어 워크스페이스를 만드세요.
+        </p>
+        <button onClick={() => onNewWorkspace()}>워크스페이스 만들기</button>
+      </div>
+    );
+  }
 
   const create = async (): Promise<void> => {
-    if (!harness || !cwd.trim()) return;
+    if (!harness) return;
     setCreating(true);
     setError(null);
     try {
       await onCreate({
         harness,
-        cwd: cwd.trim(),
+        workspaceId: workspace.id,
         ...(modelId ? { modelId } : {}),
       });
-      saveRecentCwd(cwd.trim());
     } catch (err) {
       // 원인별 안내 (FR-3.1.2) — 데몬 RpcError 메시지 표출
       setError(err instanceof Error ? err.message : String(err));
@@ -62,6 +62,22 @@ export function SessionCreate({
   return (
     <div className="session-create">
       <h2>새 세션</h2>
+      <div className="session-create-workspace" data-testid="target-workspace">
+        <span className={`isolation-badge isolation-${workspace.isolation}`}>
+          {workspace.isolation === 'worktree' ? 'wt' : 'dir'}
+        </span>
+        <strong>{workspace.displayName}</strong>
+        {workspace.branch !== undefined && (
+          <span className="workspace-branch">{workspace.branch}</span>
+        )}
+        <code className="workspace-path">{workspace.cwd}</code>
+      </div>
+      {workspace.setupState === 'pending' && (
+        <p className="hint" data-testid="setup-pending-hint">
+          이 프로젝트에는 아직 실행하지 않은 설정 파일(setup)이 있습니다. 사이드바에서 내용을
+          확인하고 실행할 수 있습니다.
+        </p>
+      )}
       <label>
         하네스
         <select value={harness} onChange={(event) => setHarness(event.target.value as HarnessId)}>
@@ -71,20 +87,6 @@ export function SessionCreate({
             </option>
           ))}
         </select>
-      </label>
-      <label>
-        작업 디렉토리
-        <input
-          value={cwd}
-          placeholder="/path/to/project"
-          list="recent-cwds"
-          onChange={(event) => setCwd(event.target.value)}
-        />
-        <datalist id="recent-cwds">
-          {recents.map((recent) => (
-            <option key={recent} value={recent} />
-          ))}
-        </datalist>
       </label>
       <label>
         모델
@@ -102,7 +104,7 @@ export function SessionCreate({
           세션 생성 실패: {error}
         </div>
       )}
-      <button onClick={() => void create()} disabled={creating || !harness || !cwd.trim()}>
+      <button onClick={() => void create()} disabled={creating || !harness}>
         {creating ? '생성 중…' : '세션 생성'}
       </button>
     </div>
