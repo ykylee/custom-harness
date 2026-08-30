@@ -19,6 +19,8 @@ import type { KeyStore } from './gateway/key-store.js';
 import type { GatewayService } from './gateway/service.js';
 import type { SessionManager } from './session-manager.js';
 import type { TerminalManager } from './terminals.js';
+import { commitDiff, workingDiff, DiffWatcher } from './workspaces/diffs.js';
+import { listDirectory, readWorkspaceFile, PathEscapeError } from './workspaces/files.js';
 import type { WorkspaceProvisioning } from './workspaces/registry.js';
 
 export interface DaemonServerOptions {
@@ -46,6 +48,9 @@ export class DaemonServer {
   private unsubscribe: (() => void) | undefined;
   private unsubscribeRegistry: (() => void) | undefined;
   private unsubscribeTerminals: (() => void) | undefined;
+  /** 워크스페이스별 diff 감시자 — 구독자가 0이 되면 멈춘다 (WBS 6.5) */
+  private readonly diffWatchers = new Map<string, { watcher: DiffWatcher; subscribers: number }>();
+  private broadcast: ((event: ServerMessage) => void) | undefined;
   private readonly helloDone = new WeakSet<WebSocket>();
   /**
    * 연결별 터미널 슬롯 — 바이너리 프레임의 1바이트 핸들이 어느 터미널인지.
@@ -85,13 +90,14 @@ export class DaemonServer {
     });
 
     // 매니저 이벤트 → hello 완료 연결 전체에 브로드캐스트
-    const broadcast = (event: ServerMessage): void => {
+    this.broadcast = (event: ServerMessage): void => {
       for (const client of wss.clients) {
         if (client.readyState === WebSocket.OPEN && this.helloDone.has(client)) {
           this.send(client, event);
         }
       }
     };
+    const broadcast = this.broadcast;
     this.unsubscribe = this.options.manager.onEvent(broadcast);
     // 레지스트리 변경도 같은 경로로 — 클라이언트는 신호를 받고 목록을 다시 읽는다
     this.unsubscribeRegistry = this.options.provisioning?.onChange(broadcast);
@@ -110,6 +116,8 @@ export class DaemonServer {
     this.unsubscribe?.();
     this.unsubscribeRegistry?.();
     this.unsubscribeTerminals?.();
+    for (const entry of this.diffWatchers.values()) entry.watcher.stop();
+    this.diffWatchers.clear();
     const wss = this.wss;
     if (!wss) return;
     for (const client of wss.clients) client.close(1001, 'daemon shutdown');
@@ -203,6 +211,49 @@ export class DaemonServer {
       if (!table.bySlot.has(slot)) return slot;
     }
     return undefined;
+  }
+
+  private async requireWorkspace(workspaceId: string): Promise<{ id: string; cwd: string }> {
+    const { provisioning } = this.requireProvisioning();
+    const workspace = await provisioning.workspaces.find(workspaceId);
+    if (!workspace) throw new DaemonError('not_found', `워크스페이스 없음: ${workspaceId}`);
+    return workspace;
+  }
+
+  /** 경계 위반은 bad_request 로 — 클라이언트 버그이지 서버 오류가 아니다 */
+  private async mapPathError<T>(task: () => Promise<T>): Promise<T> {
+    try {
+      return await task();
+    } catch (error) {
+      if (error instanceof PathEscapeError) throw new DaemonError('bad_request', error.message);
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        throw new DaemonError('not_found', error.message);
+      }
+      throw error;
+    }
+  }
+
+  /** 같은 워크스페이스 구독이 여럿이면 감시자는 하나만 돈다 */
+  private async subscribeDiff(workspaceId: string, cwd: string): Promise<void> {
+    const existing = this.diffWatchers.get(workspaceId);
+    if (existing) {
+      existing.subscribers += 1;
+      return;
+    }
+    const watcher = new DiffWatcher(cwd, () =>
+      this.broadcast?.({ type: 'diff_changed', workspaceId }),
+    );
+    this.diffWatchers.set(workspaceId, { watcher, subscribers: 1 });
+    await watcher.start();
+  }
+
+  private unsubscribeDiff(workspaceId: string): void {
+    const entry = this.diffWatchers.get(workspaceId);
+    if (!entry) return;
+    entry.subscribers -= 1;
+    if (entry.subscribers > 0) return;
+    entry.watcher.stop();
+    this.diffWatchers.delete(workspaceId);
   }
 
   private requireTerminals(): TerminalManager {
@@ -424,6 +475,33 @@ export class DaemonServer {
         terminals.kill(message.params.terminalId);
         return {};
       }
+      case 'file.list.request': {
+        const workspace = await this.requireWorkspace(message.params.workspaceId);
+        return this.mapPathError(() => listDirectory(workspace.cwd, message.params.path));
+      }
+      case 'file.read.request': {
+        const workspace = await this.requireWorkspace(message.params.workspaceId);
+        return this.mapPathError(() => readWorkspaceFile(workspace.cwd, message.params.path));
+      }
+      case 'diff.get.request': {
+        const workspace = await this.requireWorkspace(message.params.workspaceId);
+        if (message.params.scope === 'commit') {
+          const sha = message.params.sha;
+          if (sha === undefined)
+            throw new DaemonError('bad_request', 'commit scope 는 sha 가 필요');
+          return commitDiff(workspace.cwd, sha);
+        }
+        return workingDiff(workspace.cwd);
+      }
+      case 'diff.subscribe.request': {
+        const workspace = await this.requireWorkspace(message.params.workspaceId);
+        await this.subscribeDiff(workspace.id, workspace.cwd);
+        return {};
+      }
+      case 'diff.unsubscribe.request': {
+        this.unsubscribeDiff(message.params.workspaceId);
+        return {};
+      }
       case 'system.version.request':
         return { version: this.options.serverVersion, protocolVersion: PROTOCOL_VERSION };
       case 'system.shutdown.request':
@@ -533,6 +611,31 @@ export class DaemonServer {
       case 'workspace.labels.list.request': {
         const { provisioning } = this.requireProvisioning();
         return { labels: await provisioning.labels.list() };
+      }
+      case 'workspace.scripts.list.request': {
+        const { provisioning } = this.requireProvisioning();
+        return this.mapNotFound(() =>
+          provisioning.listWorkspaceScripts(message.params.workspaceId),
+        );
+      }
+      case 'workspace.scripts.run.request': {
+        const { provisioning } = this.requireProvisioning();
+        const terminals = this.requireTerminals();
+        const resolved = await this.mapNotFound(() =>
+          provisioning.resolveWorkspaceScript(message.params.workspaceId, message.params.name),
+        );
+        // 감독 터미널 — 출력은 일반 터미널과 같은 경로로 흐른다
+        return {
+          terminal: terminals.create({
+            workspaceId: message.params.workspaceId,
+            cwd: resolved.cwd,
+            cols: message.params.cols,
+            rows: message.params.rows,
+            env: resolved.env,
+            command: resolved.command,
+            label: message.params.name,
+          }),
+        };
       }
       case 'workspace.setup.run.request': {
         const { provisioning } = this.requireProvisioning();

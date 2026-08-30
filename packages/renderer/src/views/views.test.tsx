@@ -6,6 +6,8 @@ import { applyEvents, emptySessionView } from '../timeline.js';
 import { Conversation } from './Conversation.js';
 import { Onboarding } from './Onboarding.js';
 import { WorkspaceCreate } from './WorkspaceCreate.js';
+import { FilesView, FileViewer } from './FilesView.js';
+import { DiffView } from './DiffView.js';
 import { SessionCreate } from './SessionCreate.js';
 
 afterEach(cleanup);
@@ -295,5 +297,116 @@ describe('WorkspaceCreate (WBS 5.6.2)', () => {
     expect((await screen.findByTestId('workspace-create-error')).textContent).toContain(
       '브랜치 이미 존재',
     );
+  });
+});
+
+describe('FilesView / FileViewer (WBS 6.4)', () => {
+  const tree: Record<string, { entries: unknown[]; truncated: boolean }> = {
+    '': {
+      entries: [
+        { name: 'src', path: 'src', kind: 'directory' },
+        { name: 'README.md', path: 'README.md', kind: 'file', size: 12 },
+      ],
+      truncated: false,
+    },
+    src: {
+      entries: [{ name: 'index.ts', path: 'src/index.ts', kind: 'file', size: 30 }],
+      truncated: false,
+    },
+  };
+
+  it('디렉토리를 펼칠 때마다 그 단계만 읽는다 (증분 로딩)', async () => {
+    const list = vi.fn((path: string) => Promise.resolve(tree[path]!));
+    const openFile = vi.fn();
+    render(<FilesView actions={{ list: list as never, openFile }} />);
+
+    expect(await screen.findByTestId('dir-src')).toBeTruthy();
+    expect(list).toHaveBeenCalledTimes(1); // 루트만 읽었다
+
+    fireEvent.click(screen.getByTestId('dir-src'));
+    expect(await screen.findByTestId('file-src/index.ts')).toBeTruthy();
+    expect(list).toHaveBeenCalledWith('src');
+  });
+
+  it('파일을 클릭하면 탭으로 연다', async () => {
+    const openFile = vi.fn();
+    render(
+      <FilesView
+        actions={{ list: ((p: string) => Promise.resolve(tree[p]!)) as never, openFile }}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('file-README.md'));
+    expect(openFile).toHaveBeenCalledWith('README.md');
+  });
+
+  it('바이너리·초과 파일은 내용 대신 사유를 보여준다', async () => {
+    const { rerender } = render(
+      <FileViewer
+        path="a.bin"
+        read={() => Promise.resolve({ path: 'a.bin', size: 10, binary: true, tooLarge: false })}
+      />,
+    );
+    expect((await screen.findByTestId('file-viewer')).textContent).toContain('바이너리');
+
+    rerender(
+      <FileViewer
+        path="big.txt"
+        read={() =>
+          Promise.resolve({ path: 'big.txt', size: 9_000_000, binary: false, tooLarge: true })
+        }
+      />,
+    );
+    expect((await screen.findByTestId('file-viewer')).textContent).toContain('너무 큽니다');
+  });
+});
+
+describe('DiffView (WBS 6.5)', () => {
+  it('추가·삭제 줄을 구분해 색칠한다', () => {
+    render(
+      <DiffView
+        diff={{
+          scope: 'working',
+          patch: 'diff --git a/x b/x\n@@ -1 +1 @@\n-old\n+new\n',
+          truncated: false,
+          untracked: [],
+        }}
+      />,
+    );
+    const body = screen.getByTestId('diff-view');
+    expect(body.querySelectorAll('.diff-add')).toHaveLength(1);
+    expect(body.querySelectorAll('.diff-del')).toHaveLength(1);
+    expect(body.querySelectorAll('.diff-hunk')).toHaveLength(1);
+  });
+
+  it('미추적 파일을 따로 알리고 클릭하면 연다', () => {
+    const onOpenFile = vi.fn();
+    render(
+      <DiffView
+        diff={{ scope: 'working', patch: '', truncated: false, untracked: ['new.txt'] }}
+        onOpenFile={onOpenFile}
+      />,
+    );
+    fireEvent.click(screen.getByText('new.txt'));
+    expect(onOpenFile).toHaveBeenCalledWith('new.txt');
+  });
+
+  it('변경이 없으면 그렇게 알린다', () => {
+    render(<DiffView diff={{ scope: 'working', patch: '', truncated: false, untracked: [] }} />);
+    expect(screen.getByTestId('diff-view').textContent).toContain('변경사항이 없습니다');
+  });
+
+  it('git 이 아니면 사유를 보여준다', () => {
+    render(
+      <DiffView
+        diff={{
+          scope: 'working',
+          patch: '',
+          truncated: false,
+          untracked: [],
+          unavailable: 'not a git repository',
+        }}
+      />,
+    );
+    expect(screen.getByText(/not a git repository/)).toBeTruthy();
   });
 });

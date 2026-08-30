@@ -73,5 +73,10 @@ export const RegistryEventSchema = z.discriminatedUnion('type', [
     reason: RegistryChangeReasonSchema,
     workspace: WorkspaceSchema,
   }),
+  /** 변경사항이 바뀌었다는 신호 — 내용은 diff.get 으로 회수한다 (WBS 6.5) */
+  z.looseObject({
+    type: z.literal('diff_changed'),
+    workspaceId: z.string(),
+  }),
 ]);
 export type RegistryEvent = z.infer<typeof RegistryEventSchema>;

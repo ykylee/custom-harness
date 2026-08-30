@@ -65,7 +65,8 @@ describe('TerminalManager (WBS 6.3.1)', () => {
     const manager = makeManager();
     const terminal = manager.create({ workspaceId: 'wsp_1', cwd, cols: 80, rows: 24 });
 
-    manager.write(terminal.id, new TextEncoder().encode('tty > /dev/null && echo IS_TTY\n'));
+    // 마커를 셸에서 이어붙인다 — 되울린 명령줄이 검사를 통과시키지 않게
+    manager.write(terminal.id, new TextEncoder().encode('tty > /dev/null && echo "IS""_TTY"\n'));
     expect(await waitFor(manager, terminal.id, 'IS_TTY')).toContain('IS_TTY');
   });
 
@@ -74,12 +75,12 @@ describe('TerminalManager (WBS 6.3.1)', () => {
     const manager = makeManager();
     const terminal = manager.create({ workspaceId: 'wsp_1', cwd, cols: 80, rows: 24 });
 
-    manager.write(terminal.id, new TextEncoder().encode('echo FIRST\n'));
-    await waitFor(manager, terminal.id, 'FIRST');
+    manager.write(terminal.id, new TextEncoder().encode('echo "FIR""ST_MARK"\n'));
+    await waitFor(manager, terminal.id, 'FIRST_MARK');
 
     // 나중에 붙은 클라이언트도 이전 출력을 본다
     const late = manager.attach(terminal.id, () => undefined);
-    expect(Buffer.from(late!.scrollback).toString('utf8')).toContain('FIRST');
+    expect(Buffer.from(late!.scrollback).toString('utf8')).toContain('FIRST_MARK');
     expect(late!.truncated).toBe(false);
     late!.detach();
   });
@@ -94,10 +95,10 @@ describe('TerminalManager (WBS 6.3.1)', () => {
     const a = manager.attach(terminal.id, (c) => seenA.push(Buffer.from(c).toString('utf8')));
     const b = manager.attach(terminal.id, (c) => seenB.push(Buffer.from(c).toString('utf8')));
 
-    manager.write(terminal.id, new TextEncoder().encode('echo SHARED\n'));
-    await waitFor(manager, terminal.id, 'SHARED');
-    expect(seenA.join('')).toContain('SHARED');
-    expect(seenB.join('')).toContain('SHARED');
+    manager.write(terminal.id, new TextEncoder().encode('echo "SHA""RED_MARK"\n'));
+    await waitFor(manager, terminal.id, 'SHARED_MARK');
+    expect(seenA.join('')).toContain('SHARED_MARK');
+    expect(seenB.join('')).toContain('SHARED_MARK');
     a!.detach();
     b!.detach();
   });
@@ -158,5 +159,41 @@ describe('TerminalManager (WBS 6.3.1)', () => {
     expect(defaultShell({ SHELL: '/bin/zsh' })).toBe(
       process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh',
     );
+  });
+});
+
+describe('감독 터미널 (WBS 6.6)', () => {
+  it('명령을 실행하고 출력을 그대로 보여준 뒤 종료한다', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'ch-term-'));
+    const manager = makeManager();
+    const exited = new Promise<number | undefined>((resolve) => {
+      manager.onChange((reason, terminal) => {
+        if (reason === 'exited') resolve(terminal.exitCode);
+      });
+    });
+    const terminal = manager.create({
+      workspaceId: 'wsp_1',
+      cwd,
+      cols: 80,
+      rows: 24,
+      command: 'echo "SUPERVISED""_OK"',
+      label: 'test',
+    });
+
+    expect(terminal.label).toBe('test');
+    expect(await waitFor(manager, terminal.id, 'SUPERVISED_OK')).toContain('SUPERVISED_OK');
+    expect(await exited).toBe(0);
+  });
+
+  it('실패한 명령의 종료 코드를 남긴다', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'ch-term-'));
+    const manager = makeManager();
+    const exited = new Promise<number | undefined>((resolve) => {
+      manager.onChange((reason, terminal) => {
+        if (reason === 'exited') resolve(terminal.exitCode);
+      });
+    });
+    manager.create({ workspaceId: 'wsp_1', cwd, cols: 80, rows: 24, command: 'exit 5' });
+    expect(await exited).toBe(5);
   });
 });

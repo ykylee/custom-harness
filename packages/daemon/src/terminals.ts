@@ -62,6 +62,13 @@ export interface CreateTerminalInput {
   rows: number;
   shell?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
+  /**
+   * 실행할 명령 (WBS 6.6) — 지정하면 셸이 이 명령을 돌리고 끝난다(감독 터미널).
+   * 사용자가 출력을 그대로 보게 하려고 별도 실행기 대신 터미널을 쓴다.
+   */
+  command?: string | undefined;
+  /** 감독 터미널의 표시 이름 (스크립트 이름) */
+  label?: string | undefined;
 }
 
 export type TerminalChangeReason = 'created' | 'exited' | 'killed';
@@ -90,8 +97,16 @@ export class TerminalManager {
       cols: input.cols,
       rows: input.rows,
       createdAt: new Date().toISOString(),
+      ...(input.label !== undefined ? { label: input.label } : {}),
     };
-    const pty = spawnPty(shell, [], {
+    // 명령이 있으면 셸에 실어 보낸다 — POSIX 는 -lc, PowerShell 은 -Command
+    const args =
+      input.command === undefined
+        ? []
+        : platform() === 'win32'
+          ? ['-Command', input.command]
+          : ['-lc', input.command];
+    const pty = spawnPty(shell, args, {
       name: 'xterm-256color',
       cols: input.cols,
       rows: input.rows,

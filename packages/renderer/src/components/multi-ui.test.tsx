@@ -55,6 +55,10 @@ const sidebarActions = () => ({
   renameWorkspace: vi.fn(),
   setWorkspaceLabels: vi.fn(),
   newTerminal: vi.fn(),
+  openFiles: vi.fn(),
+  openDiff: vi.fn(),
+  listScripts: vi.fn().mockResolvedValue({ scripts: [], trusted: false }),
+  runScript: vi.fn(),
 });
 
 describe('Sidebar (FR-3.3.1)', () => {

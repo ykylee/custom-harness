@@ -13,6 +13,8 @@ import { Conversation } from './views/Conversation.js';
 import { Onboarding } from './views/Onboarding.js';
 import { SessionCreate } from './views/SessionCreate.js';
 import { TerminalView } from './views/TerminalView.js';
+import { FilesView, FileViewer } from './views/FilesView.js';
+import { DiffView } from './views/DiffView.js';
 import { WorkspaceCreate } from './views/WorkspaceCreate.js';
 import { Settings } from './views/Settings.js';
 
@@ -56,11 +58,24 @@ function Pane({
           onError={(error) => controller.reportError(error)}
         />
       );
-    // 파일·변경사항 뷰는 WBS 6.4·6.5 — 탭 모델은 이미 받아들인다
     case 'files':
+      return (
+        <FilesView
+          actions={{
+            list: (path) => controller.listDirectory(path),
+            openFile: (path) => controller.openFile(path),
+          }}
+        />
+      );
     case 'file':
+      return <FileViewer path={target.path} read={(path) => controller.readFile(path)} />;
     case 'diff':
-      return <div className="pane-placeholder">아직 구현되지 않은 뷰입니다 ({target.kind})</div>;
+      return (
+        <DiffView
+          diff={state.diffs[target.scope === 'working' ? 'working' : `commit:${target.sha}`]}
+          onOpenFile={(path) => controller.openFile(path)}
+        />
+      );
   }
 }
 
@@ -147,6 +162,13 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
           selectWorkspace: (workspaceId) => controller.selectWorkspace(workspaceId),
           newWorkspace: () => controller.navigate('workspace-create'),
           newTerminal: () => void controller.createTerminal(),
+          openFiles: () => controller.openTarget({ kind: 'files' }),
+          listScripts: (workspaceId) => controller.listWorkspaceScripts(workspaceId),
+          runScript: (workspaceId, name) => void controller.runWorkspaceScript(workspaceId, name),
+          openDiff: () => {
+            controller.openTarget({ kind: 'diff', scope: 'working' });
+            void controller.refreshDiff();
+          },
           archiveWorkspace: (workspaceId) => void controller.archiveWorkspace(workspaceId),
           renameWorkspace: (workspaceId, displayName) =>
             void controller.renameWorkspace(workspaceId, displayName),

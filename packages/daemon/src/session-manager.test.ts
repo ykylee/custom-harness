@@ -22,12 +22,23 @@ describe('SessionManager', () => {
     manager.onEvent((event) => events.push(event));
   });
 
+  /**
+   * emit 체인(영속화+팬아웃)이 **멎을 때까지** 기다린다.
+   *
+   * 고정 sleep 으로는 부하가 걸린 실행에서 마지막 이벤트를 놓친다(실측: 전체 스위트 병렬
+   * 실행 중 간헐 실패). 길이가 두 번 연속 같을 때를 '정지'로 본다.
+   */
   async function settled(): Promise<void> {
-    // emit 체인(영속화+팬아웃)이 비워질 때까지
-    await vi.waitFor(() => {
-      expect(events.length).toBeGreaterThan(0);
-    });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    let previous = -1;
+    await vi.waitFor(
+      () => {
+        const current = events.length;
+        const stable = current > 0 && current === previous;
+        previous = current;
+        expect(stable).toBe(true);
+      },
+      { timeout: 5000, interval: 15 },
+    );
   }
 
   it('creates a session: initializing → idle, meta+handle persisted (FR-1.3.5)', async () => {

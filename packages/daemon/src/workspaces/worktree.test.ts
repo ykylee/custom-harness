@@ -339,3 +339,59 @@ describe('worktree 미사용 모드 동등 지원 (WBS 5.5.4)', () => {
     await access(join(repo, 'README.md'));
   });
 });
+
+describe('워크스페이스 스크립트 (WBS 6.6)', () => {
+  it('설정 파일의 스크립트를 신뢰 여부와 함께 목록으로 준다', async () => {
+    const paths = await makePaths();
+    const provisioning = new WorkspaceProvisioning(paths);
+    const repo = await makeRepo({
+      scripts: { test: { command: 'npm test' }, lint: { command: 'npm run lint' } },
+    });
+    const { project, workspace } = await provisioning.openProject(repo);
+
+    const before = await provisioning.listWorkspaceScripts(workspace.id);
+    expect(before.scripts.map((s) => s.name).sort()).toEqual(['lint', 'test']);
+    expect(before.trusted).toBe(false); // 아직 동의 전
+
+    // setup 동의는 같은 설정 파일 전체에 대한 신뢰다
+    await provisioning.runWorkspaceSetup(workspace.id, { trust: true });
+    expect((await provisioning.listWorkspaceScripts(workspace.id)).trusted).toBe(true);
+    expect(project.kind).toBe('git');
+  });
+
+  it('신뢰 없이 실행하려 하면 거절한다', async () => {
+    const paths = await makePaths();
+    const provisioning = new WorkspaceProvisioning(paths);
+    const repo = await makeRepo({ scripts: { test: { command: 'echo hi' } } });
+    const { workspace } = await provisioning.openProject(repo);
+
+    await expect(provisioning.resolveWorkspaceScript(workspace.id, 'test')).rejects.toThrow('동의');
+  });
+
+  it('신뢰 후에는 명령·실행 위치·환경 변수를 확정해 준다', async () => {
+    const paths = await makePaths();
+    const provisioning = new WorkspaceProvisioning(paths);
+    const repo = await makeRepo({
+      workspace: { setup: 'true' },
+      scripts: { test: { command: 'echo SCRIPT_OK' } },
+    });
+    const { project, workspace } = await provisioning.openProject(repo);
+    await provisioning.runWorkspaceSetup(workspace.id, { trust: true });
+
+    const resolved = await provisioning.resolveWorkspaceScript(workspace.id, 'test');
+    expect(resolved.command).toBe('echo SCRIPT_OK');
+    expect(resolved.cwd).toBe(workspace.cwd);
+    expect(resolved.env.CUSTOM_HARNESS_SOURCE_CHECKOUT).toBe(project.root);
+    expect(resolved.env.CUSTOM_HARNESS_WORKSPACE_ID).toBe(workspace.id);
+  });
+
+  it('없는 스크립트는 거절한다', async () => {
+    const paths = await makePaths();
+    const provisioning = new WorkspaceProvisioning(paths);
+    const repo = await makeRepo({ scripts: {} });
+    const { workspace } = await provisioning.openProject(repo);
+    await expect(provisioning.resolveWorkspaceScript(workspace.id, 'nope')).rejects.toThrow(
+      '스크립트 없음',
+    );
+  });
+});

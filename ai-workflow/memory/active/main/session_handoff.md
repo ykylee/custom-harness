@@ -11,7 +11,7 @@
 
 ## Current Focus
 
-- (2026-08-30 현재 기준선) **M0 설계 → M1 구현 → M2 구현(2.1~2.7) + M3 선행 2건 완료, 그 위에 M5 착수.** 1차 하네스 3종(pi/omp/grok)·데몬 멀티 세션·렌더러·셸/CLI·3 OS 오프라인 번들·doctor/logs 동작, NFR-1(외부 접속 0) darwin 실측 PASS. **2026-08-30 방향 확장**: paseo 서비스 구성 전수 분석(18 도메인) → 도입 웨이브 A~C 승인 → 로드맵 **M5(워크스페이스)·M6(캔버스)·M7(오케스트레이션)** 신설, 요구사항 FR-7/8/9 신설. **M5 완료 + M6 착수** — 워크스페이스 모델(데몬 정본·UI 3계층) 위에 작업 캔버스 기반이 섰다: 다형 탭 모델(타깃 6종)과 데몬 소유 터미널(바이너리 프레임·pty). 테스트 310건 그린, NFR-1·번들 터미널 스모크 PASS. M6 잔여는 6.4 파일·6.5 diff·6.6 스크립트·6.7.1 부하. **M1·M2 완료 선언 잔여는 전부 사내 협조 대기(C-1 게이트웨이 실측, C-5 실기기 linux/win) — M5 는 이와 독립이라 병행 중.**
+- (2026-08-30 현재 기준선) **M0 설계 → M1 구현 → M2 구현(2.1~2.7) + M3 선행 2건 완료, 그 위에 M5 착수.** 1차 하네스 3종(pi/omp/grok)·데몬 멀티 세션·렌더러·셸/CLI·3 OS 오프라인 번들·doctor/logs 동작, NFR-1(외부 접속 0) darwin 실측 PASS. **2026-08-30 방향 확장**: paseo 서비스 구성 전수 분석(18 도메인) → 도입 웨이브 A~C 승인 → 로드맵 **M5(워크스페이스)·M6(캔버스)·M7(오케스트레이션)** 신설, 요구사항 FR-7/8/9 신설. **M5·M6 전 구간 완료** — 워크스페이스 3계층 위에 작업 캔버스가 섰다: 다형 탭(타깃 6종), 데몬 소유 터미널(바이너리 프레임·pty), 파일 탐색·뷰어, working/커밋 diff, 감독 터미널 스크립트 실행. 테스트 346건 그린, NFR-1·번들 터미널 스모크 PASS, 3 OS 재조립. 다음은 **M7 오케스트레이션**(7.2.1 하네스 MCP 실측이 선행 게이트). **M1·M2 완료 선언 잔여는 전부 사내 협조 대기(C-1 게이트웨이 실측, C-5 실기기 linux/win) — M5 는 이와 독립이라 병행 중.**
 - 컨셉 정의 단계 — paseo 류 멀티 하네스 오케스트레이션 도구, **사내망(폐쇄망) 전용**. 핵심 제약: 모든 LLM 트래픽은 커스텀 게이트웨이(OpenAI 호환만) 경유, 외부 참조 최소화, 토큰 제약. 컨셉 전달 진행 중(완료 선언 전), 진행 범위는 설계까지(구현 금지). 레퍼런스·게이트웨이·확장 공유 조사 완료. 코드 없음, 기술 스택 미정.
 - (2026-08-25 갱신) **기준선 전면 갱신**: 컨셉 완료 선언(08-24) → 요구사항 v2·로드맵 v2(M0~M4 WBS) 승인 → **M0 설계 완료**(설계서 6종 approved) → **M1 착수, 1.1.1 모노레포 골격 완료**(typecheck·test·lint 그린). 진행 범위는 사용자 지시로 **SDLC 단계별 순차 진행(구현 포함)** 으로 변경. 확정: 1차 하네스 pi/omp/grok(ACP·GROK_HOME 격리), Windows 번들 omp+pi(조건부)·grok 제외, 주입은 격리 우선(pi `PI_CODING_AGENT_DIR` 실측 확정). 작업 원칙: 로드맵·WBS 기반 진행, 진척은 docs/roadmap/PROGRESS.md + 백로그 기록, 계획 변경 시 원 문서 동기화 필수 (PROJECT_PROFILE §4).
 - (2026-08-25 2차 갱신) **M1 코어 4개 WP 완료**: 1.1.2 protocol v0(이벤트 유니온 14종+와이어 user_message·RPC 17 method·capability 헬퍼·순수성 lint 게이트) → 1.2 데몬 코어(WS 서버·세션 매니저·JSONL 영속화·spawn 유틸·startDaemon 조립) → 1.3 pi 어댑터(pi 0.84.1 RPC 스키마 실측, JSONL 전송 base, 이벤트 정규화·승인 extension_ui 배선, mock 하네스 1급+공유 계약 스위트) → 1.4 게이트웨이(models.json 격리 주입·PI_OFFLINE 프리셋·KeyStore 0600 폴백+SecretCipher·config.\* RPC). 테스트 86건·typecheck·lint·format 그린. 설계서 2건 v1.1 개정(사용자 승인): protocol-design(user_message), adapter-contract(pi capability 실측 보정·승인 채널). 백로그 08-24/08-25 태스크 17건 상태 정합화(done).
@@ -25,6 +25,7 @@
 
 - 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
 - M3 잔여 후보(사내 협조 무관 순수 사외분 아님 — 대부분 C-1·C-5 후속) — 3.1 업데이트·롤백, 3.3.2 앱 정보 화면 고지 열람·clean-room 검수, 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
+- TASK-2026-08-30-main-008 M6 6.4~6.7 파일·diff·스크립트·부하(M6 완료): done
 - TASK-2026-08-30-main-007 M6 6.1~6.3 설계·탭 타깃 일반화·터미널: done
 - TASK-2026-08-30-main-006 M5 5.5~5.7 worktree 격리·UI 재편·검증(M5 완료): done
 - TASK-2026-08-30-main-005 M5 5.4 세션의 워크스페이스 귀속 + 1회 백필: done
@@ -34,10 +35,10 @@
 - TASK-2026-08-30-main-001 paseo 서비스 구성 전수 분석 + 도입 계획(M5~M7 신설): done
 - TASK-2026-08-25-main-027 렌더러 디자인 정비(다크 우선 토큰 시스템·타임라인 세그먼트·스크롤 경합): done
 - TASK-2026-08-25-main-026 Windows 대응 보강(grok 제외 일관화·lint POSIX 제거·실기기 피드백 4건): done
-- TASK-2026-08-25-main-025 M3 3.5.2 제거 스크립트(uninstall.sh/ps1·스모크): done
 
 ## Key Changes
 
+- (2026-08-30 5차) **M6 완료**: 파일 접근(`files.ts` — 절대경로·`..`·심링크 탈출 거절, realpath 2차 확인, 2MiB·바이너리 방어) / diff(`diffs.ts` — HEAD 기준 working+미추적, 커밋 sha 검증, `git status` 지문 폴링 감시, 이벤트는 신호만) / 워크스페이스 스크립트를 감독 터미널로 실행 / 터미널 부하 10000줄 무유실·슬롯 격리. **결함 3건 수정**: ① 신뢰가 설정 파일 해시에 묶이는데 setup 명령이 없으면 부여되지 않아 `scripts` 만 있는 프로젝트가 실행 불가 ② 셸이 되울린 명령줄 때문에 실제 출력 없이 통과하던 터미널 테스트 ③ `settled()` 고정 sleep 로 인한 간헐 실패(3회 관측) → 정지 감지로 교체
 - (2026-08-30 4차) **M6 6.1~6.3**: 설계 승인(workbench-tabs v1 + **protocol-design v1.2 바이너리 프레임 채택** — M0 0.2.4 의 capability 조항 발동이라 방향 전환 아님) / 6.3.0 스파이크로 `@lydell/node-pty` 가 N-API 임을 실측(같은 prebuilt 가 Node ABI 141·Electron ABI 149 동작 → Electron 재빌드 불필요) / `workbench/tabs.ts` 순수 탭 모델(타깃 6종·결정적 id·구형 배치 이관·**워크스페이스 단위 배치**) / `TerminalManager`(pty 소유·256KiB 링 버퍼·연결별 슬롯 다중화·attach 시 스냅샷+구독 원자 제공) + `terminal.*` RPC 6종 + xterm 뷰 / 번들에 3 OS prebuilt 고정 조달·NOTICE 고지·`npm run smoke:terminal` 신설(번들 실물 pty 왕복 PASS)
 - (2026-08-30 3차) **M5 완료**: worktree 격리(생성·복구·`harness.json` setup/teardown 신뢰 경계 — 베이스 브랜치 커밋본만 읽음), 렌더러 3계층 재편(사이드바 프로젝트→워크스페이스→세션 + 버킷 횡단 필터, 워크스페이스 생성 화면, 인라인 이름·라벨 편집, 세션 생성은 workspaceId 만 전송), 회귀 검증. **NFR-1 실 결함 1건 검출·수정**: omp 17.3.8 이 lm-studio/ollama/llama.cpp/vllm 을 내장 프로바이더로 자동 탐지해 로컬 LM Studio(:1234)에 접속 → models.yml 선점 차단(사용자 설정 항목은 보존, FR-2.5 경계 검사가 경고). 스모크 위반 보고에 소유 프로세스 표기 추가
 - (2026-08-30 2차) **M5 5.2~5.4**: protocol 에 Project/Workspace 와이어 스키마 + RegistryEvent 신설(데몬이 영속에도 동일 스키마 사용) / `project.*` 4종·`workspace.*` 6종 RPC + 변경 브로드캐스트 / 아카이브 단일 창구(백킹 제거는 `data/worktrees` 하위 worktree 한정 — 사용자 체크아웃 삭제 방지) / 라벨 카탈로그(선기입 후 할당) / 세션 `workspaceId` 귀속 + 기동 1회 백필(마커 파일) + `session.list` 필터. COMPAT(sessionCreateCwd) 는 5.6 이후 제거 예정. 테스트 244건 그린
@@ -55,7 +56,7 @@
 
 ## Next Actions
 
-- [ ] **M6 잔여**: 6.4 파일 탐색·뷰어 → 6.5 working/커밋 diff → 6.6 워크스페이스 스크립트 실행 → 6.7.1 터미널 재접속·대용량 출력 부하
+- [ ] **M7 착수**: 7.2.1 하네스 MCP 지원 실측(선행 게이트) → 7.1 주의 상태 1급화 → 7.2 역방향 툴 → 7.3 서브에이전트 → 7.4 검색 → 7.5 CLI 자동화
 - [ ] **C-1 실 게이트웨이 실측 회신** → 1.7.3 M1 수용 시나리오 → M1 완료 선언 (M2 완료 선언의 선행)
 - [ ] **C-5 실기기 실측 요청** — linux/win 매트릭스(m2-smoke-matrix.md 절차), install.ps1·uninstall.ps1 검증. 추가 확인 항목: Windows junction 환경에서 git `--show-prefix` 경로 유도
 - [ ] M3 잔여: 3.1 업데이트·롤백, 3.3.2 앱 정보 화면 고지 열람·**clean-room 검수(paseo 유래 코드 부재 확인까지 범위 확장)**

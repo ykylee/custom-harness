@@ -31,7 +31,8 @@ const TARGETS = {
   'win32-x64': { os: 'win32', arch: 'x64', electronPlatform: 'win32-x64' },
 };
 const targetInfo = TARGETS[target];
-if (!targetInfo) throw new Error(`지원하지 않는 타깃: ${target} (${Object.keys(TARGETS).join('|')})`);
+if (!targetInfo)
+  throw new Error(`지원하지 않는 타깃: ${target} (${Object.keys(TARGETS).join('|')})`);
 const isWindows = targetInfo.os === 'win32';
 const isDarwin = targetInfo.os === 'darwin';
 
@@ -140,10 +141,14 @@ async function fetchElectronZip() {
 const appDir = join(staging, 'app');
 if (isDarwin && hostTarget === target) {
   // 호스트 산출물 직접 복사 (M1 방식) — 사외 빌드에서도 darwin 은 zip 경로 사용 가능
-  await cp(join(repoRoot, 'node_modules/electron/dist/Electron.app'), join(appDir, 'Electron.app'), {
-    recursive: true,
-    verbatimSymlinks: true,
-  });
+  await cp(
+    join(repoRoot, 'node_modules/electron/dist/Electron.app'),
+    join(appDir, 'Electron.app'),
+    {
+      recursive: true,
+      verbatimSymlinks: true,
+    },
+  );
 } else {
   const zip = await fetchElectronZip();
   const extractTo = join(appDir, isDarwin ? '.' : 'electron');
@@ -378,9 +383,7 @@ if (isWindows) {
       'setlocal',
       'set "HERE=%~dp0.."',
       'set "ELECTRON=%HERE%\\app\\electron\\electron.exe"',
-      ...wrapperEnv.map(
-        ([name, path]) => `set "${name}=%HERE%\\${path.split('/').join('\\')}"`,
-      ),
+      ...wrapperEnv.map(([name, path]) => `set "${name}=%HERE%\\${path.split('/').join('\\')}"`),
       'set "CUSTOM_HARNESS_MANIFEST=%HERE%\\manifest.json"',
       'if "%~1"=="" (',
       '  "%ELECTRON%" "%HERE%\\app\\node_modules\\@custom-harness\\shell\\dist\\index.js"',
@@ -450,7 +453,10 @@ for (const dep of RUNTIME_DEPS) {
     await readFile(join(repoRoot, 'node_modules', dep, 'package.json'), 'utf8'),
   );
   await mkdir(join(licensesDir, 'deps', dep), { recursive: true });
-  await cp(join(repoRoot, 'node_modules', dep, 'LICENSE'), join(licensesDir, 'deps', dep, 'LICENSE'));
+  await cp(
+    join(repoRoot, 'node_modules', dep, 'LICENSE'),
+    join(licensesDir, 'deps', dep, 'LICENSE'),
+  );
   noticeRows.push([dep, depPackage.version, depPackage.license, `licenses/deps/${dep}/LICENSE`]);
 }
 

@@ -491,12 +491,14 @@ export class WorkspaceProvisioning {
       await this.workspaces.setSetupState(workspaceId, 'none');
       return { setupState: 'none' }; // 설정 파일은 선택 — 없으면 할 일이 없다
     }
+    // 신뢰는 **설정 파일 전체**(내용 해시)에 묶인다 — setup 명령 유무와 무관하게 먼저 부여한다.
+    // 그렇지 않으면 `scripts` 만 있는 프로젝트는 영원히 신뢰를 얻을 수 없다 (WBS 6.6).
+    if (options.trust === true) await this.trust.grant(project.id, loaded.contentHash);
     const commands = setupCommands(loaded.config);
     if (commands.length === 0) {
       await this.workspaces.setSetupState(workspaceId, 'none');
       return { setupState: 'none' };
     }
-    if (options.trust === true) await this.trust.grant(project.id, loaded.contentHash);
     if (!(await this.trust.isTrusted(project.id, loaded.contentHash))) {
       await this.workspaces.setSetupState(workspaceId, 'pending');
       return { setupState: 'pending', detail: '설정 파일 실행 동의가 필요함' };
@@ -517,6 +519,58 @@ export class WorkspaceProvisioning {
       ...(outcome.failed !== undefined
         ? { detail: `실패: ${outcome.failed.command} (exit ${String(outcome.failed.exitCode)})` }
         : {}),
+    };
+  }
+
+  /**
+   * 워크스페이스 스크립트 목록 (WBS 6.6) — 설정 파일에 선언된 이름 붙은 명령.
+   * 신뢰 여부를 함께 알려 UI 가 "실행 전 동의가 필요합니다"를 표시할 수 있게 한다.
+   */
+  async listWorkspaceScripts(
+    workspaceId: string,
+  ): Promise<{ scripts: { name: string; command: string }[]; trusted: boolean }> {
+    const workspace = await this.workspaces.find(workspaceId);
+    if (!workspace) throw new Error(`워크스페이스 없음: ${workspaceId}`);
+    const project = await this.projects.find(workspace.projectId);
+    if (!project || project.kind !== 'git') return { scripts: [], trusted: false };
+
+    const ref = workspace.baseBranch ?? project.defaultBranch ?? 'HEAD';
+    const loaded = await loadProjectConfig(project.root, ref);
+    if (!loaded) return { scripts: [], trusted: false };
+    const scripts = Object.entries(loaded.config.scripts ?? {}).map(([name, entry]) => ({
+      name,
+      command: entry.command,
+    }));
+    return { scripts, trusted: await this.trust.isTrusted(project.id, loaded.contentHash) };
+  }
+
+  /**
+   * 스크립트 1개의 명령을 돌려준다 — 신뢰가 없으면 거절한다.
+   * 실제 실행은 감독 터미널이 맡으므로(6.6) 여기서는 명령과 실행 위치만 확정한다.
+   */
+  async resolveWorkspaceScript(
+    workspaceId: string,
+    name: string,
+  ): Promise<{ command: string; cwd: string; env: NodeJS.ProcessEnv }> {
+    const workspace = await this.workspaces.find(workspaceId);
+    if (!workspace) throw new Error(`워크스페이스 없음: ${workspaceId}`);
+    const project = await this.projects.find(workspace.projectId);
+    if (!project) throw new Error(`프로젝트 없음: ${workspace.projectId}`);
+    const ref = workspace.baseBranch ?? project.defaultBranch ?? 'HEAD';
+    const loaded = await loadProjectConfig(project.root, ref);
+    const script = loaded?.config.scripts?.[name];
+    if (!loaded || !script) throw new Error(`스크립트 없음: ${name}`);
+    if (!(await this.trust.isTrusted(project.id, loaded.contentHash))) {
+      throw new Error('설정 파일 실행 동의가 필요함');
+    }
+    return {
+      command: script.command,
+      cwd: workspace.cwd,
+      env: {
+        ...process.env,
+        CUSTOM_HARNESS_SOURCE_CHECKOUT: project.root,
+        CUSTOM_HARNESS_WORKSPACE_ID: workspace.id,
+      },
     };
   }
 

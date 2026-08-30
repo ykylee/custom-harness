@@ -118,7 +118,8 @@ describe('터미널 e2e', () => {
       encodeTerminalFrame({
         opcode: TERMINAL_OPCODE.input,
         slot,
-        payload: new TextEncoder().encode('echo E2E_OK\n'),
+        // 마커를 셸에서 이어붙인다 — 그러지 않으면 되울린 명령줄만으로 검사가 통과한다
+        payload: new TextEncoder().encode('echo "E2E""_OK"\n'),
       }),
       { binary: true },
     );
@@ -136,7 +137,7 @@ describe('터미널 e2e', () => {
       encodeTerminalFrame({
         opcode: TERMINAL_OPCODE.input,
         slot,
-        payload: new TextEncoder().encode('echo BEFORE_DETACH\n'),
+        payload: new TextEncoder().encode('echo "BEFORE""_DETACH"\n'),
       }),
       { binary: true },
     );
@@ -219,4 +220,152 @@ describe('터미널 e2e', () => {
     expect((response.features as Record<string, boolean>).terminalBinaryFrames).toBe(true);
     probe.close();
   });
+});
+
+describe('터미널 부하·복원 (WBS 6.7.1)', () => {
+  let daemon: DaemonHandle;
+  let ws: WebSocket;
+  const inbox: Rpc[] = [];
+  const waiters: ((message: Rpc) => void)[] = [];
+  let frames: Uint8Array[] = [];
+  let counter = 0;
+
+  beforeEach(async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ch-tload-'));
+    daemon = await startDaemon({ root, version: '0.1.0', adapters: () => [new FakeAdapter()] });
+    ws = new WebSocket(`ws://127.0.0.1:${daemon.port}`, [], {
+      headers: { authorization: `Bearer ${daemon.token}` },
+    });
+    ws.binaryType = 'arraybuffer';
+    ws.on('message', (data, isBinary) => {
+      if (isBinary) {
+        frames.push(new Uint8Array(data as Buffer));
+        return;
+      }
+      const message = JSON.parse(String(data)) as Rpc;
+      if (!message.type.endsWith('.response')) return;
+      const waiter = waiters.shift();
+      if (waiter) waiter(message);
+      else inbox.push(message);
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+    ws.send(
+      JSON.stringify({
+        type: 'hello',
+        protocolVersion: PROTOCOL_VERSION,
+        clientInfo: { name: 'load', version: '0.0.0' },
+        capabilities: {},
+      }),
+    );
+    await nextResponse();
+  });
+
+  afterEach(async () => {
+    ws.close();
+    await daemon.stop();
+    inbox.length = 0;
+    waiters.length = 0;
+    frames = [];
+  });
+
+  function nextResponse(): Promise<Rpc> {
+    const buffered = inbox.shift();
+    if (buffered) return Promise.resolve(buffered);
+    return new Promise((resolve) => waiters.push(resolve));
+  }
+
+  async function call(type: string, params: Record<string, unknown> = {}): Promise<Rpc> {
+    counter += 1;
+    const pending = nextResponse();
+    ws.send(JSON.stringify({ type, requestId: `L-${counter}`, params }));
+    return pending;
+  }
+
+  function collect(slot: number): string {
+    let out = '';
+    for (const frame of frames) {
+      const decoded = decodeTerminalFrame(frame);
+      if (decoded?.opcode === TERMINAL_OPCODE.output && decoded.slot === slot) {
+        out += Buffer.from(decoded.payload).toString('utf8');
+      }
+    }
+    return out;
+  }
+
+  it('대용량 출력을 흘려도 프레임이 유실되지 않는다', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ch-tload-ws-'));
+    const opened = await call('project.open.request', { root: dir });
+    const workspaceId = (opened.result?.workspace as { id: string }).id;
+    const created = await call('terminal.create.request', { workspaceId, cols: 200, rows: 50 });
+    const terminalId = (created.result?.terminal as { id: string }).id;
+    const attached = await call('terminal.attach.request', { terminalId, cols: 200, rows: 50 });
+    const slot = attached.result?.slot as number;
+
+    // 10000줄 × ~60B ≈ 600KiB — 링 버퍼(256KiB)를 확실히 넘긴다
+    ws.send(
+      encodeTerminalFrame({
+        opcode: TERMINAL_OPCODE.input,
+        slot,
+        payload: new TextEncoder().encode(
+          'for i in $(seq 1 10000); do echo "line-$i-padding-padding-padding-padding-padding"; done; echo "LOAD""_DONE"\n',
+        ),
+      }),
+      { binary: true },
+    );
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline && !collect(slot).includes('LOAD_DONE')) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const output = collect(slot);
+    expect(output).toContain('LOAD_DONE');
+    expect(output).toContain('line-10000-');
+    // 스트림은 전부 흘렀지만 스크롤백은 상한을 지킨다
+    const reattached = await call('terminal.attach.request', { terminalId, cols: 200, rows: 50 });
+    const scrollback = Buffer.from(reattached.result?.scrollback as string, 'base64');
+    expect(scrollback.length).toBeLessThanOrEqual(256 * 1024);
+    expect(reattached.result?.truncated).toBe(true);
+  }, 60_000);
+
+  it('여러 터미널이 서로 다른 슬롯으로 섞이지 않는다', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ch-tload-ws-'));
+    const opened = await call('project.open.request', { root: dir });
+    const workspaceId = (opened.result?.workspace as { id: string }).id;
+
+    const slots: number[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const created = await call('terminal.create.request', { workspaceId, cols: 80, rows: 24 });
+      const terminalId = (created.result?.terminal as { id: string }).id;
+      const attached = await call('terminal.attach.request', { terminalId, cols: 80, rows: 24 });
+      const slot = attached.result?.slot as number;
+      slots.push(slot);
+      ws.send(
+        encodeTerminalFrame({
+          opcode: TERMINAL_OPCODE.input,
+          slot,
+          payload: new TextEncoder().encode(`echo "SLOT""_MARK_${index}"\n`),
+        }),
+        { binary: true },
+      );
+    }
+    expect(new Set(slots).size).toBe(3); // 슬롯이 겹치지 않는다
+
+    const deadline = Date.now() + 20_000;
+    while (
+      Date.now() < deadline &&
+      !slots.every((slot, i) => collect(slot).includes(`SLOT_MARK_${i}`))
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    // 각 슬롯은 자기 터미널의 출력만 본다
+    slots.forEach((slot, index) => {
+      const output = collect(slot);
+      expect(output).toContain(`SLOT_MARK_${index}`);
+      for (const other of [0, 1, 2].filter((n) => n !== index)) {
+        expect(output).not.toContain(`SLOT_MARK_${other}\r\n`);
+      }
+    });
+  }, 40_000);
 });

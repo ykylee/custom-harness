@@ -43,6 +43,29 @@ export interface KeyState {
 
 export type { LayoutState, TabTarget } from '../workbench/tabs.js';
 
+export interface FileEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'directory';
+  size?: number;
+}
+
+export interface FileContent {
+  path: string;
+  size: number;
+  text?: string;
+  binary: boolean;
+  tooLarge: boolean;
+}
+
+export interface DiffState {
+  scope: 'working' | 'commit';
+  patch: string;
+  truncated: boolean;
+  untracked: string[];
+  unavailable?: string;
+}
+
 export interface AppState {
   connection: ConnectionState;
   route: Route;
@@ -62,6 +85,8 @@ export interface AppState {
   views: Record<string, SessionView>;
   /** 데몬 소유 터미널 목록 (WBS 6.3) */
   terminals: Terminal[];
+  /** 변경사항 캐시 (WBS 6.5) — 키는 diffKey() */
+  diffs: Record<string, DiffState>;
   /** 세션 한정 자동 승인 opt-in (FR-3.4.3) — 렌더러 수명, 영속화하지 않는다 */
   autoApprove: Record<string, boolean>;
   /** 네이티브 알림 on/off (FR-3.5.2) — localStorage 영속 */
@@ -121,6 +146,7 @@ export function initialAppState(): AppState {
     autoApprove: {},
     notificationsEnabled: loadPersisted<boolean>(NOTIFICATIONS_KEY) ?? true,
     probes: {},
+    diffs: {},
     lastError: null,
   };
 }
@@ -138,8 +164,15 @@ export interface DaemonTransport {
   stop(): void;
 }
 
+/** 변경사항 캐시 키 — working 은 하나, 커밋은 sha 별 */
+export function diffKey(scope: 'working' | 'commit', sha?: string): string {
+  return scope === 'working' ? 'working' : `commit:${sha ?? ''}`;
+}
+
 export class AppController {
   readonly store = new Store<AppState>(initialAppState());
+  /** 현재 구독 중인 워크스페이스 — 워크스페이스를 바꾸면 옮겨 건다 */
+  private diffSubscription: string | undefined;
 
   constructor(private readonly client: DaemonTransport) {
     client.onState((connection) => {
@@ -160,6 +193,11 @@ export class AppController {
       }
       if (event.type === 'terminal_changed') {
         void this.refreshTerminals();
+        return;
+      }
+      if (event.type === 'diff_changed') {
+        // 신호만 받고 내용은 회수한다 — 이벤트에 patch 를 싣지 않는 이유(크기)
+        if (event.workspaceId === this.store.get().activeWorkspaceId) void this.refreshDiff();
         return;
       }
       this.store.set((prev) => {
@@ -209,6 +247,8 @@ export class AppController {
       await this.refreshRegistries();
       await this.refreshSessions();
       await this.refreshTerminals();
+      this.diffSubscription = undefined; // 데몬은 구독을 기억하지 않는다 — 다시 건다
+      await this.subscribeDiff();
       this.restoreLayout();
       const { gateway, keyState } = this.store.get();
       this.store.set({
@@ -302,6 +342,92 @@ export class AppController {
     });
   }
 
+  // ── 파일·변경사항 (WBS 6.4·6.5) ───────────────────────────────────────────
+
+  async listDirectory(path: string): Promise<{ entries: FileEntry[]; truncated: boolean }> {
+    const workspaceId = this.store.get().activeWorkspaceId;
+    if (workspaceId === null) return { entries: [], truncated: false };
+    return (await this.client.rpc('file.list', { workspaceId, path })) as {
+      entries: FileEntry[];
+      truncated: boolean;
+    };
+  }
+
+  async readFile(path: string): Promise<FileContent> {
+    const workspaceId = this.store.get().activeWorkspaceId;
+    if (workspaceId === null) throw new Error('워크스페이스가 선택되지 않음');
+    return (await this.client.rpc('file.read', { workspaceId, path })) as FileContent;
+  }
+
+  // ── 워크스페이스 스크립트 (WBS 6.6) ───────────────────────────────────────
+
+  async listWorkspaceScripts(
+    workspaceId: string,
+  ): Promise<{ scripts: { name: string; command: string }[]; trusted: boolean }> {
+    return (await this.client.rpc('workspace.scripts.list', { workspaceId })) as {
+      scripts: { name: string; command: string }[];
+      trusted: boolean;
+    };
+  }
+
+  /** 스크립트를 감독 터미널로 실행하고 그 탭을 연다 */
+  async runWorkspaceScript(workspaceId: string, name: string): Promise<void> {
+    try {
+      const result = (await this.client.rpc('workspace.scripts.run', {
+        workspaceId,
+        name,
+        cols: 100,
+        rows: 30,
+      })) as { terminal: Terminal };
+      await this.refreshTerminals();
+      this.openTarget({ kind: 'terminal', terminalId: result.terminal.id });
+    } catch (error) {
+      this.reportError(error);
+    }
+  }
+
+  /** 파일을 탭으로 연다 — 응답·툴 카드의 경로 링크가 쓰는 진입점 (WBS 6.4.3) */
+  openFile(path: string): void {
+    this.openTarget({ kind: 'file', path });
+  }
+
+  /** 현재 워크스페이스의 변경사항 회수 + 구독 유지 */
+  async refreshDiff(scope: 'working' | 'commit' = 'working', sha?: string): Promise<void> {
+    const workspaceId = this.store.get().activeWorkspaceId;
+    if (workspaceId === null) return;
+    try {
+      const result = (await this.client.rpc('diff.get', {
+        workspaceId,
+        scope,
+        ...(sha !== undefined ? { sha } : {}),
+      })) as DiffState;
+      this.store.set((prev) => ({
+        ...prev,
+        diffs: { ...prev.diffs, [diffKey(scope, sha)]: result },
+      }));
+    } catch (error) {
+      this.reportError(error);
+    }
+  }
+
+  /** 변경사항 구독 — 재연결 시 클라이언트가 다시 건다(데몬은 구독을 영속하지 않는다) */
+  async subscribeDiff(): Promise<void> {
+    const workspaceId = this.store.get().activeWorkspaceId;
+    if (workspaceId === null || this.diffSubscription === workspaceId) return;
+    if (this.diffSubscription !== undefined) {
+      const previous = this.diffSubscription;
+      this.diffSubscription = undefined;
+      void this.client.rpc('diff.unsubscribe', { workspaceId: previous }).catch(() => undefined);
+    }
+    try {
+      await this.client.rpc('diff.subscribe', { workspaceId });
+      this.diffSubscription = workspaceId;
+      await this.refreshDiff();
+    } catch (error) {
+      this.reportError(error);
+    }
+  }
+
   // ── 터미널 (WBS 6.3) ──────────────────────────────────────────────────────
 
   async refreshTerminals(): Promise<void> {
@@ -339,7 +465,8 @@ export class AppController {
 
   selectWorkspace(workspaceId: string): void {
     persist(WORKSPACE_KEY, workspaceId);
-    this.store.set({ activeWorkspaceId: workspaceId });
+    this.store.set({ activeWorkspaceId: workspaceId, diffs: {} });
+    void this.subscribeDiff(); // 변경사항 구독을 새 워크스페이스로 옮긴다
   }
 
   /** 디렉토리를 프로젝트로 연다 — 기본 워크스페이스가 함께 생긴다 (D-2) */

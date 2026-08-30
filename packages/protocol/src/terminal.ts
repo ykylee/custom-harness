@@ -57,6 +57,8 @@ export const TerminalSchema = z.looseObject({
   cols: z.number().int().positive(),
   rows: z.number().int().positive(),
   createdAt: z.string(),
+  /** 감독 터미널의 표시 이름 (워크스페이스 스크립트 — WBS 6.6) */
+  label: z.string().optional(),
   /** 종료된 터미널은 목록에 남되 재사용되지 않는다 */
   exitedAt: z.string().optional(),
   exitCode: z.number().int().optional(),

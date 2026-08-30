@@ -1,5 +1,6 @@
 // 세션 레벨 RPC — `domain.verb.request` / `.response`, requestId 상관 (protocol-design §2)
-// 도메인: session.* / config.* / harness.* / project.* / workspace.* / terminal.* / system.*
+// 도메인: session.* / config.* / harness.* / project.* / workspace.* / terminal.* /
+//        file.* / diff.* / system.*
 import { z } from 'zod';
 import { HarnessIdSchema, PROTOCOL_VERSION } from './base.js';
 import { CapabilityFlagsSchema } from './capabilities.js';
@@ -300,6 +301,26 @@ export const rpc = {
         ),
       }),
     ),
+    scriptsList: rpcPair(
+      'workspace.scripts.list',
+      z.looseObject({ workspaceId: z.string() }),
+      z.looseObject({
+        scripts: z.array(z.looseObject({ name: z.string(), command: z.string() })),
+        /** 설정 파일 실행 동의가 아직 없는 상태 */
+        trusted: z.boolean(),
+      }),
+    ),
+    scriptRun: rpcPair(
+      'workspace.scripts.run',
+      z.looseObject({
+        workspaceId: z.string(),
+        name: z.string(),
+        cols: z.number().int().positive(),
+        rows: z.number().int().positive(),
+      }),
+      // 감독 터미널로 실행한다 — 출력은 터미널 탭에서 그대로 보인다
+      z.looseObject({ terminal: TerminalSchema }),
+    ),
     setupRun: rpcPair(
       'workspace.setup.run',
       z.looseObject({ workspaceId: z.string(), trust: z.boolean().optional() }),
@@ -359,6 +380,65 @@ export const rpc = {
     ),
     kill: rpcPair('terminal.kill', z.looseObject({ terminalId: z.string() }), z.looseObject({})),
   },
+  // 워크스페이스 파일 (WBS 6.4) — 경로는 워크스페이스 상대만 받는다 (workbench-tabs §3)
+  file: {
+    list: rpcPair(
+      'file.list',
+      z.looseObject({ workspaceId: z.string(), path: z.string() }),
+      z.looseObject({
+        entries: z.array(
+          z.looseObject({
+            name: z.string(),
+            path: z.string(),
+            kind: z.enum(['file', 'directory']),
+            size: z.number().int().nonnegative().optional(),
+          }),
+        ),
+        /** 항목 수 상한을 넘어 잘렸는지 */
+        truncated: z.boolean(),
+      }),
+    ),
+    read: rpcPair(
+      'file.read',
+      z.looseObject({ workspaceId: z.string(), path: z.string() }),
+      z.looseObject({
+        path: z.string(),
+        size: z.number().int().nonnegative(),
+        /** 상한 초과·바이너리면 없다 */
+        text: z.string().optional(),
+        binary: z.boolean(),
+        tooLarge: z.boolean(),
+      }),
+    ),
+  },
+  // 변경사항 (WBS 6.5) — 구독은 클라이언트가 다시 건다(데몬이 구독 상태를 영속하지 않는다)
+  diff: {
+    get: rpcPair(
+      'diff.get',
+      z.looseObject({
+        workspaceId: z.string(),
+        scope: z.enum(['working', 'commit']),
+        sha: z.string().optional(),
+      }),
+      z.looseObject({
+        scope: z.enum(['working', 'commit']),
+        patch: z.string(),
+        truncated: z.boolean(),
+        untracked: z.array(z.string()),
+        unavailable: z.string().optional(),
+      }),
+    ),
+    subscribe: rpcPair(
+      'diff.subscribe',
+      z.looseObject({ workspaceId: z.string() }),
+      z.looseObject({}),
+    ),
+    unsubscribe: rpcPair(
+      'diff.unsubscribe',
+      z.looseObject({ workspaceId: z.string() }),
+      z.looseObject({}),
+    ),
+  },
   system: {
     version: rpcPair(
       'system.version',
@@ -396,12 +476,19 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.workspace.update.request,
   rpc.workspace.archive.request,
   rpc.workspace.labelsList.request,
+  rpc.workspace.scriptsList.request,
+  rpc.workspace.scriptRun.request,
   rpc.terminal.create.request,
   rpc.terminal.list.request,
   rpc.terminal.attach.request,
   rpc.terminal.detach.request,
   rpc.terminal.resize.request,
   rpc.terminal.kill.request,
+  rpc.file.list.request,
+  rpc.file.read.request,
+  rpc.diff.get.request,
+  rpc.diff.subscribe.request,
+  rpc.diff.unsubscribe.request,
   rpc.workspace.setupRun.request,
   rpc.system.version.request,
   rpc.system.shutdown.request,
@@ -434,12 +521,19 @@ export const RpcResponseSchema = z.union([
   rpc.workspace.update.response,
   rpc.workspace.archive.response,
   rpc.workspace.labelsList.response,
+  rpc.workspace.scriptsList.response,
+  rpc.workspace.scriptRun.response,
   rpc.terminal.create.response,
   rpc.terminal.list.response,
   rpc.terminal.attach.response,
   rpc.terminal.detach.response,
   rpc.terminal.resize.response,
   rpc.terminal.kill.response,
+  rpc.file.list.response,
+  rpc.file.read.response,
+  rpc.diff.get.response,
+  rpc.diff.subscribe.response,
+  rpc.diff.unsubscribe.response,
   rpc.workspace.setupRun.response,
   rpc.system.version.response,
   rpc.system.shutdown.response,

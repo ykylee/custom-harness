@@ -2,7 +2,7 @@
 //
 // 상태 버킷(승인 대기·실행 중·…)은 계층을 대체하지 않고 **횡단 필터**로 남는다.
 // 버킷으로만 묶으면 "지금 무엇이 급한가"는 보이지만 "어디서 일하고 있는가"가 사라진다.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Project, SessionSummary, Workspace } from '@custom-harness/protocol';
 
 /** 하네스 아이콘 — 폐쇄망 자산 없이 텍스트 배지 (색상은 styles.css harness-*) */
@@ -39,6 +39,13 @@ export interface SidebarActions {
   selectWorkspace(workspaceId: string): void;
   newWorkspace(): void;
   newTerminal(): void;
+  openFiles(): void;
+  openDiff(): void;
+  listScripts(workspaceId: string): Promise<{
+    scripts: { name: string; command: string }[];
+    trusted: boolean;
+  }>;
+  runScript(workspaceId: string, name: string): void;
   archiveWorkspace(workspaceId: string): void;
   runSetup(workspaceId: string): void;
 }
@@ -148,6 +155,66 @@ function WorkspaceEditor({
   );
 }
 
+/** 워크스페이스 스크립트 목록 (WBS 6.6.2) — 열 때 한 번 읽는다 */
+function ScriptsPanel({
+  workspaceId,
+  actions,
+}: {
+  workspaceId: string;
+  actions: SidebarActions;
+}): React.JSX.Element {
+  const [state, setState] = useState<{
+    scripts: { name: string; command: string }[];
+    trusted: boolean;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void actions
+      .listScripts(workspaceId)
+      .then((result) => {
+        if (!cancelled) setState(result);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, actions]);
+
+  if (error !== null) return <div className="file-error">{error}</div>;
+  if (state === null) return <div className="file-loading">읽는 중…</div>;
+  if (state.scripts.length === 0) {
+    return <div className="file-note">이 프로젝트에는 선언된 스크립트가 없습니다</div>;
+  }
+  return (
+    <div className="scripts-panel" data-testid={`scripts-${workspaceId}`}>
+      {!state.trusted && (
+        <div className="file-note">
+          설정 파일 실행 동의가 필요합니다 — 워크스페이스의 setup 을 먼저 실행하세요
+        </div>
+      )}
+      <ul>
+        {state.scripts.map((script) => (
+          <li key={script.name}>
+            <button
+              className="script-run"
+              data-testid={`run-${script.name}`}
+              disabled={!state.trusted}
+              title={script.command}
+              onClick={() => actions.runScript(workspaceId, script.name)}
+            >
+              ▶ {script.name}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function WorkspaceGroup({
   workspace,
   sessions,
@@ -162,6 +229,7 @@ function WorkspaceGroup({
   actions: SidebarActions;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
+  const [showScripts, setShowScripts] = useState(false);
   const owned = sessionsOf(sessions, workspace.id);
   const pending = owned.filter((session) => session.pendingPermissions?.length).length;
   return (
@@ -193,6 +261,14 @@ function WorkspaceGroup({
           </button>
         )}
         <button
+          className="workspace-scripts"
+          title="워크스페이스 스크립트"
+          data-testid={`scripts-toggle-${workspace.id}`}
+          onClick={() => setShowScripts((previous) => !previous)}
+        >
+          ▶
+        </button>
+        <button
           className="workspace-edit"
           title="이름·라벨 편집"
           data-testid={`edit-${workspace.id}`}
@@ -208,6 +284,7 @@ function WorkspaceGroup({
           ▤
         </button>
       </div>
+      {showScripts && <ScriptsPanel workspaceId={workspace.id} actions={actions} />}
       {editing && (
         <WorkspaceEditor
           workspace={workspace}
@@ -285,6 +362,12 @@ export function Sidebar({
           onClick={() => actions.newTerminal()}
         >
           + 터미널
+        </button>
+        <button className="open-files" data-testid="open-files" onClick={() => actions.openFiles()}>
+          파일
+        </button>
+        <button className="open-diff" data-testid="open-diff" onClick={() => actions.openDiff()}>
+          변경사항
         </button>
         <button className="settings-link" onClick={() => actions.openSettings()}>
           설정
