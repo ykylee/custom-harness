@@ -1,5 +1,6 @@
 // @custom-harness/daemon — 데몬 조립 진입점 (daemon-design, WBS 1.2)
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { AgentAdapter } from './adapters/contract.js';
 import { KeyStore, type SecretCipher } from './gateway/key-store.js';
 import { GatewayService } from './gateway/service.js';
@@ -9,6 +10,7 @@ import { ProcessSupervisor } from './processes.js';
 import { DaemonServer } from './server.js';
 import { SessionManager } from './session-manager.js';
 import { SettingsStore } from './settings.js';
+import { WorkspaceProvisioning } from './workspaces/registry.js';
 import { SessionStore } from './store.js';
 import { generateToken, removeTokenFile, writeTokenFile } from './token.js';
 
@@ -65,6 +67,8 @@ export interface DaemonHandle {
   supervisor: ProcessSupervisor;
   gateway: GatewayService;
   keyStore: KeyStore;
+  /** 프로젝트·워크스페이스 레지스트리 (WBS 5.2·5.3) */
+  provisioning: WorkspaceProvisioning;
   stop(): Promise<void>;
 }
 
@@ -102,6 +106,8 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     typeof options.adapters === 'function'
       ? options.adapters({ paths, supervisor })
       : (options.adapters ?? []);
+  // 프로젝트·워크스페이스 레지스트리 (WBS 5.2·5.3) — 레코드 생성의 단일 창구
+  const provisioning = new WorkspaceProvisioning(paths);
   const manager = new SessionManager({
     store,
     adapters,
@@ -111,6 +117,10 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     ...(manifest !== undefined ? { manifest } : {}),
   });
   await manager.init();
+
+  // 세션 워크스페이스 백필 (WBS 5.4.2, workspace-model §9) — 1회만 실행하고 마커를 남긴다.
+  // cwd → workspaceId 매핑이 존재하는 유일한 지점이며, 실패한 세션은 건너뛰고 기동을 막지 않는다.
+  await runWorkspaceBackfill(paths, manager, provisioning);
 
   // 기동 시 주입 검증·복구 — 드리프트는 자동 덮어쓰기 금지, 경고만 (credential-injection-design §2)
   const injection = await gateway.ensurePiInjection();
@@ -144,6 +154,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     serverVersion: options.version ?? '0.0.0',
     gateway,
     keyStore,
+    provisioning,
     ...(options.port !== undefined ? { port: options.port } : {}),
     onShutdownRequest: () => void stop(),
   });
@@ -191,5 +202,38 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     await rm(paths.pidFile, { force: true });
   };
 
-  return { port, token, paths, manager, supervisor, gateway, keyStore, stop };
+  return { port, token, paths, manager, supervisor, gateway, keyStore, provisioning, stop };
+}
+
+/**
+ * 워크스페이스 백필 (WBS 5.4.2) — `workspaceId` 없는 기존 세션을 프로젝트·기본 워크스페이스에 귀속시킨다.
+ * 마커 파일이 있으면 건너뛴다. 사라진 디렉토리의 세션은 건너뛰고 기록만 남긴다.
+ */
+async function runWorkspaceBackfill(
+  paths: DaemonPaths,
+  manager: SessionManager,
+  provisioning: WorkspaceProvisioning,
+): Promise<void> {
+  const marker = join(paths.migrationsDir, 'backfill-workspace-id.done');
+  try {
+    await access(marker);
+    return; // 이미 수행됨
+  } catch {
+    // 마커 없음 — 진행
+  }
+  const outcome = await manager.backfillWorkspaceIds(async (cwd) => {
+    try {
+      await stat(cwd);
+    } catch {
+      return undefined; // 디렉토리가 사라진 세션은 귀속시키지 않는다
+    }
+    return (await provisioning.openProject(cwd)).workspace.id;
+  });
+  if (outcome.mapped > 0 || outcome.skipped > 0) {
+    console.warn(
+      `[daemon] 워크스페이스 백필: 귀속 ${outcome.mapped}건, 건너뜀 ${outcome.skipped}건`,
+    );
+  }
+  await mkdir(paths.migrationsDir, { recursive: true });
+  await writeFile(marker, `${new Date().toISOString()}\n`);
 }

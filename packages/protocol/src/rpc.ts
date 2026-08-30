@@ -1,5 +1,5 @@
 // 세션 레벨 RPC — `domain.verb.request` / `.response`, requestId 상관 (protocol-design §2)
-// 도메인: session.* / config.* / harness.* / system.*
+// 도메인: session.* / config.* / harness.* / project.* / workspace.* / system.*
 import { z } from 'zod';
 import { HarnessIdSchema, PROTOCOL_VERSION } from './base.js';
 import { CapabilityFlagsSchema } from './capabilities.js';
@@ -10,6 +10,12 @@ import {
   SessionStatusSchema,
   UsageSchema,
 } from './events.js';
+import {
+  ProjectSchema,
+  WorkspaceIsolationSchema,
+  WorkspaceSchema,
+  WorkspaceSetupStateSchema,
+} from './workspaces.js';
 
 export const RpcErrorSchema = z.looseObject({
   /** 어댑터 에러 kind('spawn'|'protocol'|…) 또는 데몬 에러 코드 */
@@ -130,6 +136,12 @@ export const rpc = {
       'session.create',
       z.looseObject({
         harness: HarnessIdSchema,
+        /**
+         * 소유 워크스페이스 (WBS 5.4.1). 소유권 판정의 근거는 이 값뿐이다.
+         * COMPAT(sessionCreateCwd): 미지정 시 cwd 로 프로젝트를 열어 기본 워크스페이스에 귀속시킨다.
+         * 렌더러가 워크스페이스를 보내게 되는 5.6 이후 제거 — remove after 2027-02-28.
+         */
+        workspaceId: z.string().optional(),
         cwd: z.string(),
         modelId: z.string().optional(),
         approvalPolicy: z.enum(['mediate', 'auto']).optional(),
@@ -144,7 +156,7 @@ export const rpc = {
     ),
     list: rpcPair(
       'session.list',
-      z.looseObject({}),
+      z.looseObject({ workspaceId: z.string().optional() }),
       z.looseObject({ sessions: z.array(SessionSummarySchema) }),
     ),
     close: rpcPair('session.close', z.looseObject({ sessionId: z.string() }), z.looseObject({})),
@@ -211,6 +223,85 @@ export const rpc = {
       z.looseObject({ probe: ProbeResultSchema }),
     ),
   },
+  // 프로젝트 레지스트리 (WBS 5.2.3) — 목록은 기본적으로 활성만 준다
+  project: {
+    open: rpcPair(
+      'project.open',
+      z.looseObject({ root: z.string() }),
+      // 프로젝트를 열면 기본 워크스페이스도 함께 보장된다 (workspace-model D-2)
+      z.looseObject({ project: ProjectSchema, workspace: WorkspaceSchema }),
+    ),
+    list: rpcPair(
+      'project.list',
+      z.looseObject({ includeArchived: z.boolean().optional() }),
+      z.looseObject({ projects: z.array(ProjectSchema) }),
+    ),
+    update: rpcPair(
+      'project.update',
+      z.looseObject({ projectId: z.string(), displayName: z.string() }),
+      z.looseObject({ project: ProjectSchema }),
+    ),
+    archive: rpcPair(
+      'project.archive',
+      z.looseObject({ projectId: z.string() }),
+      z.looseObject({}),
+    ),
+  },
+  // 워크스페이스 레지스트리 (WBS 5.3.5)
+  workspace: {
+    create: rpcPair(
+      'workspace.create',
+      z.looseObject({
+        projectId: z.string(),
+        isolation: WorkspaceIsolationSchema,
+        cwd: z.string().optional(),
+        baseBranch: z.string().optional(),
+        branch: z.string().optional(),
+        displayName: z.string().optional(),
+      }),
+      z.looseObject({ workspace: WorkspaceSchema }),
+    ),
+    list: rpcPair(
+      'workspace.list',
+      z.looseObject({ projectId: z.string().optional(), includeArchived: z.boolean().optional() }),
+      z.looseObject({ workspaces: z.array(WorkspaceSchema) }),
+    ),
+    update: rpcPair(
+      'workspace.update',
+      z.looseObject({
+        workspaceId: z.string(),
+        displayName: z.string().optional(),
+        labels: z.record(z.string(), z.string()).optional(),
+      }),
+      z.looseObject({ workspace: WorkspaceSchema }),
+    ),
+    archive: rpcPair(
+      'workspace.archive',
+      // removeCheckout 는 worktree 백킹 디렉토리까지 지운다 — 기본은 보존 (workspace-model §6)
+      z.looseObject({ workspaceId: z.string(), removeCheckout: z.boolean().optional() }),
+      z.looseObject({ workspace: WorkspaceSchema }),
+    ),
+    labelsList: rpcPair(
+      'workspace.labels.list',
+      z.looseObject({}),
+      z.looseObject({
+        labels: z.array(
+          z.looseObject({
+            id: z.string(),
+            key: z.string(),
+            value: z.string(),
+            createdAt: z.string(),
+            lastUsedAt: z.string(),
+          }),
+        ),
+      }),
+    ),
+    setupRun: rpcPair(
+      'workspace.setup.run',
+      z.looseObject({ workspaceId: z.string(), trust: z.boolean().optional() }),
+      z.looseObject({ setupState: WorkspaceSetupStateSchema }),
+    ),
+  },
   system: {
     version: rpcPair(
       'system.version',
@@ -239,6 +330,16 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.config.set.request,
   rpc.harness.list.request,
   rpc.harness.probe.request,
+  rpc.project.open.request,
+  rpc.project.list.request,
+  rpc.project.update.request,
+  rpc.project.archive.request,
+  rpc.workspace.create.request,
+  rpc.workspace.list.request,
+  rpc.workspace.update.request,
+  rpc.workspace.archive.request,
+  rpc.workspace.labelsList.request,
+  rpc.workspace.setupRun.request,
   rpc.system.version.request,
   rpc.system.shutdown.request,
 ]);
@@ -261,6 +362,16 @@ export const RpcResponseSchema = z.union([
   rpc.config.set.response,
   rpc.harness.list.response,
   rpc.harness.probe.response,
+  rpc.project.open.response,
+  rpc.project.list.response,
+  rpc.project.update.response,
+  rpc.project.archive.response,
+  rpc.workspace.create.response,
+  rpc.workspace.list.response,
+  rpc.workspace.update.response,
+  rpc.workspace.archive.response,
+  rpc.workspace.labelsList.response,
+  rpc.workspace.setupRun.response,
   rpc.system.version.response,
   rpc.system.shutdown.response,
 ]);

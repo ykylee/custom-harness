@@ -1,7 +1,20 @@
-// 프로젝트·워크스페이스 레코드 (workspace-model §2·§3) — 스키마와 식별자 정책의 단일 지점.
+// 프로젝트·워크스페이스 레코드 (workspace-model §2·§3) — 식별자 정책과 정규화의 단일 지점.
+//
+// 스키마 자체는 protocol 패키지가 정본이다. 영속 레코드와 와이어 레코드를 두 벌로 두면
+// 필드가 조용히 갈라진다 — 같은 스키마를 저장에도 그대로 쓴다.
 import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
-import { z } from 'zod';
+import {
+  ProjectSchema,
+  WorkspaceSchema,
+  type Project,
+  type Workspace,
+} from '@custom-harness/protocol';
+
+export const ProjectRecordSchema = ProjectSchema;
+export const WorkspaceRecordSchema = WorkspaceSchema;
+export type ProjectRecord = Project;
+export type WorkspaceRecord = Workspace;
 
 export const PROJECT_ID_PREFIX = 'prj_';
 export const WORKSPACE_ID_PREFIX = 'wsp_';
@@ -24,59 +37,6 @@ export function normalizeRoot(input: string): string {
   // Windows 드라이브 문자만 대문자로 통일 (c:\repo 와 C:\repo 가 다른 프로젝트가 되지 않게)
   return /^[a-z]:/.test(resolved) ? resolved[0]!.toUpperCase() + resolved.slice(1) : resolved;
 }
-
-export const ProjectKindSchema = z.enum(['git', 'plain']);
-export type ProjectKind = z.infer<typeof ProjectKindSchema>;
-
-export const ProjectRecordSchema = z.looseObject({
-  id: z.string(),
-  /** 정규화된 절대 경로 — 불변 */
-  root: z.string(),
-  /** 사용자 편집 가능. 정합화가 덮지 않는다 */
-  displayName: z.string(),
-  /** 가변 — 정합화가 갱신 */
-  kind: ProjectKindSchema,
-  defaultBranch: z.string().optional(),
-  remoteUrl: z.string().optional(),
-  /** 호스트 횡단 그룹핑용 예약 필드 (workspace-model §2) */
-  projectKey: z.string().optional(),
-  iconRef: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  archivedAt: z.string().optional(),
-});
-export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
-
-export const WorkspaceIsolationSchema = z.enum(['directory', 'worktree']);
-export type WorkspaceIsolation = z.infer<typeof WorkspaceIsolationSchema>;
-
-export const WorkspaceSetupStateSchema = z.enum(['none', 'pending', 'ok', 'failed']);
-export type WorkspaceSetupState = z.infer<typeof WorkspaceSetupStateSchema>;
-
-export const WorkspaceRecordSchema = z.looseObject({
-  id: z.string(),
-  /** 불변 — 재귀속(rehome) 금지 */
-  projectId: z.string(),
-  /** 세션이 실행되는 정확한 디렉토리 — 불변 */
-  cwd: z.string(),
-  /** 백킹 체크아웃 루트. 모노레포 하위 패키지를 가리키면 cwd 와 다르다 */
-  checkoutRoot: z.string(),
-  isolation: WorkspaceIsolationSchema,
-  /** 사용자 편집 가능. 정합화가 덮지 않는다 */
-  displayName: z.string(),
-  /** worktree 분기 기준 — 불변 */
-  baseBranch: z.string().optional(),
-  /** 현재 브랜치 — 가변(정합화 갱신) */
-  branch: z.string().optional(),
-  labels: z.record(z.string(), z.string()),
-  /** worktree 복구용 메인 저장소 루트 */
-  mainRepoRoot: z.string().optional(),
-  setupState: WorkspaceSetupStateSchema,
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  archivedAt: z.string().optional(),
-});
-export type WorkspaceRecord = z.infer<typeof WorkspaceRecordSchema>;
 
 /** 정합화가 갱신할 수 있는 프로젝트 필드 (workspace-model §4) */
 export type ProjectFacts = Pick<ProjectRecord, 'kind' | 'defaultBranch' | 'remoteUrl'>;

@@ -10,6 +10,8 @@ export interface DaemonPaths {
   projectsDir: string;
   /** worktree 백킹 체크아웃 (workspace-model D-1 — 데이터 디렉토리 내부) */
   worktreesDir: string;
+  /** 1회성 마이그레이션 완료 마커 (workspace-model §9) */
+  migrationsDir: string;
   grokHomeDir: string;
   /** pi 격리 홈 (PI_CODING_AGENT_DIR) — models.json 주입 대상 (credential-injection-design §2) */
   piHomeDir: string;
@@ -35,6 +37,7 @@ export function resolvePaths(
     sessionsDir: join(dataDir, 'sessions'),
     projectsDir: join(dataDir, 'projects'),
     worktreesDir: join(dataDir, 'worktrees'),
+    migrationsDir: join(dataDir, 'migrations'),
     grokHomeDir: join(dataDir, 'grok-home'),
     piHomeDir: join(dataDir, 'pi-home'),
     ompHomeDir: join(dataDir, 'omp-home'),

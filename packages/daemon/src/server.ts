@@ -14,6 +14,7 @@ import { DaemonError, toRpcError } from './errors.js';
 import type { KeyStore } from './gateway/key-store.js';
 import type { GatewayService } from './gateway/service.js';
 import type { SessionManager } from './session-manager.js';
+import type { WorkspaceProvisioning } from './workspaces/registry.js';
 
 export interface DaemonServerOptions {
   manager: SessionManager;
@@ -25,6 +26,8 @@ export interface DaemonServerOptions {
   /** config.* 도메인 배선 (WBS 1.4.3) — 미공급 시 unimplemented 응답 */
   gateway?: GatewayService;
   keyStore?: KeyStore;
+  /** project.* / workspace.* 도메인 배선 (WBS 5.2.3·5.3.5) — 미공급 시 unimplemented 응답 */
+  provisioning?: WorkspaceProvisioning;
   onShutdownRequest?: () => void;
 }
 
@@ -34,6 +37,7 @@ const CLOSE_PROTOCOL_ERROR = 4400;
 export class DaemonServer {
   private wss: WebSocketServer | undefined;
   private unsubscribe: (() => void) | undefined;
+  private unsubscribeRegistry: (() => void) | undefined;
   private readonly helloDone = new WeakSet<WebSocket>();
 
   constructor(private readonly options: DaemonServerOptions) {}
@@ -59,13 +63,16 @@ export class DaemonServer {
     });
 
     // 매니저 이벤트 → hello 완료 연결 전체에 브로드캐스트
-    this.unsubscribe = this.options.manager.onEvent((event) => {
+    const broadcast = (event: ServerMessage): void => {
       for (const client of wss.clients) {
         if (client.readyState === WebSocket.OPEN && this.helloDone.has(client)) {
           this.send(client, event);
         }
       }
-    });
+    };
+    this.unsubscribe = this.options.manager.onEvent(broadcast);
+    // 레지스트리 변경도 같은 경로로 — 클라이언트는 신호를 받고 목록을 다시 읽는다
+    this.unsubscribeRegistry = this.options.provisioning?.onChange(broadcast);
 
     await new Promise<void>((resolve, reject) => {
       wss.once('listening', resolve);
@@ -76,6 +83,7 @@ export class DaemonServer {
 
   async stop(): Promise<void> {
     this.unsubscribe?.();
+    this.unsubscribeRegistry?.();
     const wss = this.wss;
     if (!wss) return;
     for (const client of wss.clients) client.close(1001, 'daemon shutdown');
@@ -180,12 +188,41 @@ export class DaemonServer {
   ): Promise<unknown> {
     const { manager } = this.options;
     switch (message.type) {
-      case 'session.create.request':
-        return { session: await manager.createSession(message.params) };
+      case 'session.create.request': {
+        // 소유권은 workspaceId 로만 판정한다 (WBS 5.4.1). cwd 만 온 요청은 그 경로로
+        // 프로젝트를 열어 기본 워크스페이스에 귀속시킨다 — COMPAT(sessionCreateCwd),
+        // 렌더러가 워크스페이스를 보내는 5.6 이후 제거.
+        const { provisioning } = this.options;
+        let workspaceId = message.params.workspaceId;
+        let cwd = message.params.cwd;
+        if (workspaceId !== undefined) {
+          const workspace = await provisioning?.workspaces.find(workspaceId);
+          if (!workspace) throw new DaemonError('not_found', `워크스페이스 없음: ${workspaceId}`);
+          if (workspace.archivedAt !== undefined) {
+            throw new DaemonError('bad_request', '아카이브된 워크스페이스에는 세션을 만들 수 없음');
+          }
+          cwd = workspace.cwd;
+        } else if (provisioning) {
+          workspaceId = (await provisioning.openProject(cwd)).workspace.id;
+        }
+        return {
+          session: await manager.createSession({
+            ...message.params,
+            cwd,
+            ...(workspaceId !== undefined ? { workspaceId } : {}),
+          }),
+        };
+      }
       case 'session.resume.request':
         return { session: await manager.resumeSession(message.params.sessionId) };
       case 'session.list.request':
-        return { sessions: await manager.listSessions() };
+        return {
+          sessions: await manager.listSessions(
+            message.params.workspaceId === undefined
+              ? {}
+              : { workspaceId: message.params.workspaceId },
+          ),
+        };
       case 'session.close.request':
         await manager.closeSession(message.params.sessionId);
         return {};
@@ -234,6 +271,102 @@ export class DaemonServer {
       case 'system.shutdown.request':
         queueMicrotask(() => this.options.onShutdownRequest?.());
         return {};
+      case 'project.open.request': {
+        const { provisioning } = this.requireProvisioning();
+        return await provisioning.openProject(message.params.root);
+      }
+      case 'project.list.request': {
+        const { provisioning } = this.requireProvisioning();
+        return {
+          projects: await provisioning.projects.list(
+            message.params.includeArchived === undefined
+              ? {}
+              : { includeArchived: message.params.includeArchived },
+          ),
+        };
+      }
+      case 'project.update.request': {
+        const { provisioning } = this.requireProvisioning();
+        return {
+          project: await this.mapNotFound(() =>
+            provisioning.projects.rename(message.params.projectId, message.params.displayName),
+          ),
+        };
+      }
+      case 'project.archive.request': {
+        const { provisioning } = this.requireProvisioning();
+        await this.mapNotFound(() => provisioning.projects.archive(message.params.projectId));
+        return {};
+      }
+      case 'workspace.create.request': {
+        const { provisioning } = this.requireProvisioning();
+        if (message.params.isolation === 'worktree') {
+          // worktree 생성은 WBS 5.5 — 계약만 열어두고 구현 전까지 명시적으로 거절한다
+          throw new DaemonError('unimplemented', 'worktree 워크스페이스는 아직 지원하지 않음');
+        }
+        const cwd = message.params.cwd;
+        if (cwd === undefined) {
+          throw new DaemonError('bad_request', 'directory 격리는 cwd 가 필요');
+        }
+        return {
+          workspace: await this.mapNotFound(() =>
+            provisioning.addDirectoryWorkspace({
+              projectId: message.params.projectId,
+              cwd,
+              ...(message.params.displayName !== undefined
+                ? { displayName: message.params.displayName }
+                : {}),
+            }),
+          ),
+        };
+      }
+      case 'workspace.list.request': {
+        const { provisioning } = this.requireProvisioning();
+        return {
+          workspaces: await provisioning.workspaces.list({
+            ...(message.params.projectId !== undefined
+              ? { projectId: message.params.projectId }
+              : {}),
+            ...(message.params.includeArchived !== undefined
+              ? { includeArchived: message.params.includeArchived }
+              : {}),
+          }),
+        };
+      }
+      case 'workspace.update.request': {
+        const { provisioning } = this.requireProvisioning();
+        if (message.params.displayName === undefined && message.params.labels === undefined) {
+          throw new DaemonError('bad_request', '적용할 변경 없음 (displayName 또는 labels)');
+        }
+        const { workspaceId, displayName, labels } = message.params;
+        return {
+          workspace: await this.mapNotFound(async () => {
+            // 라벨이 함께 오면 카탈로그를 먼저 갱신한다 (WBS 5.3.4)
+            if (labels !== undefined) await provisioning.labels.remember(labels);
+            return provisioning.workspaces.update(workspaceId, {
+              ...(displayName !== undefined ? { displayName } : {}),
+              ...(labels !== undefined ? { labels } : {}),
+            });
+          }),
+        };
+      }
+      case 'workspace.archive.request': {
+        const { provisioning } = this.requireProvisioning();
+        return {
+          workspace: await this.mapNotFound(() =>
+            provisioning.archiveWorkspace(message.params.workspaceId, {
+              removeCheckout: message.params.removeCheckout === true,
+            }),
+          ),
+        };
+      }
+      case 'workspace.labels.list.request': {
+        const { provisioning } = this.requireProvisioning();
+        return { labels: await provisioning.labels.list() };
+      }
+      case 'workspace.setup.run.request':
+        // 프로젝트 설정 파일 실행은 WBS 5.5.3 (신뢰 경계 포함) — 계약만 예약
+        throw new DaemonError('unimplemented', '워크스페이스 setup 실행은 아직 지원하지 않음');
       case 'config.key.set.request': {
         const { keyStore, gateway } = this.requireConfigServices();
         await keyStore.set(message.params.apiKey);
@@ -286,6 +419,27 @@ export class DaemonServer {
         }
         return { values };
       }
+    }
+  }
+
+  private requireProvisioning(): { provisioning: WorkspaceProvisioning } {
+    const { provisioning } = this.options;
+    if (!provisioning) {
+      throw new DaemonError('unimplemented', 'project/workspace 도메인이 배선되지 않음');
+    }
+    return { provisioning };
+  }
+
+  /** 레지스트리의 "없음" 오류를 RPC 에러 코드로 옮긴다 — 클라이언트가 분기할 수 있게 */
+  private async mapNotFound<T>(task: () => Promise<T>): Promise<T> {
+    try {
+      return await task();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.endsWith('없음') || / 없음: /.test(message)) {
+        throw new DaemonError('not_found', message);
+      }
+      throw error;
     }
   }
 

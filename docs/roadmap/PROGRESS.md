@@ -4,7 +4,7 @@
 
 - 문서 목적: 로드맵 WBS 기준 진척 현황의 단일 보드. 모든 작업은 여기 등재된 WBS ID 로 추적한다.
 - 갱신 규칙: 작업 상태 변화 시마다 갱신 (planned / in_progress / blocked / done). 계획 변경 발생 시 원 문서(ROADMAP·roadmap/·REQUIREMENTS 등) 동기화 후 여기 비고에 링크.
-- 최종 수정일: 2026-08-30 (M5 — WP5.0·5.1 완료, 5.2·5.3 레지스트리 구현)
+- 최종 수정일: 2026-08-30 (M5 — WP5.0·5.1·5.2·5.3·5.4 완료, 잔여 5.5~5.7)
 
 ## 신설 마일스톤: M5~M7 — paseo 서비스 도입 웨이브 (2026-08-30 승인)
 
@@ -21,10 +21,16 @@
 | 5.1.3 | 설계 리뷰·승인 | done | 2026-08-30 사용자 승인 — 열린 결정 3건 확정: D-1 worktree 위치=데이터 디렉토리 내부(`data/worktrees/<workspaceId>`), D-2 기본 워크스페이스=프로젝트 열기 즉시 생성, D-3 아카이브 타임라인=무기한 보존 |
 | 5.2.1 | 프로젝트 스토어 (불투명 ID·lexical 정규화·멱등 생성·아카이브) | done | 2026-08-30 — `workspaces/{records,registry-store,registry}.ts`: `prj_<16hex>` 불투명 ID(경로 미유도), `path.resolve`+드라이브 문자 정규화만(**realpath 금지**), 같은 루트 재요청 멱등, 아카이브는 부활 없이 새 ID. 스토어가 원자성·직렬화 소유(tmp+rename, 쓰기 체인) |
 | 5.2.2 | git 메타데이터 관측·정합화 | done | 2026-08-30 — `git-facts.ts`(셸 미경유 execFile·5s 타임아웃): kind·defaultBranch(origin/HEAD → 없으면 현재 브랜치, 폐쇄망 로컬 저장소 고려)·remoteUrl·projectKey 유도. 정합화는 가변 사실만 갱신하고 id·root·displayName 불변 — 테스트로 고정 |
-| 5.2.3 | `project.*` RPC + 이벤트 | planned | 네임스페이스는 5.0.3 에서 예약 완료 |
+| 5.2.3 | `project.*` RPC + 이벤트 | done | 2026-08-30 — open(멱등·기본 워크스페이스 동반)·list·update·archive. 레지스트리 변경은 `project_changed`/`workspace_changed` 이벤트로 브로드캐스트(세션 이벤트와 같은 경로, sessionId/seq 봉투 없음 — 목록 재조회 신호). protocol 에 Project/Workspace 와이어 스키마 신설, 데몬이 영속에도 같은 스키마 사용(두 벌 정의 금지) |
 | 5.3.1 | 워크스페이스 스토어 (cwd/checkoutRoot 분리·상태·라벨) | done | 2026-08-30 — 형제 워크스페이스 독립성(같은 cwd 2개 공존), 소프트 아카이브, 라벨·setupState 갱신, 동시 생성 8건 무유실 검증 |
 | 5.3.2 | 프로비저닝 서비스 단일 창구 | done (핵심) | 2026-08-30 — `WorkspaceProvisioning`: openProject(프로젝트+기본 워크스페이스 즉시 생성·멱등, D-2), addDirectoryWorkspace(하위 디렉토리 편입 시 checkoutRoot=저장소 루트), worktreePath(D-1 데이터 디렉토리 내부). **설계 충돌 1건 해소**: `rev-parse --show-toplevel` 이 심링크를 푼 경로를 돌려줘(macOS /tmp→/private/tmp) lexical 원칙과 충돌 → `--show-prefix` 로 상대 접두사만 걷어내도록 변경. 잔여: worktree 생성 경로(5.5) |
-| 5.3.3~5.3.5, 5.4~5.7 | 아카이브 teardown·라벨 카탈로그·RPC·세션 귀속·worktree·UI 재편·검증 | planned | [m5-workspace.md](./m5-workspace.md) 참조 |
+| 5.3.3 | 아카이브·복원 (teardown·디렉토리 제거) | done (teardown 은 5.5.3) | 2026-08-30 — `archiveWorkspace` 단일 창구. 소프트 삭제 후 백킹 디렉토리 제거는 **우리가 만든 worktree 에 한정**(`data/worktrees/` 하위 + isolation=worktree). 사용자가 고른 체크아웃은 removeCheckout 요청이어도 거절 — 테스트로 고정. harness.json teardown 실행은 5.5.3 에서 이 경로에 편입 |
+| 5.3.4 | 라벨 카탈로그 + 할당 | done | 2026-08-30 — `labels.ts` 호스트 로컬 카탈로그(`key=value` 유일·lastUsedAt·prune). **카탈로그를 먼저 쓰고 할당** — 뒤 단계가 실패해도 남는 것은 미사용 항목뿐이라 복구 절차가 필요 없다(역순이면 카탈로그에 없는 라벨이 생김). `workspace.labels.list` RPC |
+| 5.3.5 | `workspace.*` RPC + 이벤트 | done | 2026-08-30 — create(directory)·list·update·archive·labels.list. worktree 생성·setup 실행은 계약만 열고 `unimplemented` 로 명시 거절(5.5). 없는 대상은 `not_found`, 빈 변경은 `bad_request` 로 구분 |
+| 5.4.1 | 세션 생성의 `workspaceId` 필수화 | done | 2026-08-30 — session.create 에 `workspaceId`(additive) 추가, 지정 시 cwd 는 워크스페이스에서 가져오고 아카이브된 워크스페이스는 거절. **COMPAT(sessionCreateCwd)**: cwd 만 온 요청은 그 경로로 프로젝트를 열어 기본 워크스페이스에 귀속 — 렌더러가 워크스페이스를 보내는 5.6 이후 제거(2027-02-28) |
+| 5.4.2 | 기존 세션 1회 백필 | done | 2026-08-30 — 기동 시 `workspaceId` 없는 세션을 기본 워크스페이스에 귀속하고 `data/migrations/backfill-workspace-id.done` 마커로 재실행 차단. 사라진 디렉토리는 건너뛰고 기동을 막지 않는다. cwd→workspaceId 매핑이 존재하는 유일한 지점 |
+| 5.4.3 | 목록·집계의 workspaceId 전환 | done | 2026-08-30 — `session.list` 에 workspaceId 필터(additive), 요약·메타에 workspaceId 보존, 재기동 후 귀속 유지 검증. 같은 cwd 형제 워크스페이스가 섞이지 않음을 테스트로 고정 |
+| 5.5~5.7 | worktree 격리·UI 재편·검증 | planned | [m5-workspace.md](./m5-workspace.md) 참조. 5.6 완료 시 COMPAT(sessionCreateCwd) 제거 |
 | 6.* | 탭 다형화·터미널·파일·diff·스크립트 | planned | M5 완료 후. 6.1.2 는 M0 0.2.4(바이너리 프레임 불채택) 재개정 |
 | 7.* | 주의 상태·역방향 툴·서브에이전트·검색·CLI 자동화 | planned | M5 완료 후. 7.2.1(하네스 MCP 실측)은 선행 게이트 |
 

@@ -268,3 +268,23 @@ describe('WorkspaceProvisioning (단일 창구)', () => {
     expect(Array.isArray(raw.records)).toBe(true);
   });
 });
+
+describe('LabelCatalog (WBS 5.3.4)', () => {
+  it('카탈로그를 먼저 쓰고 할당한다 — 사용되지 않는 항목만 정리된다', async () => {
+    const paths = await makePaths();
+    const provisioning = new WorkspaceProvisioning(paths);
+    const { project } = await provisioning.openProject(await mkdtemp(join(tmpdir(), 'ch-plain-')));
+    const [workspace] = await provisioning.workspaces.list({ projectId: project.id });
+
+    await provisioning.setWorkspaceLabels(workspace!.id, { team: 'platform', env: 'dev' });
+    expect((await provisioning.labels.list()).map((entry) => entry.id).sort()).toEqual([
+      'env=dev',
+      'team=platform',
+    ]);
+
+    // 할당에서 빠진 라벨은 정리 대상이 된다
+    await provisioning.setWorkspaceLabels(workspace!.id, { team: 'platform' });
+    expect(await provisioning.pruneLabels()).toBe(1);
+    expect((await provisioning.labels.list()).map((entry) => entry.id)).toEqual(['team=platform']);
+  });
+});

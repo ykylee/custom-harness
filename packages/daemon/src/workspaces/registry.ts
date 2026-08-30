@@ -3,10 +3,13 @@
 // 불변식 2개가 이 파일의 존재 이유다:
 //   ① 정합화는 git 파생 메타데이터만 갱신한다 — id·root·cwd·displayName·baseBranch 는 불변.
 //   ② 워크스페이스 레코드를 만드는 경로는 프로비저닝 서비스 하나다 — 생성 경로가 셋이면 불변식도 셋이 된다.
-import { basename, join } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { basename, join, sep } from 'node:path';
 import type { DaemonPaths } from '../paths.js';
+import { LabelCatalog, labelId } from './labels.js';
 import { RegistryStore } from './registry-store.js';
 import { checkoutRootFor, currentBranch, deriveProjectKey, readProjectFacts } from './git-facts.js';
+import type { RegistryEvent, WorkspaceIsolation } from '@custom-harness/protocol';
 import {
   ProjectRecordSchema,
   WorkspaceRecordSchema,
@@ -14,16 +17,21 @@ import {
   newWorkspaceId,
   normalizeRoot,
   type ProjectRecord,
-  type WorkspaceIsolation,
   type WorkspaceRecord,
 } from './records.js';
+
+/** 레지스트리 변경 알림 — 데몬 서버가 연결된 클라이언트에 브로드캐스트한다 */
+export type RegistryEmitter = (event: RegistryEvent) => void;
 
 const now = (): string => new Date().toISOString();
 
 export class ProjectRegistry {
   private readonly store: RegistryStore<ProjectRecord>;
 
-  constructor(projectsDir: string) {
+  constructor(
+    projectsDir: string,
+    private readonly emit: RegistryEmitter = () => undefined,
+  ) {
     this.store = new RegistryStore(join(projectsDir, 'projects.json'), ProjectRecordSchema);
   }
 
@@ -50,7 +58,12 @@ export class ProjectRegistry {
       ...facts,
       ...(projectKey !== undefined ? { projectKey } : {}),
     };
-    return this.store.mutate((records) => ({ records: [...records, record], result: record }));
+    const created = await this.store.mutate((records) => ({
+      records: [...records, record],
+      result: record,
+    }));
+    this.emit({ type: 'project_changed', reason: 'created', project: created });
+    return created;
   }
 
   async list(options: { includeArchived?: boolean } = {}): Promise<ProjectRecord[]> {
@@ -68,25 +81,28 @@ export class ProjectRegistry {
   async rename(id: string, displayName: string): Promise<ProjectRecord> {
     const trimmed = displayName.trim();
     if (trimmed === '') throw new Error('표시 이름은 비울 수 없음');
-    return this.store.mutate((records) => {
+    const next = await this.store.mutate((records) => {
       const index = records.findIndex((record) => record.id === id);
       if (index < 0) throw new Error(`프로젝트 없음: ${id}`);
-      const next = { ...records[index]!, displayName: trimmed, updatedAt: now() };
+      const updated = { ...records[index]!, displayName: trimmed, updatedAt: now() };
       const copy = [...records];
-      copy[index] = next;
-      return { records: copy, result: next };
+      copy[index] = updated;
+      return { records: copy, result: updated };
     });
+    this.emit({ type: 'project_changed', reason: 'updated', project: next });
+    return next;
   }
 
   async archive(id: string): Promise<void> {
-    await this.store.mutate((records) => {
+    const archived = await this.store.mutate((records) => {
       const index = records.findIndex((record) => record.id === id);
       if (index < 0) throw new Error(`프로젝트 없음: ${id}`);
       const copy = [...records];
       const timestamp = now();
       copy[index] = { ...records[index]!, archivedAt: timestamp, updatedAt: timestamp };
-      return { records: copy, result: undefined };
+      return { records: copy, result: copy[index]! };
     });
+    this.emit({ type: 'project_changed', reason: 'archived', project: archived });
   }
 
   /**
@@ -139,7 +155,10 @@ export interface CreateWorkspaceInput {
 export class WorkspaceRegistry {
   private readonly store: RegistryStore<WorkspaceRecord>;
 
-  constructor(projectsDir: string) {
+  constructor(
+    projectsDir: string,
+    private readonly emit: RegistryEmitter = () => undefined,
+  ) {
     this.store = new RegistryStore(join(projectsDir, 'workspaces.json'), WorkspaceRecordSchema);
   }
 
@@ -162,7 +181,12 @@ export class WorkspaceRegistry {
       ...(input.baseBranch !== undefined ? { baseBranch: input.baseBranch } : {}),
       ...(input.mainRepoRoot !== undefined ? { mainRepoRoot: input.mainRepoRoot } : {}),
     };
-    return this.store.mutate((records) => ({ records: [...records, record], result: record }));
+    const created = await this.store.mutate((records) => ({
+      records: [...records, record],
+      result: record,
+    }));
+    this.emit({ type: 'workspace_changed', reason: 'created', workspace: created });
+    return created;
   }
 
   async list(
@@ -186,21 +210,23 @@ export class WorkspaceRegistry {
     id: string,
     patch: { displayName?: string; labels?: Record<string, string> },
   ): Promise<WorkspaceRecord> {
-    return this.store.mutate((records) => {
+    const next = await this.store.mutate((records) => {
       const index = records.findIndex((record) => record.id === id);
       if (index < 0) throw new Error(`워크스페이스 없음: ${id}`);
       const previous = records[index]!;
       const displayName = patch.displayName?.trim();
-      const next: WorkspaceRecord = {
+      const updated: WorkspaceRecord = {
         ...previous,
         updatedAt: now(),
         ...(displayName !== undefined && displayName !== '' ? { displayName } : {}),
         ...(patch.labels !== undefined ? { labels: patch.labels } : {}),
       };
       const copy = [...records];
-      copy[index] = next;
-      return { records: copy, result: next };
+      copy[index] = updated;
+      return { records: copy, result: updated };
     });
+    this.emit({ type: 'workspace_changed', reason: 'updated', workspace: next });
+    return next;
   }
 
   async setSetupState(id: string, setupState: WorkspaceRecord['setupState']): Promise<void> {
@@ -215,7 +241,7 @@ export class WorkspaceRegistry {
 
   /** 소프트 삭제. 백킹 디렉토리 제거는 프로비저닝 서비스가 별도로 판단한다 */
   async archive(id: string): Promise<WorkspaceRecord> {
-    return this.store.mutate((records) => {
+    const archived = await this.store.mutate((records) => {
       const index = records.findIndex((record) => record.id === id);
       if (index < 0) throw new Error(`워크스페이스 없음: ${id}`);
       const timestamp = now();
@@ -224,6 +250,8 @@ export class WorkspaceRegistry {
       copy[index] = next;
       return { records: copy, result: next };
     });
+    this.emit({ type: 'workspace_changed', reason: 'archived', workspace: archived });
+    return archived;
   }
 
   /**
@@ -256,10 +284,45 @@ export class WorkspaceRegistry {
 export class WorkspaceProvisioning {
   readonly projects: ProjectRegistry;
   readonly workspaces: WorkspaceRegistry;
+  readonly labels: LabelCatalog;
+  private readonly listeners = new Set<RegistryEmitter>();
 
   constructor(private readonly paths: DaemonPaths) {
-    this.projects = new ProjectRegistry(paths.projectsDir);
-    this.workspaces = new WorkspaceRegistry(paths.projectsDir);
+    const emit: RegistryEmitter = (event) => {
+      for (const listener of this.listeners) listener(event);
+    };
+    this.projects = new ProjectRegistry(paths.projectsDir, emit);
+    this.workspaces = new WorkspaceRegistry(paths.projectsDir, emit);
+    this.labels = new LabelCatalog(paths.projectsDir);
+  }
+
+  /**
+   * 라벨 할당 (WBS 5.3.4) — 카탈로그를 먼저 쓰고 할당을 쓴다.
+   * 뒤 단계가 실패해도 남는 것은 쓰이지 않는 카탈로그 항목 하나뿐이라 복구 절차가 필요 없다.
+   */
+  async setWorkspaceLabels(
+    workspaceId: string,
+    labels: Record<string, string>,
+  ): Promise<WorkspaceRecord> {
+    await this.labels.remember(labels);
+    return this.workspaces.update(workspaceId, { labels });
+  }
+
+  /** 어떤 워크스페이스도 쓰지 않는 카탈로그 항목 정리 */
+  async pruneLabels(): Promise<number> {
+    const assigned = new Set<string>();
+    for (const workspace of await this.workspaces.list({ includeArchived: true })) {
+      for (const [key, value] of Object.entries(workspace.labels)) {
+        assigned.add(labelId(key, value));
+      }
+    }
+    return this.labels.prune(assigned);
+  }
+
+  /** 레지스트리 변경 구독 — 서버가 연결된 클라이언트에 브로드캐스트한다 */
+  onChange(listener: RegistryEmitter): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   /**
@@ -300,6 +363,31 @@ export class WorkspaceProvisioning {
       isolation: 'directory',
       ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
     });
+  }
+
+  /**
+   * 아카이브 단일 창구 (WBS 5.3.3). 레코드는 소프트 삭제로 남고, 백킹 디렉토리 제거는
+   * **우리가 만든 worktree 에 한정**한다 — 사용자가 고른 체크아웃은 어떤 경우에도 지우지 않는다.
+   *
+   * 프로젝트 설정 파일(harness.json)의 teardown 실행은 5.5.3 에서 이 경로에 들어온다.
+   */
+  async archiveWorkspace(
+    workspaceId: string,
+    options: { removeCheckout?: boolean } = {},
+  ): Promise<WorkspaceRecord> {
+    const existing = await this.workspaces.find(workspaceId);
+    if (!existing) throw new Error(`워크스페이스 없음: ${workspaceId}`);
+    const archived = await this.workspaces.archive(workspaceId);
+    if (options.removeCheckout !== true) return archived;
+
+    const managedRoot = normalizeRoot(this.paths.worktreesDir);
+    const target = normalizeRoot(archived.checkoutRoot);
+    const isManaged = archived.isolation === 'worktree' && target.startsWith(managedRoot + sep);
+    if (!isManaged) {
+      throw new Error(`관리 밖 체크아웃은 제거하지 않음: ${target}`);
+    }
+    await rm(target, { recursive: true, force: true });
+    return archived;
   }
 
   /** worktree 백킹 디렉토리 경로 (D-1 확정: 데이터 디렉토리 내부) */

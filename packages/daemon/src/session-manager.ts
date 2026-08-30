@@ -121,6 +121,8 @@ export class SessionManager {
   async createSession(params: {
     harness: HarnessId;
     cwd: string;
+    /** 소유 워크스페이스 (WBS 5.4.1) — 런타임은 cwd 로 소유권을 추론하지 않는다 */
+    workspaceId?: string | undefined;
     modelId?: string | undefined;
     approvalPolicy?: 'mediate' | 'auto' | undefined;
     mcpServers?: McpServerConfig[] | undefined;
@@ -148,6 +150,7 @@ export class SessionManager {
       sessionId: randomUUID(),
       harness: params.harness,
       cwd: params.cwd,
+      ...(params.workspaceId !== undefined ? { workspaceId: params.workspaceId } : {}),
       ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
       status: 'initializing',
       createdAt: now,
@@ -215,8 +218,39 @@ export class SessionManager {
     return this.summarize(live);
   }
 
-  async listSessions(): Promise<SessionSummary[]> {
-    return [...this.sessions.values()].map((live) => this.summarize(live));
+  async listSessions(filter: { workspaceId?: string } = {}): Promise<SessionSummary[]> {
+    const all = [...this.sessions.values()];
+    // 집계는 workspaceId 기준 — cwd 비교로 형제 워크스페이스를 섞지 않는다 (WBS 5.4.3)
+    const scoped =
+      filter.workspaceId === undefined
+        ? all
+        : all.filter((live) => live.meta.workspaceId === filter.workspaceId);
+    return scoped.map((live) => this.summarize(live));
+  }
+
+  /** 백필 전용 (WBS 5.4.2) — cwd → workspaceId 매핑이 존재하는 유일한 지점 */
+  async backfillWorkspaceIds(
+    resolve: (cwd: string) => Promise<string | undefined>,
+  ): Promise<{ mapped: number; skipped: number }> {
+    let mapped = 0;
+    let skipped = 0;
+    for (const live of this.sessions.values()) {
+      if (live.meta.workspaceId !== undefined) continue;
+      let workspaceId: string | undefined;
+      try {
+        workspaceId = await resolve(live.meta.cwd);
+      } catch {
+        workspaceId = undefined;
+      }
+      if (workspaceId === undefined) {
+        skipped += 1; // 사라진 디렉토리 등 — 기동을 막지 않는다
+        continue;
+      }
+      live.meta.workspaceId = workspaceId;
+      await this.persistMeta(live); // 세션별 직렬화 경로를 그대로 탄다
+      mapped += 1;
+    }
+    return { mapped, skipped };
   }
 
   async closeSession(sessionId: string): Promise<void> {
@@ -411,6 +445,7 @@ export class SessionManager {
       sessionId: live.meta.sessionId,
       harness: live.meta.harness,
       cwd: live.meta.cwd,
+      ...(live.meta.workspaceId !== undefined ? { workspaceId: live.meta.workspaceId } : {}),
       status: live.meta.status,
       ...(live.meta.modelId !== undefined ? { modelId: live.meta.modelId } : {}),
       seq: live.nextSeq - 1,
