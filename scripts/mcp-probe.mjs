@@ -445,6 +445,16 @@ async function installGrokMcp(logPath, env) {
   );
 }
 
+/**
+ * pi — 실서버 모드(7.2.3b)에서는 **확장**으로 간다. pi 는 MCP 를 설계상 배제하므로
+ * 같은 카탈로그를 `pi.registerTool` 로 노출하고, 확장이 우리 MCP 서버를 자식으로 띄운다.
+ * 진단 로그는 데몬이 spawn 사양에 물려주므로(`CUSTOM_HARNESS_MCP_LOG`) 데몬 기동 **전에** 심는다.
+ */
+async function installPiExtension() {
+  const { registerPiExtension } = await import(join(repoRoot, 'packages/daemon/dist/index.js'));
+  return registerPiExtension(paths.piHomeDir);
+}
+
 /** pi — MCP 를 의도적으로 넣지 않았다. 관례 경로를 모두 깔아 두고 무반응을 확인한다 */
 async function installPiMcp(logPath) {
   // 서버명을 분리한다 — 프로젝트 스코프 .mcp.json 은 grok 도 읽으므로 같은 이름을 쓰면
@@ -558,6 +568,9 @@ async function probePi() {
 // ── 데몬 경로 (실제 제품 경로: omp/pi = --mode rpc, grok = ACP) ───────────
 // 하네스를 직접 -p 로 띄우는 것과 우리 어댑터가 띄우는 것이 다를 수 있어 둘 다 잰다.
 async function probeViaDaemon() {
+  // pi 확장의 MCP 서버 로그 — 데몬이 spawn 사양에 물려주므로 기동 전에 심어야 한다.
+  // omp·grok 은 아래 루프에서 각자 로그 경로로 **재등록**하므로 이 값에 영향받지 않는다.
+  if (realServer) process.env.CUSTOM_HARNESS_MCP_LOG = join(home, 'mcp-daemon-pi.jsonl');
   const { startDaemon, PiAdapter, OmpAdapter, GrokAdapter } = await import(
     join(repoRoot, 'packages/daemon/dist/index.js')
   );
@@ -642,7 +655,12 @@ async function probeViaDaemon() {
     // 등록을 새 로그 경로로 다시 심는다 — CLI 단계 로그와 섞이지 않게
     if (harness === 'omp') await installOmpMcp(logPath, { xdev: false });
     if (harness === 'grok') await installGrokMcp(logPath, await gateway.buildEnv('grok'));
-    if (harness === 'pi') await installPiMcp(logPath);
+    // 실서버 모드의 pi 는 확장 경로이고, 그 spawn env·로그는 데몬이 소유한다.
+    // 로그 경로는 데몬 기동 전에 process.env 로 심어 뒀다(아래 probeViaDaemon 진입부).
+    if (harness === 'pi') {
+      if (realServer) await installPiExtension();
+      else await installPiMcp(logPath);
+    }
     const o = resetObservations(`${harness}(daemon)`);
     let error = null;
     let turn1Exposure = null;

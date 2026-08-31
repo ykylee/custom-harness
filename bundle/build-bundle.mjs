@@ -160,7 +160,9 @@ if (isDarwin && hostTarget === target) {
 const scopeDir = join(appDir, 'node_modules', '@custom-harness');
 for (const [name, artifacts] of [
   ['protocol', ['dist']],
-  ['daemon', ['dist']],
+  // pi-extension/ — pi 역방향 툴 확장 소스 (WBS 7.2.3b). 우리 tsc 대상이 아니라 dist 에
+  // 들어가지 않는다. 빠뜨리면 데몬이 확장을 설치하지 못하고 pi 만 역방향 툴이 사라진다.
+  ['daemon', ['dist', 'pi-extension']],
   ['cli', ['dist']],
   ['shell', ['dist']],
   ['renderer', ['dist-web']],

@@ -6,7 +6,7 @@
 //          우리가 추측하지 않는다 — 하네스 자신의 CLI 가 쓰게 한다
 //   pi   — MCP 를 설계상 배제. 확장(`pi.registerTool`)으로 따로 간다 (후속)
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -59,6 +59,11 @@ export function resolveMcpServerSpec(options: {
     env: {
       CUSTOM_HARNESS_HOME: options.root,
       ...(runAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+      // 데몬에 진단이 켜져 있으면 MCP 서버에도 물려준다 — 서버는 별도 프로세스라
+      // 데몬 로그만 봐서는 왜 툴이 안 보이는지 알 수 없다
+      ...(process.env.CUSTOM_HARNESS_MCP_LOG !== undefined
+        ? { CUSTOM_HARNESS_MCP_LOG: process.env.CUSTOM_HARNESS_MCP_LOG }
+        : {}),
     },
   };
 }
@@ -170,4 +175,55 @@ export async function registerGrokMcpServer(options: {
 
   const { stdout, stderr } = await run(options.execPath, addArgs, { env, timeout });
   return { status: 'registered', output: `${stdout}${stderr}`.trim() };
+}
+
+// ── pi 확장 경로 (WBS 7.2.3b) ────────────────────────────────────────────────
+
+/**
+ * pi 확장 소스 경로. 이 파일은 **우리 tsc 대상이 아니고**(`include: ["src"]`) pi 가 컴파일한다.
+ * 번들에서는 `dist/` 와 함께 `pi-extension/` 도 복사돼야 한다 — 패키징 항목.
+ */
+export function resolvePiExtensionSource(): string {
+  return fileURLToPath(new URL('../../pi-extension/reverse-tools.ts', import.meta.url));
+}
+
+/** 확장 파일명 — 격리 홈 안이라 사용자 확장과 섞이지 않지만, 우리 것임이 이름에 드러나야 한다 */
+export const PI_EXTENSION_FILENAME = 'ch-reverse-tools.ts';
+
+export interface PiExtensionRegistrationResult {
+  status: 'installed';
+  path: string;
+}
+
+/**
+ * pi 격리 홈의 `extensions/` 에 확장을 설치한다.
+ *
+ * `PI_CODING_AGENT_DIR` 가 `~/.pi/agent` 를 대체하므로(pi 환경변수 문서) 전역 자동 탐색 경로는
+ * `$PI_CODING_AGENT_DIR/extensions/*.ts` 다. `--extension` 플래그 대신 이 경로를 쓰는 이유:
+ * spawn 인자를 늘리지 않고, 재개(`--session`) 경로에서도 같은 확장이 자동으로 붙는다.
+ *
+ * **매번 덮어쓴다.** 사용자 설정이 아니라 번들의 산출물이고, 낡으면 툴이 조용히 사라진다.
+ */
+export async function registerPiExtension(
+  piHomeDir: string,
+  options: { sourcePath?: string } = {},
+): Promise<PiExtensionRegistrationResult> {
+  const extensionsDir = join(piHomeDir, 'extensions');
+  await mkdir(extensionsDir, { recursive: true });
+  const target = join(extensionsDir, PI_EXTENSION_FILENAME);
+  await copyFile(options.sourcePath ?? resolvePiExtensionSource(), target);
+  return { status: 'installed', path: target };
+}
+
+/**
+ * 확장이 MCP 서버를 띄우기 위해 pi spawn env 에 넣어야 하는 값.
+ * 확장 파일에 경로를 굽지 않는 이유: 번들 갱신마다 파일을 다시 만들어야 하고, 그 시점이
+ * 어긋나면 확장이 없는 실행 파일을 가리킨 채로 남는다.
+ */
+export function piExtensionEnv(spec: McpServerSpec): Record<string, string> {
+  return {
+    CUSTOM_HARNESS_MCP_COMMAND: spec.command,
+    CUSTOM_HARNESS_MCP_ARGS: JSON.stringify(spec.args),
+    ...spec.env,
+  };
 }

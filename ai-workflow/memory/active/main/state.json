@@ -10,7 +10,7 @@
     "daily_backlog_dir": "ai-workflow/memory/active/main/backlog",
     "tasks_dir": "ai-workflow/memory/active/main/backlog/tasks",
     "sessions_dir": "ai-workflow/memory/active/main/sessions",
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-31.md",
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-01.md",
     "repository_assessment_path": null
   },
   "project": {
@@ -29,13 +29,14 @@
   "session": {
     "current_baseline": "(2026-08-30 현재 기준선) **M0 설계 → M1 구현 → M2 구현(2.1~2.7) + M3 선행 2건 완료, 그 위에 M5 착수.** 1차 하네스 3종(pi/omp/grok)·데몬 멀티 세션·렌더러·셸/CLI·3 OS 오프라인 번들·doctor/logs 동작, NFR-1(외부 접속 0) darwin 실측 PASS. **2026-08-30 방향 확장**: paseo 서비스 구성 전수 분석(18 도메인) → 도입 웨이브 A~C 승인 → 로드맵 **M5(워크스페이스)·M6(캔버스)·M7(오케스트레이션)** 신설, 요구사항 FR-7/8/9 신설. **M5·M6 전 구간 완료** — 워크스페이스 3계층 위에 작업 캔버스가 섰다: 다형 탭(타깃 6종), 데몬 소유 터미널(바이너리 프레임·pty), 파일 탐색·뷰어, working/커밋 diff, 감독 터미널 스크립트 실행. 테스트 346건 그린, NFR-1·번들 터미널 스모크 PASS, 3 OS 재조립. 다음은 **M7 오케스트레이션**(7.2.1 하네스 MCP 실측이 선행 게이트). **M1·M2 완료 선언 잔여는 전부 사내 협조 대기(C-1 게이트웨이 실측, C-5 실기기 linux/win) — M5 는 이와 독립이라 병행 중.**",
     "current_axis": "(2026-08-30 현재 기준선) **M0 설계 → M1 구현 → M2 구현(2.1~2.7) + M3 선행 2건 완료, 그 위에 M5 착수.** 1차 하네스 3종(pi/omp/grok)·데몬 멀티 세션·렌더러·셸/CLI·3 OS 오프라인 번들·doctor/logs 동작, NFR-1(외부 접속 0) darwin 실측 PASS. **2026-08-30 방향 확장**: paseo 서비스 구성 전수 분석(18 도메인) → 도입 웨이브 A~C 승인 → 로드맵 **M5(워크스페이스)·M6(캔버스)·M7(오케스트레이션)** 신설, 요구사항 FR-7/8/9 신설. **M5·M6 전 구간 완료** — 워크스페이스 3계층 위에 작업 캔버스가 섰다: 다형 탭(타깃 6종), 데몬 소유 터미널(바이너리 프레임·pty), 파일 탐색·뷰어, working/커밋 diff, 감독 터미널 스크립트 실행. 테스트 346건 그린, NFR-1·번들 터미널 스모크 PASS, 3 OS 재조립. 다음은 **M7 오케스트레이션**(7.2.1 하네스 MCP 실측이 선행 게이트). **M1·M2 완료 선언 잔여는 전부 사내 협조 대기(C-1 게이트웨이 실측, C-5 실기기 linux/win) — M5 는 이와 독립이라 병행 중.**",
-    "current_focus": "TASK-2026-08-31-main-002 — 번들 grok darwin 버전 세트 불변성 결함 (manifest 1.0.5 vs 실물 1.0.13)",
+    "current_focus": null,
     "in_progress_items": [],
     "blocked_items": [],
     "planned_items": [
       "TASK-2026-08-31-main-002"
     ],
     "recent_done_items": [
+      "TASK-2026-09-01-main-001 — M7 7.2.3b 역방향 툴 노출 — pi 확장 (pi.registerTool)",
       "TASK-2026-08-31-main-008 — M7 7.2.3 역방향 툴 노출 — 데몬 MCP stdio 서버 (omp·grok)",
       "TASK-2026-08-31-main-007 — 지식 위키 계층 소급 구축 (ai-workflow/wiki)",
       "TASK-2026-08-31-main-006 — M7 7.2.2 역방향 툴 카탈로그 정본 정의 (FR-9.2)",
@@ -44,31 +45,24 @@
       "TASK-2026-08-31-main-003 — M7 7.2.0a 하네스 홈 격리 누수 봉쇄 (NFR-1)",
       "TASK-2026-08-31-main-001 — M7 7.2.1 하네스 MCP 지원 실측 (선행 게이트)",
       "TASK-2026-08-30-main-008 — M6 6.4~6.7 파일·diff·스크립트·부하 (M6 완료)",
-      "TASK-2026-08-30-main-007 — M6 6.1~6.3 설계·탭 타깃 일반화·터미널",
-      "TASK-2026-08-30-main-006 — M5 5.5~5.7 worktree 격리·UI 재편·검증 (M5 완료)"
+      "TASK-2026-08-30-main-007 — M6 6.1~6.3 설계·탭 타깃 일반화·터미널"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-31.md",
-    "task_count": 8,
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-01.md",
+    "task_count": 1,
     "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
-      "TASK-2026-08-31-main-001 — M7 7.2.1 하네스 MCP 지원 실측 (선행 게이트)",
-      "TASK-2026-08-31-main-003 — M7 7.2.0a 하네스 홈 격리 누수 봉쇄 (NFR-1)",
-      "TASK-2026-08-31-main-004 — M7 7.2.0b grok 권한 모드 확정 (FR-1.5)",
-      "TASK-2026-08-31-main-005 — M7 WP 7.1 주의 상태 1급화 (FR-9.1)",
-      "TASK-2026-08-31-main-006 — M7 7.2.2 역방향 툴 카탈로그 정본 정의 (FR-9.2)",
-      "TASK-2026-08-31-main-007 — 지식 위키 계층 소급 구축 (ai-workflow/wiki)",
-      "TASK-2026-08-31-main-008 — M7 7.2.3 역방향 툴 노출 — 데몬 MCP stdio 서버 (omp·grok)"
+      "TASK-2026-09-01-main-001 — M7 7.2.3b 역방향 툴 노출 — pi 확장 (pi.registerTool)"
     ]
   },
   "next_documents": [
     "docs/PROJECT_PROFILE.md",
     "ai-workflow/memory/active/main/session_handoff.md",
-    "ai-workflow/memory/active/main/backlog/2026-08-31.md",
+    "ai-workflow/memory/active/main/backlog/2026-09-01.md",
     "ai-workflow/memory/active/main/work_backlog.md",
     "docs/reference/harness-mcp-support.md"
   ],

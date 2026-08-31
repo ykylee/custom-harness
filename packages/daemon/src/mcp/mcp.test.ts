@@ -6,9 +6,13 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_CATALOG } from '@custom-harness/protocol';
 import { createLineReader, McpStdioServer, type ToolInvoker } from './server.js';
 import { createToolInvoker, type DaemonRpc } from './tools.js';
+import { access, readFile as readFileAsync } from 'node:fs/promises';
 import {
+  PI_EXTENSION_FILENAME,
+  piExtensionEnv,
   registerGrokMcpServer,
   registerOmpMcpServer,
+  registerPiExtension,
   resolveMcpServerSpec,
   REVERSE_MCP_SERVER_NAME,
   type CommandRunner,
@@ -381,5 +385,46 @@ describe('등록 — grok CLI 위임', () => {
     await expect(
       registerGrokMcpServer({ execPath: '/g', grokHome: '/gh', spec, run }),
     ).resolves.toMatchObject({ status: 'registered' });
+  });
+});
+
+describe('등록 — pi 확장 (7.2.3b)', () => {
+  it('격리 홈의 extensions/ 에 설치한다', async () => {
+    // PI_CODING_AGENT_DIR 가 ~/.pi/agent 를 대체하므로 전역 자동 탐색 경로가 여기다
+    const piHome = await mkdtemp(join(tmpdir(), 'ch-pi-'));
+    const source = join(await mkdtemp(join(tmpdir(), 'ch-pi-src-')), 'ext.ts');
+    await writeFile(source, '// 확장 원본\n');
+
+    const result = await registerPiExtension(piHome, { sourcePath: source });
+    expect(result.path).toBe(join(piHome, 'extensions', PI_EXTENSION_FILENAME));
+    await expect(access(result.path)).resolves.toBeUndefined();
+    expect(await readFileAsync(result.path, 'utf8')).toBe('// 확장 원본\n');
+  });
+
+  it('매번 덮어쓴다 — 번들 갱신본이 낡으면 툴이 조용히 사라진다', async () => {
+    const piHome = await mkdtemp(join(tmpdir(), 'ch-pi-'));
+    const srcDir = await mkdtemp(join(tmpdir(), 'ch-pi-src-'));
+    const source = join(srcDir, 'ext.ts');
+
+    await writeFile(source, 'v1');
+    await registerPiExtension(piHome, { sourcePath: source });
+    await writeFile(source, 'v2');
+    const result = await registerPiExtension(piHome, { sourcePath: source });
+
+    expect(await readFileAsync(result.path, 'utf8')).toBe('v2');
+  });
+
+  it('확장은 spawn 사양을 env 로 받는다 — 파일에 경로를 굽지 않는다', async () => {
+    // 파일에 구우면 번들 갱신 시점이 어긋날 때 없는 실행 파일을 가리킨 채로 남는다
+    const spec = resolveMcpServerSpec({
+      root: '/data',
+      execPath: '/bin/node',
+      entryPath: '/app/mcp.js',
+      runAsNode: false,
+    });
+    const env = piExtensionEnv(spec);
+    expect(env.CUSTOM_HARNESS_MCP_COMMAND).toBe('/bin/node');
+    expect(JSON.parse(env.CUSTOM_HARNESS_MCP_ARGS!)).toEqual(['/app/mcp.js']);
+    expect(env.CUSTOM_HARNESS_HOME).toBe('/data');
   });
 });

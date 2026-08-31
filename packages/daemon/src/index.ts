@@ -6,8 +6,10 @@ import { KeyStore, type SecretCipher } from './gateway/key-store.js';
 import { GatewayService } from './gateway/service.js';
 import { loadBundleManifest } from './manifest.js';
 import {
+  piExtensionEnv,
   registerGrokMcpServer,
   registerOmpMcpServer,
+  registerPiExtension,
   resolveMcpServerSpec,
 } from './mcp/registration.js';
 import { resolvePaths, type DaemonPaths } from './paths.js';
@@ -127,10 +129,20 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
   const provisioning = new WorkspaceProvisioning(paths);
   // 데몬 소유 터미널 (WBS 6.3) — 클라이언트가 끊겨도 pty 는 살아 있다
   const terminals = new TerminalManager();
+  // pi 확장이 쓸 spawn 사양 — 아래 등록 단계에서 채워지고, buildEnv 클로저가 **호출 시점에**
+  // 읽는다(세션 생성은 등록 뒤에 일어난다). 선언을 여기 두어 그 의존을 눈에 보이게 한다.
+  let piReverseToolsEnv: Record<string, string> | undefined;
   const manager = new SessionManager({
     store,
     adapters,
-    buildEnv: (harness) => gateway.buildEnv(harness),
+    buildEnv: async (harness) => {
+      const env = await gateway.buildEnv(harness);
+      // pi 확장은 MCP 서버 spawn 사양을 env 로 받는다 (7.2.3b) — 게이트웨이 관심사가
+      // 아니므로 여기서 얹는다
+      return harness === 'pi' && piReverseToolsEnv !== undefined
+        ? { ...env, ...piReverseToolsEnv }
+        : env;
+    },
     // 우선순위: 명시 옵션 > settings.json (WBS 2.3.1)
     maxSessions: options.maxSessions ?? (await gateway.getMaxSessions()),
     ...(manifest !== undefined ? { manifest } : {}),
@@ -187,6 +199,17 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
       }
     } catch (error) {
       console.warn('[daemon] omp 역방향 MCP 등록 실패 — 역방향 툴 미노출:', error);
+    }
+  }
+  // pi 는 MCP 를 배제하므로 같은 카탈로그를 확장으로 노출한다 (7.2.3b).
+  // 확장이 MCP 서버를 자식으로 띄우므로 카탈로그·승인 게이트·바인딩이 그대로 재사용된다.
+  if (registeredHarnesses.has('pi')) {
+    try {
+      const installed = await registerPiExtension(paths.piHomeDir);
+      piReverseToolsEnv = piExtensionEnv(mcpSpec);
+      console.warn(`[daemon] pi 역방향 툴 확장 설치: ${installed.path}`);
+    } catch (error) {
+      console.warn('[daemon] pi 역방향 툴 확장 설치 실패 — 역방향 툴 미노출:', error);
     }
   }
   if (registeredHarnesses.has('grok') && options.harnessExecPaths?.grok !== undefined) {

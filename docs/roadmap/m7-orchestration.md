@@ -30,7 +30,7 @@
 | 7.2.0b | **grok 권한 모드 확정** — 원인은 §3.1 홈 누수였다(사용자 `~/.claude/settings.json` 의 `defaultMode="auto"` 를 import). 모드 행렬 실측 후 `GrokAdapter` 가 **`--permission-mode default` 를 항상 명시**하도록 고정 — MCP 툴·내장 파괴적 툴 **양쪽**이 승인 대상이 되는 유일한 모드 — **done (2026-08-31)** | 어댑터 | 7.2.1, 7.2.0a | FR-1.5, FR-9.2 | M |
 | 7.2.2 | 툴 카탈로그 정본 정의 — 툴 10종([설계](../design/reverse-tool-catalog.md), `packages/protocol/src/tools.ts`). 이름 규칙·효과 분류(read/write)·승인 대상 여부·재귀 위험 플래그 확정 — **done (2026-08-31)** | 카탈로그 | 7.1.1 | FR-9.2 | M |
 | 7.2.3a | **MCP 서버 경로(omp·grok)** — 데몬 소유 stdio 서버 + 등록(grok=`grok mcp add` 위임 / omp=격리 홈 `mcp.json` + `tools.xdev=false`) + `terminal.read` RPC. read 5종 동작, write 5종은 승인 채널 부재로 명시 거부 — **done (2026-09-01, 실서버 왕복 omp·grok PASS)** | 데몬 | 7.2.2 | FR-9.2 | L |
-| 7.2.3b | **pi 확장 경로** — 같은 카탈로그를 `pi.registerTool` 로 노출 | 확장 | 7.2.3a | FR-9.2 | M |
+| 7.2.3b | **pi 확장 경로** — 같은 카탈로그를 `pi.registerTool` 로 노출. 확장이 **우리 MCP 서버를 자식으로 띄워** 카탈로그·승인 게이트·바인딩을 그대로 재사용한다(경로별 재정의 금지) — **done (2026-09-01, 실물 pi 왕복 PASS: 툴 10종 등록, `direct:ws_list` invoked·returned)** | 확장 | 7.2.3a | FR-9.2 | M |
 | 7.2.4 | opt-in·재귀 상한·감사 로그 + **서버명 선점 탐지**(프로젝트 `.mcp.json` 이 사용자 스코프를 덮는다) | 안전장치 | 7.2.3 | FR-9.2, NFR | M |
 
 ### WP 7.3 서브에이전트 (위임)
