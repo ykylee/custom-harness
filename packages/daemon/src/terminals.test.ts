@@ -85,6 +85,43 @@ describe('TerminalManager (WBS 6.3.1)', () => {
     late!.detach();
   });
 
+  it('read 는 구독하지 않고 스크롤백만 준다 (WBS 7.2.3)', async () => {
+    // 역방향 툴은 화면을 그리지 않는다 — attach 로 대신하면 슬롯을 먹고 detach 를 잊으면 샌다
+    const cwd = await mkdtemp(join(tmpdir(), 'ch-term-'));
+    const manager = makeManager();
+    const terminal = manager.create({ workspaceId: 'wsp_1', cwd, cols: 80, rows: 24 });
+
+    manager.write(terminal.id, new TextEncoder().encode('echo "READ""_MARK"\n'));
+    await waitFor(manager, terminal.id, 'READ_MARK');
+
+    const read = manager.read(terminal.id);
+    expect(Buffer.from(read!.scrollback).toString('utf8')).toContain('READ_MARK');
+    expect(read!.truncated).toBe(false);
+
+    // 구독자가 늘지 않았다는 증거 — 이후 출력이 read 결과에 영향을 주지 않는다(스냅샷이다)
+    const before = read!.scrollback.length;
+    manager.write(terminal.id, new TextEncoder().encode('echo "SECOND""_MARK"\n'));
+    await waitFor(manager, terminal.id, 'SECOND_MARK');
+    expect(read!.scrollback.length).toBe(before);
+  });
+
+  it('read 는 bytes 로 끝에서 자르고 truncated 를 알린다', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'ch-term-'));
+    const manager = makeManager();
+    const terminal = manager.create({ workspaceId: 'wsp_1', cwd, cols: 80, rows: 24 });
+
+    manager.write(terminal.id, new TextEncoder().encode('echo "TAIL""_MARK"\n'));
+    await waitFor(manager, terminal.id, 'TAIL_MARK');
+
+    const tail = manager.read(terminal.id, 12);
+    expect(tail!.scrollback.length).toBe(12);
+    expect(tail!.truncated).toBe(true);
+  });
+
+  it('없는 터미널 read 는 undefined 다', () => {
+    expect(makeManager().read('nope')).toBeUndefined();
+  });
+
   it('여러 클라이언트가 같은 터미널을 함께 본다', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'ch-term-'));
     const manager = makeManager();

@@ -31,6 +31,11 @@ export interface OmpAdapterOptions {
   responseTimeoutMs?: number;
   /** ready 프레임 대기 한도 — 초과 시에도 협상은 시도한다 (COMPAT) */
   readyTimeoutMs?: number;
+  /**
+   * 2턴째 이후 MCP 툴 준비 완료를 기다리는 한도 (WBS 7.2.3, 기본 3초).
+   * 초과해도 턴은 나간다 — 역방향 툴이 없는 턴이 턴이 아예 없는 것보다 낫다.
+   */
+  mcpReadyTimeoutMs?: number;
 }
 
 export function mapOmpToolKind(toolName: string): ToolKind {
@@ -45,6 +50,11 @@ export function approvalModeFor(policy: SessionConfig['approvalPolicy']): 'write
   return policy === 'auto' ? 'yolo' : 'write';
 }
 
+/** 하네스가 MCP 툴에 붙이는 접두사 (7.2.1 실측: `mcp__<server>_<tool>`) */
+const MCP_TOOL_PREFIX = 'mcp__';
+/** 준비 완료 폴링 간격 — get_state 는 싸지만 무의미하게 자주 부를 이유는 없다 */
+const MCP_POLL_INTERVAL_MS = 150;
+
 class OmpSession extends JsonlRpcSessionCore {
   protected readonly harness = 'omp' as const;
   /** 협상 결과 — 1 이면 v1 폴백 (구버전 COMPAT, 큰 프레임은 서버가 축약) */
@@ -52,11 +62,16 @@ class OmpSession extends JsonlRpcSessionCore {
   private readyResolve: (() => void) | undefined;
   private readonly readyPromise: Promise<void>;
   private readonly readyTimeoutMs: number;
+  private readonly mcpReadyTimeoutMs: number;
 
   constructor(
     config: SessionConfig,
     process: ManagedProcess,
-    options: { responseTimeoutMs?: number | undefined; readyTimeoutMs?: number | undefined },
+    options: {
+      responseTimeoutMs?: number | undefined;
+      readyTimeoutMs?: number | undefined;
+      mcpReadyTimeoutMs?: number | undefined;
+    },
   ) {
     super(config, process, {
       turnIdPrefix: 'omp-turn',
@@ -65,6 +80,7 @@ class OmpSession extends JsonlRpcSessionCore {
       responseTimeoutMs: options.responseTimeoutMs,
     });
     this.readyTimeoutMs = options.readyTimeoutMs ?? 10_000;
+    this.mcpReadyTimeoutMs = options.mcpReadyTimeoutMs ?? 3_000;
     this.readyPromise = new Promise((resolve) => {
       this.readyResolve = resolve;
     });
@@ -86,6 +102,49 @@ class OmpSession extends JsonlRpcSessionCore {
     } catch {
       // 구버전 omp (v2 미지원) — v1 로 계속. 1MiB 초과 프레임은 서버 측 축약본이 온다.
     }
+  }
+
+  /**
+   * MCP 툴 준비 완료 게이트 (WBS 7.2.3).
+   *
+   * **omp 는 MCP 서버를 첫 턴이 시작될 때 띄운다** — 세션 생성 후 8초를 기다려도 서버
+   * 프로세스조차 뜨지 않는다(7.2.3 실측). 그래서 "세션 수립 직후 기다리는" 게이트는
+   * 성립하지 않고, 1턴째에 역방향 툴이 안 보이는 것은 구조적이다(7.2.1 실측과 일치).
+   *
+   * 여기서 막는 것은 **2턴째 이후의 경합**이다: 1턴이 빨리 끝나면 백그라운드 discover 가
+   * 아직인 채로 2턴이 나갈 수 있다. 한 번 확인되면 다시 묻지 않는다 — 매 턴 상태를 폴링하면
+   * 그 자체가 지연이다.
+   */
+  private mcpToolsLoaded = false;
+  private startedTurns = 0;
+
+  /** `get_state.dumpTools` 에 `mcp__*` 가 있는가 — omp 가 노출하는 유일한 관측 지점 */
+  async hasMcpTools(): Promise<boolean> {
+    if (this.mcpToolsLoaded) return true;
+    try {
+      const frame = await this.transport.request({ type: 'get_state' });
+      const data = (frame.data ?? {}) as { dumpTools?: { name?: unknown }[] };
+      const found = (data.dumpTools ?? []).some(
+        (tool) => typeof tool?.name === 'string' && tool.name.startsWith(MCP_TOOL_PREFIX),
+      );
+      if (found) this.mcpToolsLoaded = true;
+      return found;
+    } catch {
+      return false; // 상태 조회 실패로 턴을 막지 않는다
+    }
+  }
+
+  override async startTurn(prompt: string): Promise<{ turnId: string }> {
+    // 1턴째는 기다릴 대상이 없다 — 로딩을 시작시키는 것이 이 턴이다
+    if (this.startedTurns > 0 && !this.mcpToolsLoaded) {
+      const deadline = Date.now() + this.mcpReadyTimeoutMs;
+      while (Date.now() < deadline) {
+        if (await this.hasMcpTools()) break;
+        await new Promise((resolve) => setTimeout(resolve, MCP_POLL_INTERVAL_MS));
+      }
+    }
+    this.startedTurns += 1;
+    return super.startTurn(prompt);
   }
 
   /** 재개 세션 표시 — 첫 startTurn 전 하네스 대화 이벤트를 드롭 (리플레이 가드) */
@@ -237,6 +296,7 @@ export class OmpAdapter implements AgentAdapter {
     const session = new OmpSession(config, managed, {
       responseTimeoutMs: this.options.responseTimeoutMs,
       readyTimeoutMs: this.options.readyTimeoutMs,
+      mcpReadyTimeoutMs: this.options.mcpReadyTimeoutMs,
     });
     if (flags.resumed) session.markResumed();
     try {

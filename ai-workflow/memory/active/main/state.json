@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-08-31",
+  "generated_at": "2026-09-01",
   "purpose_digest": "폐쇄망(사내망)에서 여러 오픈소스 코딩 에이전트 하네스를 하나의 데스크톱 UI 로 선택·사용할 수 있게 하는 오케스트레이션 도구를 만든다. 에이전트 루프는 [[harness-wrapping|래핑된 하네스]]가 소유하고, 이 도구는 하네스의 실행·상태·UI 를 소유한다.",
   "purpose_digest_rev": "2026-08-24",
   "source_of_truth": {
@@ -36,6 +36,7 @@
       "TASK-2026-08-31-main-002"
     ],
     "recent_done_items": [
+      "TASK-2026-08-31-main-008 — M7 7.2.3 역방향 툴 노출 — 데몬 MCP stdio 서버 (omp·grok)",
       "TASK-2026-08-31-main-007 — 지식 위키 계층 소급 구축 (ai-workflow/wiki)",
       "TASK-2026-08-31-main-006 — M7 7.2.2 역방향 툴 카탈로그 정본 정의 (FR-9.2)",
       "TASK-2026-08-31-main-005 — M7 WP 7.1 주의 상태 1급화 (FR-9.1)",
@@ -44,15 +45,14 @@
       "TASK-2026-08-31-main-001 — M7 7.2.1 하네스 MCP 지원 실측 (선행 게이트)",
       "TASK-2026-08-30-main-008 — M6 6.4~6.7 파일·diff·스크립트·부하 (M6 완료)",
       "TASK-2026-08-30-main-007 — M6 6.1~6.3 설계·탭 타깃 일반화·터미널",
-      "TASK-2026-08-30-main-006 — M5 5.5~5.7 worktree 격리·UI 재편·검증 (M5 완료)",
-      "TASK-2026-08-30-main-005 — M5 5.4 세션의 워크스페이스 귀속 + 1회 백필"
+      "TASK-2026-08-30-main-006 — M5 5.5~5.7 worktree 격리·UI 재편·검증 (M5 완료)"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-08-31.md",
-    "task_count": 7,
+    "task_count": 8,
     "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
@@ -61,7 +61,8 @@
       "TASK-2026-08-31-main-004 — M7 7.2.0b grok 권한 모드 확정 (FR-1.5)",
       "TASK-2026-08-31-main-005 — M7 WP 7.1 주의 상태 1급화 (FR-9.1)",
       "TASK-2026-08-31-main-006 — M7 7.2.2 역방향 툴 카탈로그 정본 정의 (FR-9.2)",
-      "TASK-2026-08-31-main-007 — 지식 위키 계층 소급 구축 (ai-workflow/wiki)"
+      "TASK-2026-08-31-main-007 — 지식 위키 계층 소급 구축 (ai-workflow/wiki)",
+      "TASK-2026-08-31-main-008 — M7 7.2.3 역방향 툴 노출 — 데몬 MCP stdio 서버 (omp·grok)"
     ]
   },
   "next_documents": [

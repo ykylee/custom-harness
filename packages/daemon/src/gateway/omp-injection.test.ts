@@ -41,6 +41,8 @@ describe('injectOmpGateway (WBS 2.1.3, FR-2.1.2/FR-2.2)', () => {
     const cfg = await readYaml(result.configPath);
     expect(cfg).toEqual({
       modelRoles: { default: 'gateway/grok-4.6' },
+      // 역방향 툴을 top-level 로 노출하려면 xdev 은닉을 내려야 한다 (WBS 7.2.3)
+      tools: { xdev: false },
       startup: { checkUpdate: false },
       marketplace: { autoUpdate: false },
       dev: { autoqa: false, autoqaConsent: 'denied' },

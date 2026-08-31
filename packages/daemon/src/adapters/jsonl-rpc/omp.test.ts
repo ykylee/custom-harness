@@ -179,3 +179,60 @@ describe('OmpAdapter specifics', () => {
     await session.close();
   });
 });
+
+describe('MCP 준비 완료 게이트 (WBS 7.2.3)', () => {
+  /** 게이트 동작만 보려고 어댑터를 직접 만든다 — 대기 한도를 테스트 시간에 맞춘다 */
+  function gatedAdapter(mcpReadyTimeoutMs: number): OmpAdapter {
+    return new OmpAdapter({
+      command: process.execPath,
+      prependArgs: [fakeOmp],
+      supervisor: new ProcessSupervisor({ gracePeriodMs: 500 }),
+      responseTimeoutMs: 3000,
+      readyTimeoutMs: 2000,
+      mcpReadyTimeoutMs,
+    });
+  }
+
+  async function openSession(env: Record<string, string>, mcpReadyTimeoutMs = 1500) {
+    const cwd = await mkdtemp(join(tmpdir(), 'ch-omp-gate-'));
+    return gatedAdapter(mcpReadyTimeoutMs).createSession({
+      sessionId: `omp-gate-${Math.random().toString(36).slice(2)}`,
+      cwd,
+      env,
+      approvalPolicy: 'mediate',
+    });
+  }
+
+  it('1턴째는 기다리지 않는다 — 로딩을 시작시키는 것이 이 턴이다', async () => {
+    // MCP 가 영원히 안 뜨는 설정인데도 1턴째가 즉시 나가야 한다
+    const session = await openSession({}, 5000);
+    const started = Date.now();
+    await session.startTurn('첫 턴');
+    expect(Date.now() - started).toBeLessThan(1000);
+    await session.close();
+  });
+
+  it('2턴째는 준비될 때까지 기다렸다가 나간다', async () => {
+    const session = await openSession({ FAKE_OMP_MCP_AFTER_TURNS: '1' });
+    await session.startTurn('첫 턴');
+    await session.startTurn('둘째 턴');
+    // 게이트가 준비를 확인했으므로 이후 조회는 캐시로 즉시 참이다
+    expect(await (session as unknown as { hasMcpTools(): Promise<boolean> }).hasMcpTools()).toBe(
+      true,
+    );
+    await session.close();
+  });
+
+  it('준비되지 않아도 한도를 넘기면 턴은 나간다 — 막지 않는다', async () => {
+    // 역방향 툴 없는 턴이 턴이 아예 없는 것보다 낫다
+    const session = await openSession({}, 600);
+    await session.startTurn('첫 턴');
+    const started = Date.now();
+    const turn = await session.startTurn('둘째 턴');
+    const elapsed = Date.now() - started;
+    expect(turn.turnId).toBeTruthy();
+    expect(elapsed).toBeGreaterThanOrEqual(500); // 기다리긴 했다
+    expect(elapsed).toBeLessThan(3000); // 그러나 무한정은 아니다
+    await session.close();
+  });
+});

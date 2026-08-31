@@ -76,6 +76,11 @@ function managedConfigEntries(config: OmpInjectionConfig): [string[], unknown][]
           unknown,
         ][])
       : []),
+    // MCP·확장 툴을 `xd://` 디바이스에 은닉하는 기본값을 내린다 (WBS 7.2.3).
+    // omp 17.3.8 기본 `tools.xdev = true` 는 스키마를 매 요청에 싣지 않고 read/write 로
+    // 구동시킨다 — 서버는 떠 있는데 모델의 `tools[]` 에는 안 보인다(7.2.1 실측). 역방향 툴은
+    // 모델이 직접 골라야 하므로 top-level 노출이 필요하다.
+    [['tools', 'xdev'], false],
     [['startup', 'checkUpdate'], false],
     [['marketplace', 'autoUpdate'], false],
     [['dev', 'autoqa'], false],

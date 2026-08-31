@@ -47,6 +47,9 @@ class Scrollback {
   }
 }
 
+/** term_read 기본 창 — 모델에게 되돌릴 분량이라 화면 한 폭 정도면 충분하다 */
+const DEFAULT_READ_BYTES = 8192;
+
 interface LiveTerminal {
   record: Terminal;
   pty: IPty | undefined;
@@ -160,6 +163,26 @@ export class TerminalManager {
       truncated: live.scrollback.truncated,
       detach: () => live.listeners.delete(listener),
     };
+  }
+
+  /**
+   * 스크롤백 1회 읽기 (WBS 7.2.3) — **구독하지 않는다**.
+   *
+   * `attach` 는 화면을 그리는 소비자를 위한 것이라 슬롯과 구독이 따라붙는다. 상태만 보는
+   * 소비자(역방향 툴 `term_read`)에게 그 비용은 순수한 낭비이고, detach 를 잊으면 슬롯이 샌다.
+   */
+  read(
+    terminalId: string,
+    bytes: number = DEFAULT_READ_BYTES,
+  ): { scrollback: Uint8Array; truncated: boolean } | undefined {
+    const live = this.terminals.get(terminalId);
+    if (!live) return undefined;
+    const full = live.scrollback.snapshot();
+    if (full.length <= bytes) {
+      return { scrollback: full, truncated: live.scrollback.truncated };
+    }
+    // 끝에서부터 자른다 — 보고 싶은 것은 최근 출력이다
+    return { scrollback: full.subarray(full.length - bytes), truncated: true };
   }
 
   write(terminalId: string, data: Uint8Array): void {

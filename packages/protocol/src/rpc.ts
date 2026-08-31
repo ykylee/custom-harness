@@ -389,6 +389,25 @@ export const rpc = {
       }),
       z.looseObject({}),
     ),
+    /**
+     * 스크롤백 1회 읽기 (WBS 7.2.3) — `attach` 와 달리 **슬롯을 잡지 않고 구독도 만들지 않는다**.
+     * 화면 없이 상태만 보는 소비자(역방향 툴 `term_read`)를 위한 경로다. attach 로 대신하면
+     * 연결마다 1바이트 핸들을 소모하고 detach 를 잊으면 슬롯이 샌다.
+     */
+    read: rpcPair(
+      'terminal.read',
+      z.looseObject({
+        terminalId: z.string(),
+        /** 스크롤백 끝에서부터 최대 바이트 (기본 8192, 상한은 링 버퍼 크기) */
+        bytes: z.number().int().positive().max(65536).optional(),
+      }),
+      z.looseObject({
+        /** base64 — attach 의 scrollback 과 같은 인코딩 */
+        scrollback: z.string(),
+        /** 링 버퍼가 넘쳐 앞이 잘렸거나 bytes 로 잘렸는지 */
+        truncated: z.boolean(),
+      }),
+    ),
     kill: rpcPair('terminal.kill', z.looseObject({ terminalId: z.string() }), z.looseObject({})),
   },
   // 워크스페이스 파일 (WBS 6.4) — 경로는 워크스페이스 상대만 받는다 (workbench-tabs §3)
@@ -495,6 +514,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.terminal.attach.request,
   rpc.terminal.detach.request,
   rpc.terminal.resize.request,
+  rpc.terminal.read.request,
   rpc.terminal.kill.request,
   rpc.file.list.request,
   rpc.file.read.request,
@@ -541,6 +561,7 @@ export const RpcResponseSchema = z.union([
   rpc.terminal.attach.response,
   rpc.terminal.detach.response,
   rpc.terminal.resize.response,
+  rpc.terminal.read.response,
   rpc.terminal.kill.response,
   rpc.file.list.response,
   rpc.file.read.response,

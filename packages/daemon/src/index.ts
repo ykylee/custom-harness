@@ -5,6 +5,11 @@ import type { AgentAdapter } from './adapters/contract.js';
 import { KeyStore, type SecretCipher } from './gateway/key-store.js';
 import { GatewayService } from './gateway/service.js';
 import { loadBundleManifest } from './manifest.js';
+import {
+  registerGrokMcpServer,
+  registerOmpMcpServer,
+  resolveMcpServerSpec,
+} from './mcp/registration.js';
 import { resolvePaths, type DaemonPaths } from './paths.js';
 import { ProcessSupervisor } from './processes.js';
 import { DaemonServer } from './server.js';
@@ -29,6 +34,9 @@ export * from './gateway/pi-injection.js';
 export * from './gateway/omp-injection.js';
 export * from './gateway/grok-injection.js';
 export * from './gateway/home-isolation.js';
+export * from './mcp/server.js';
+export * from './mcp/tools.js';
+export * from './mcp/registration.js';
 export * from './gateway/service.js';
 export * from './launcher.js';
 export * from './manifest.js';
@@ -59,6 +67,11 @@ export interface StartDaemonOptions {
   secretCipher?: SecretCipher;
   /** 번들 manifest.json 경로 — 버전 검증(FR-1.8, WBS 2.3.3). 미공급·미존재 시 검증 생략 */
   manifestPath?: string;
+  /**
+   * 하네스 실행 파일 경로 — 역방향 MCP 등록에 쓴다 (WBS 7.2.3).
+   * grok 등록은 `grok mcp add` 위임이라 바이너리가 필요하다. 미공급이면 그 하네스는 등록을 건너뛴다.
+   */
+  harnessExecPaths?: { grok?: string };
 }
 
 export interface DaemonHandle {
@@ -159,6 +172,35 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     }
     for (const warning of isolated.warnings)
       console.warn(`[daemon] ${harness} 홈 격리: ${warning}`);
+  }
+
+  // 역방향 툴 MCP 등록 (WBS 7.2.3, FR-9.2) — 홈 격리 뒤에 온다(등록 대상이 격리 홈이다).
+  // 실패는 기동을 막지 않는다: 격리와 달리 이건 보안 경계가 아니라 기능이고, 못 붙으면
+  // 역방향 툴이 안 보일 뿐 하네스는 정상 동작한다.
+  const registeredHarnesses = new Set(adapters.map((adapter) => adapter.id));
+  const mcpSpec = resolveMcpServerSpec({ root: paths.root });
+  if (registeredHarnesses.has('omp')) {
+    try {
+      const result = await registerOmpMcpServer(paths.ompHomeDir, mcpSpec);
+      if (result.status !== 'unchanged') {
+        console.warn(`[daemon] omp 역방향 MCP 등록 ${result.status}: ${result.configPath}`);
+      }
+    } catch (error) {
+      console.warn('[daemon] omp 역방향 MCP 등록 실패 — 역방향 툴 미노출:', error);
+    }
+  }
+  if (registeredHarnesses.has('grok') && options.harnessExecPaths?.grok !== undefined) {
+    try {
+      await registerGrokMcpServer({
+        execPath: options.harnessExecPaths.grok,
+        grokHome: paths.grokHomeDir,
+        spec: mcpSpec,
+        env: await gateway.buildEnv('grok'),
+      });
+      console.warn('[daemon] grok 역방향 MCP 등록 완료 (grok mcp add 위임)');
+    } catch (error) {
+      console.warn('[daemon] grok 역방향 MCP 등록 실패 — 역방향 툴 미노출:', error);
+    }
   }
 
   // 트래픽 경계 검사 (FR-2.5, WBS 2.3.5) — 수동 변경으로 통제가 깨진 경우의 탐지 장치

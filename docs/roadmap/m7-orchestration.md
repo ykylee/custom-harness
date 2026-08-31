@@ -9,6 +9,7 @@
 - 완료 기준: 주의 상태가 데몬 정본으로 동작 + 세션이 세션을 위임·회수 + CLI 로 세션 조작 자동화 가능
 - 근거: [paseo 서비스 구성 분석 §4 웨이브 C](../reference/paseo-service-inventory.md), [FR-9](../requirements/fr9-orchestration.md), [하네스 MCP 지원 실측](../reference/harness-mcp-support.md), [역방향 툴 카탈로그](../design/reverse-tool-catalog.md)
 - 관계: 조직 공용 **스킬/MCP 정본 번들은 M4 T1** 이 담당한다. 이 마일스톤은 그 위에서 *역방향 툴 노출*만 다룬다.
+- **선행 보정 (2026-09-01)**: 7.2.3 의 선행에서 `M4(4.1.4)` 를 뺐다. 그 항목은 조직 공용 MCP 세트를 *중립 스키마 → 하네스별* 로 변환하는 일인데, 7.2.1 실측이 우리 서버 1개의 등록 경로를 하네스별로 확정(`grok mcp add` 위임 / omp 격리 홈 `mcp.json` / pi 확장)해 **변환 계층을 재사용할 자리가 없다**. ROADMAP §마일스톤 간 핵심 의존의 같은 문구도 함께 보정 대상.
 
 ## WBS
 
@@ -28,7 +29,8 @@
 | 7.2.0a | **격리 누수 봉쇄** — `buildEnv` 가 하네스별 빈 홈으로 `HOME`/`USERPROFILE`/XDG 4종을 덮고(거부 기본값 + `harness.homeLinks` allowlist 반입), 원격 MCP 등록을 트래픽 경계 위반에 추가, `nfr1-smoke` 감시를 자손 프로세스 트리로 확장 — **done (2026-08-31, 대조 실측 `foreign=40 → 0`)** | 데몬·스모크 | 7.2.1 | NFR-1, FR-2.5 | M |
 | 7.2.0b | **grok 권한 모드 확정** — 원인은 §3.1 홈 누수였다(사용자 `~/.claude/settings.json` 의 `defaultMode="auto"` 를 import). 모드 행렬 실측 후 `GrokAdapter` 가 **`--permission-mode default` 를 항상 명시**하도록 고정 — MCP 툴·내장 파괴적 툴 **양쪽**이 승인 대상이 되는 유일한 모드 — **done (2026-08-31)** | 어댑터 | 7.2.1, 7.2.0a | FR-1.5, FR-9.2 | M |
 | 7.2.2 | 툴 카탈로그 정본 정의 — 툴 10종([설계](../design/reverse-tool-catalog.md), `packages/protocol/src/tools.ts`). 이름 규칙·효과 분류(read/write)·승인 대상 여부·재귀 위험 플래그 확정 — **done (2026-08-31)** | 카탈로그 | 7.1.1 | FR-9.2 | M |
-| 7.2.3 | **노출 2경로**: ① 데몬 소유 MCP stdio 서버(omp·grok 공용) ② pi 확장(`pi.registerTool`). 등록은 grok=`grok mcp add` 위임 / omp=격리 홈 `mcp.json` + `tools.xdev=false` / pi=확장 주입. omp rpc 경로의 **MCP 준비 완료 게이트** 포함 | 데몬·확장 | 7.2.2, M4(4.1.4) | FR-9.2 | L |
+| 7.2.3a | **MCP 서버 경로(omp·grok)** — 데몬 소유 stdio 서버 + 등록(grok=`grok mcp add` 위임 / omp=격리 홈 `mcp.json` + `tools.xdev=false`) + `terminal.read` RPC. read 5종 동작, write 5종은 승인 채널 부재로 명시 거부 — **done (2026-09-01, 실서버 왕복 omp·grok PASS)** | 데몬 | 7.2.2 | FR-9.2 | L |
+| 7.2.3b | **pi 확장 경로** — 같은 카탈로그를 `pi.registerTool` 로 노출 | 확장 | 7.2.3a | FR-9.2 | M |
 | 7.2.4 | opt-in·재귀 상한·감사 로그 + **서버명 선점 탐지**(프로젝트 `.mcp.json` 이 사용자 스코프를 덮는다) | 안전장치 | 7.2.3 | FR-9.2, NFR | M |
 
 ### WP 7.3 서브에이전트 (위임)

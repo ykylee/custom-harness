@@ -28,8 +28,20 @@ import process from 'node:process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..');
-const MCP_SERVER = join(here, 'mcp-probe', 'mock-mcp-server.mjs');
-const TOOL_NAME = 'ch_probe_echo';
+/**
+ * `--real-server`: 목 MCP 서버 대신 **데몬이 실제로 등록하는 우리 서버**를 띄운다 (WBS 7.2.3).
+ * 목 서버로는 "하네스가 MCP 를 지원하는가"까지만 재고, 이 모드에서 "우리 카탈로그가 실제로
+ * 노출·호출되는가"를 잰다. 우리 서버는 데몬에 되붙으므로 데몬 경로에서만 의미가 있다.
+ */
+const realServer = process.argv.includes('--real-server');
+const MCP_SERVER = realServer
+  ? join(repoRoot, 'packages/daemon/dist/mcp/main.js')
+  : join(here, 'mcp-probe', 'mock-mcp-server.mjs');
+/** 등록 서버명 — 실서버는 데몬이 쓰는 이름과 같아야 재접두사 결과가 실제와 같다 */
+const SERVER_NAME = realServer ? 'ch' : 'ch-probe';
+const TOOL_NAME = realServer ? 'ws_list' : 'ch_probe_echo';
+/** 왕복 완결 판정 마커 — 실서버 read 툴은 JSON 을 되돌린다 */
+const RESULT_MARKER = realServer ? '"workspaces"' : 'CH_MCP_PROBE_OK';
 const VALID_KEY = 'sk-mcp-probe';
 const args = process.argv.slice(2);
 const argValue = (flag) => {
@@ -126,7 +138,7 @@ function findToolResult(body) {
         : Array.isArray(m?.content)
           ? m.content.map((c) => c?.text ?? '').join('')
           : '';
-    if (content.includes('CH_MCP_PROBE_OK')) return { role: m.role, content };
+    if (content.includes(RESULT_MARKER)) return { role: m.role, content };
   }
   return null;
 }
@@ -202,11 +214,12 @@ const mockGateway = createServer((req, res) => {
         else obs.toolCallIssued = true;
       }
       const callName = needsSearchFirst ? 'search_tool' : (exposure?.callName ?? TOOL_NAME);
+      const toolInput = realServer ? {} : { text: 'ping' };
       const callArgs = needsSearchFirst
-        ? { query: `ch-probe ${TOOL_NAME} echo` }
+        ? { query: `${SERVER_NAME} ${TOOL_NAME}` }
         : exposure?.kind === 'meta'
-          ? { tool_name: `ch-probe__${TOOL_NAME}`, tool_input: { text: 'ping' } }
-          : { text: 'ping' };
+          ? { tool_name: `${SERVER_NAME}__${TOOL_NAME}`, tool_input: toolInput }
+          : toolInput;
 
       const wantsStream = body?.stream === true || /"stream"\s*:\s*true/.test(raw);
       const usage = { prompt_tokens: 20, completion_tokens: 6, total_tokens: 26 };
@@ -361,7 +374,11 @@ function resolveExposure(observations) {
  */
 function foreignMcpTools(observations) {
   return [...observations.toolNamesSeen].filter(
-    (n) => n.includes('__') && !n.includes('ch_probe') && !n.includes('ch-probe'),
+    (n) =>
+      n.includes('__') &&
+      !n.includes('ch_probe') &&
+      !n.includes('ch-probe') &&
+      !n.includes(TOOL_NAME),
   );
 }
 
@@ -378,14 +395,17 @@ function verdictFrom(log, observations) {
 }
 
 // ── MCP 등록 (하네스별 관례 경로) ────────────────────────────────────────
-function serverBlock(logPath, name = 'ch-probe') {
+/** 서버 프로세스 env — 실서버는 데이터 루트를 찾아야 한다(홈이 격리돼 homedir() 로는 못 찾음) */
+function serverEnv(logPath) {
+  return realServer
+    ? { CUSTOM_HARNESS_HOME: home, CUSTOM_HARNESS_MCP_LOG: logPath }
+    : { CH_MCP_PROBE_LOG: logPath, CH_MCP_PROBE_TOOL: TOOL_NAME };
+}
+
+function serverBlock(logPath, name = SERVER_NAME) {
   return {
     mcpServers: {
-      [name]: {
-        command: process.execPath,
-        args: [MCP_SERVER],
-        env: { CH_MCP_PROBE_LOG: logPath, CH_MCP_PROBE_TOOL: TOOL_NAME },
-      },
+      [name]: { command: process.execPath, args: [MCP_SERVER], env: serverEnv(logPath) },
     },
   };
 }
@@ -415,23 +435,11 @@ async function installOmpMcp(logPath, { xdev = true } = {}) {
 
 /** grok — 하네스 자신의 CLI 로 등록한다 (config.toml 스키마를 추측하지 않는다) */
 async function installGrokMcp(logPath, env) {
-  await run(grokPath, ['mcp', 'remove', 'ch-probe'], env, 30_000);
+  await run(grokPath, ['mcp', 'remove', SERVER_NAME], env, 30_000);
+  const envArgs = Object.entries(serverEnv(logPath)).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
   return run(
     grokPath,
-    [
-      'mcp',
-      'add',
-      'ch-probe',
-      '--scope',
-      'user',
-      '-e',
-      `CH_MCP_PROBE_LOG=${logPath}`,
-      '-e',
-      `CH_MCP_PROBE_TOOL=${TOOL_NAME}`,
-      '--',
-      process.execPath,
-      MCP_SERVER,
-    ],
+    ['mcp', 'add', SERVER_NAME, '--scope', 'user', ...envArgs, '--', process.execPath, MCP_SERVER],
     env,
     60_000,
   );
@@ -441,7 +449,7 @@ async function installGrokMcp(logPath, env) {
 async function installPiMcp(logPath) {
   // 서버명을 분리한다 — 프로젝트 스코프 .mcp.json 은 grok 도 읽으므로 같은 이름을 쓰면
   // grok 의 사용자 스코프 등록과 충돌해 다른 하네스 측정이 오염된다 (실측)
-  const block = JSON.stringify(serverBlock(logPath, 'ch-probe-pi'), null, 2);
+  const block = JSON.stringify(serverBlock(logPath, `${SERVER_NAME}-pi`), null, 2);
   for (const rel of ['mcp.json', '.mcp.json', 'agent/mcp.json']) {
     const p = join(paths.piHomeDir, rel);
     await mkdir(dirname(p), { recursive: true });
@@ -690,12 +698,21 @@ async function probeViaDaemon() {
 }
 
 const only = argValue('--only');
-for (const [name, fn] of [
-  ['omp', () => probeOmp({ xdev: true })],
-  ['omp', () => probeOmp({ xdev: false })],
-  ['grok', probeGrok],
-  ['pi', probePi],
-]) {
+// 실서버는 데몬에 되붙어야 살아난다 — CLI 단독 경로에는 붙을 데몬이 없다.
+// 조용히 실패시키지 않고 건너뛴다(실패로 세면 없는 결함을 보고하게 된다).
+const cliProbes = realServer
+  ? []
+  : [
+      ['omp', () => probeOmp({ xdev: true })],
+      ['omp', () => probeOmp({ xdev: false })],
+      ['grok', probeGrok],
+      ['pi', probePi],
+    ];
+if (realServer && !args.includes('--daemon')) {
+  console.error('[probe] --real-server 는 --daemon 과 함께 써야 한다 (서버가 데몬에 되붙는다)');
+  process.exit(2);
+}
+for (const [name, fn] of cliProbes) {
   if (only && only !== name) continue;
   console.log(`\n[probe] ── ${name} ──`);
   const result = await fn();

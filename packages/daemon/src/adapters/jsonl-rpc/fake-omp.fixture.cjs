@@ -51,6 +51,13 @@ const out = (frame) => {
 
 let activeTurn = false;
 let uiCancelled = false;
+/** 시작된 턴 수 — MCP 지연 로딩(WBS 7.2.3)을 흉내내는 기준 */
+let startedTurns = 0;
+/** N번째 턴이 시작된 뒤부터 dumpTools 에 mcp__ 툴이 보인다. 미설정이면 영원히 안 보인다 */
+const mcpReadyAfterTurns =
+  process.env.FAKE_OMP_MCP_AFTER_TURNS !== undefined
+    ? Number(process.env.FAKE_OMP_MCP_AFTER_TURNS)
+    : undefined;
 
 const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 };
 const assistant = (stopReason, errorMessage) => ({
@@ -179,6 +186,15 @@ function handle(cmd) {
           sessionFile,
           isStreaming: activeTurn,
           thinkingLevel: 'high',
+          // 실물 omp 는 dumpTools 로 툴 목록을 준다 (WBS 7.2.3 실측) — MCP 준비 완료의
+          // 유일한 관측 지점이다. MCP 서버는 첫 턴에야 뜨므로 턴 수로 지연을 흉내낸다.
+          dumpTools: [
+            { name: 'read' },
+            { name: 'bash' },
+            ...(mcpReadyAfterTurns !== undefined && startedTurns >= mcpReadyAfterTurns
+              ? [{ name: 'mcp__ch_probe_echo' }]
+              : []),
+          ],
           // 어댑터 spawn 인자 검증용 (실물 get_state 에는 없음 — fake 확장)
           fakeApprovalMode: approvalMode,
           fakeUiCancelled: uiCancelled,
@@ -186,6 +202,7 @@ function handle(cmd) {
       });
       return;
     case 'prompt':
+      startedTurns += 1;
       out({ type: 'response', id: cmd.id, command: 'prompt', success: true, data: { agentInvoked: true } });
       void runScenario(String(cmd.message ?? ''));
       return;

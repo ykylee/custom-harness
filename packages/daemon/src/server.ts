@@ -474,6 +474,17 @@ export class DaemonServer {
         terminals.resize(message.params.terminalId, message.params.cols, message.params.rows);
         return {};
       }
+      case 'terminal.read.request': {
+        const terminals = this.requireTerminals();
+        const result = terminals.read(message.params.terminalId, message.params.bytes);
+        if (!result) {
+          throw new DaemonError('not_found', `터미널 없음: ${message.params.terminalId}`);
+        }
+        return {
+          scrollback: Buffer.from(result.scrollback).toString('base64'),
+          truncated: result.truncated,
+        };
+      }
       case 'terminal.kill.request': {
         const terminals = this.requireTerminals();
         terminals.kill(message.params.terminalId);

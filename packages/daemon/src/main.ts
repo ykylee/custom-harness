@@ -71,6 +71,8 @@ async function main(): Promise<void> {
       : {}),
     ...(portEnv !== undefined ? { port: Number(portEnv) } : {}),
     ...(manifestPath !== undefined ? { manifestPath } : {}),
+    // grok 역방향 MCP 등록은 `grok mcp add` 위임이라 바이너리 경로가 필요하다 (WBS 7.2.3)
+    ...(grokPath !== undefined ? { harnessExecPaths: { grok: grokPath } } : {}),
     version: packageJson.version,
     managedBy: process.env.CUSTOM_HARNESS_MANAGED_BY ?? 'cli',
     adapters: ({ paths, supervisor }) => {
