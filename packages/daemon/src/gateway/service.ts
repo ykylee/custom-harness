@@ -16,6 +16,12 @@ import {
   type OmpInjectionResult,
 } from './omp-injection.js';
 import { injectGrokGateway, type GrokInjectionResult } from './grok-injection.js';
+import {
+  ensureHarnessHome,
+  harnessHomeDir,
+  harnessHomeEnv,
+  type HarnessHomeResult,
+} from './home-isolation.js';
 
 export interface GatewayConfig {
   baseUrl: string;
@@ -125,14 +131,33 @@ export class GatewayService {
     return injectGrokGateway(this.paths.grokHomeDir, config, options);
   }
 
-  /** spawn env 오버레이 (FR-2.1.4 2단 구조 + FR-2.2 오프라인 프리셋) */
+  /**
+   * 하네스 `HOME` 격리 준비 (WBS 7.2.0a) — 기동 시 1회 + spawn 마다 멱등 호출.
+   * 격리가 꺼져 있으면 undefined (사용자가 명시적으로 끈 상태).
+   */
+  async ensureHarnessHome(harness: HarnessId): Promise<HarnessHomeResult | undefined> {
+    await this.settings.load();
+    if (!this.settings.get('harnessHomeIsolation')) return undefined;
+    return ensureHarnessHome(
+      harnessHomeDir(this.paths.harnessHomesDir, harness),
+      this.settings.get('harnessHomeLinks'),
+    );
+  }
+
+  /** spawn env 오버레이 (FR-2.1.4 2단 구조 + FR-2.2 오프라인 프리셋 + 7.2.0a 홈 격리) */
   async buildEnv(harness: HarnessId): Promise<Record<string, string>> {
     const config = await this.getConfig();
     const key = await this.keyStore.get();
+    // 홈 격리는 설정 홈 격리(PI_CODING_AGENT_DIR/GROK_HOME)와 별개다 — 그 둘로는
+    // `$HOME` 뿌리의 외부 MCP 설정을 막지 못한다 (harness-mcp-support §3.1).
+    // 준비 실패는 삼키지 않는다: 격리는 성립하거나 세션 생성이 실패하거나 둘 중 하나다.
+    const isolated = await this.ensureHarnessHome(harness);
+    const home = isolated ? harnessHomeEnv(isolated.dir) : {};
     if (harness === 'pi') {
       return {
         // 격리 홈 — 사용자 ~/.pi 불간섭 (credential-injection-design §2 실측 확정)
         PI_CODING_AGENT_DIR: this.paths.piHomeDir,
+        ...home,
         // 오프라인 프리셋 — 버전 체크·설치 핑 차단 (FR-2.2, WBS 1.4.2)
         PI_OFFLINE: '1',
         ...(config && key !== undefined ? { [config.apiKeyEnvVar]: key } : {}),
@@ -143,6 +168,7 @@ export class GatewayService {
         // 격리 홈 — omp 도 PI_CODING_AGENT_DIR 을 지원한다 (oh-my-pi 17.3.8 dirs.ts 실측).
         // 사용자 ~/.omp 불간섭 + models.yml·config.yml 주입 대상과 일치 (WBS 2.1.3)
         PI_CODING_AGENT_DIR: this.paths.ompHomeDir,
+        ...home,
         // omp 는 PI_OFFLINE 미지원(실측) — 오프라인 차단은 config.yml 프리셋이 담당.
         ...(config && key !== undefined ? { [config.apiKeyEnvVar]: key } : {}),
       };
@@ -151,11 +177,12 @@ export class GatewayService {
       return {
         // 홈 전체 격리 — 사용자 ~/.grok 불간섭, config.toml 주입 대상과 일치 (실측 확정)
         GROK_HOME: this.paths.grokHomeDir,
+        ...home,
         // config.toml [model.*].env_key 가 이 변수를 읽는다 (FR-2.1.1 — 평문 금지)
         ...(config && key !== undefined ? { [config.apiKeyEnvVar]: key } : {}),
       };
     }
-    return {};
+    return home;
   }
 
   /** 온보딩 연결 확인 — 게이트웨이 Chat Completions 1회 호출 (설계 §3, FR-2.3.1) */
@@ -296,12 +323,32 @@ export class GatewayService {
     try {
       const toml = parseToml(
         await readFile(join(this.paths.grokHomeDir, 'config.toml'), 'utf8'),
-      ) as { model?: Record<string, { base_url?: unknown }> };
+      ) as {
+        model?: Record<string, { base_url?: unknown }>;
+        mcp_servers?: Record<string, { url?: unknown }>;
+      };
       for (const [name, model] of Object.entries(toml.model ?? {})) {
         record('grok', model.base_url, `grok-home/config.toml model.${name}`);
       }
+      for (const [name, server] of Object.entries(toml.mcp_servers ?? {})) {
+        record('grok', server.url, `grok-home/config.toml mcp_servers.${name}`);
+      }
     } catch {
       /* 동일 */
+    }
+
+    // 원격 MCP 서버 (WBS 7.2.0a, NFR-1) — stdio 서버는 목적지가 없지만 http/sse 서버는
+    // 하네스가 게이트웨이 밖으로 직접 나가는 통로다. 홈 격리로 사용자 홈 유래는 끊었으므로
+    // 여기서는 우리가 소유한 격리 홈의 등록분만 본다.
+    try {
+      const mcp = JSON.parse(await readFile(join(this.paths.ompHomeDir, 'mcp.json'), 'utf8')) as {
+        mcpServers?: Record<string, { url?: unknown }>;
+      };
+      for (const [name, server] of Object.entries(mcp.mcpServers ?? {})) {
+        record('omp', server.url, `omp-home/mcp.json mcpServers.${name}`);
+      }
+    } catch {
+      /* 파일 없음 — MCP 미등록 상태 */
     }
 
     return violations;

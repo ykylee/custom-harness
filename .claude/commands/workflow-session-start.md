@@ -2,7 +2,7 @@
 description: Standard AI workflow session start — restore the current baseline from state.json + session_handoff.md + backlog and report the next candidate tasks.
 ---
 
-<!-- standard-ai-workflow-kit: v1.4.0 -->
+<!-- standard-ai-workflow-kit: v1.7.0 -->
 
 # /workflow-session-start
 
@@ -31,6 +31,9 @@ wk session-start --help
 1. Read `ai-workflow/memory/active/<branch>/state.json` first and summarize the current baseline
 2. Pick 3–7 candidate follow-up tasks from the anchors in `session_handoff.md` + `work_backlog.md`
 3. Report, in Korean: a one-line summary, 3–5 next-task candidates, and the recommended next action
+4. When the tool output carries `roadmap_context` (ADR-027 — the project has
+   `ai-workflow/memory/active/roadmap/`), fold the current milestone, SDLC phase, and
+   next WBS candidates into the report; no roadmap → skip silently
 4. **No intermediate reasoning, repeated summaries, or self-explanation** — give the user the *conclusion* only
 
 ## Language and context rules

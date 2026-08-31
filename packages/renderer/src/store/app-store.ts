@@ -101,6 +101,13 @@ const LAYOUT_KEY = 'custom-harness.layout';
 const WORKSPACE_KEY = 'custom-harness.active-workspace';
 const NOTIFICATIONS_KEY = 'custom-harness.notifications';
 
+/** 주의 사유 → 알림 제목 (M7 7.1.3) — 사유는 데몬 정책 모듈이 정한다 */
+const ATTENTION_TITLE: Record<'permission' | 'error' | 'finished', string> = {
+  permission: '승인 대기',
+  error: '세션 에러',
+  finished: '턴 완료',
+};
+
 /** window.localStorage 명시 참조 — Node 22 의 전역 localStorage(제한 구현)와 혼동 방지 */
 function storage(): Storage | undefined {
   try {
@@ -207,13 +214,11 @@ export class AppController {
       if (event.type === 'session_status_changed') void this.refreshSessions();
       if (event.type === 'permission_requested') this.onPermissionRequested(event.sessionId, event);
       if (event.type === 'turn_completed' || event.type === 'turn_failed') {
-        this.maybeNotify(
-          event.sessionId,
-          event.type === 'turn_completed' ? '턴 완료' : '턴 실패',
-          `세션 ${this.sessionLabel(event.sessionId)}`,
-        );
         void this.refreshSessions(); // 목록 usage 요약 갱신 (FR-3.7)
       }
+      // 알림은 **데몬의 주의 상태 전이**만 소비한다 (M7 7.1.3, FR-9.1) — 턴 종료·승인
+      // 요청을 각자 해석하던 로컬 규칙을 제거했다. 버킷·배지와 같은 하나의 답을 쓴다.
+      if (event.type === 'attention_changed') this.onAttentionChanged(event);
     });
     client.onReconnected(() => void this.resync());
   }
@@ -636,6 +641,7 @@ export class AppController {
       this.selectWorkspace(summary.workspaceId);
     }
     this.openTarget({ kind: 'session', sessionId });
+    this.acknowledgeAttention(sessionId);
     await this.loadTimeline(sessionId);
   }
 
@@ -751,9 +757,25 @@ export class AppController {
         return;
       }
     }
-    // 백그라운드 세션 승인 대기 유도 (FR-3.4.2) — 배지는 목록 갱신, 알림은 여기서
+    // 배지는 목록 갱신으로 (FR-3.4.2). 알림은 attention_changed 가 담당한다 (7.1.3)
     void this.refreshSessions();
-    this.maybeNotify(sessionId, '승인 대기', `세션 ${this.sessionLabel(sessionId)} 승인 요청`);
+  }
+
+  /** 주의 상태 전이 → 목록 갱신 + 알림 1회 (M7 7.1.3) */
+  private onAttentionChanged(event: {
+    sessionId: string;
+    requiresAttention: boolean;
+    attentionReason?: 'permission' | 'error' | 'finished' | undefined;
+  }): void {
+    void this.refreshSessions();
+    if (!event.requiresAttention) return;
+    const title = ATTENTION_TITLE[event.attentionReason ?? 'finished'];
+    this.maybeNotify(event.sessionId, title, `세션 ${this.sessionLabel(event.sessionId)}`);
+  }
+
+  /** 사용자가 세션을 열었다 = 확인했다 (7.1.2 ack). 승인 대기는 이걸로 사라지지 않는다 */
+  private acknowledgeAttention(sessionId: string): void {
+    void this.client.rpc('session.attention.ack', { sessionId }).catch(() => undefined); // 확인 신호 실패는 무해 — 다음 전이에서 다시 계산된다
   }
 
   // ── 네이티브 알림 (FR-3.5.2, WBS 2.4.6) ──────────────────────────────────

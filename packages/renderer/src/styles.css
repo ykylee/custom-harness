@@ -161,6 +161,11 @@ body {
 .bucket-approval .bucket-title {
   color: var(--warn);
 }
+/* 주의 버킷 강조 (M7 7.1.3) — 데몬이 계산한 requiresAttention 만 이 색을 받는다 */
+.bucket-filter button[data-attention='true'] {
+  color: var(--warn);
+  border-color: var(--warn);
+}
 .bucket-count {
   font-variant-numeric: tabular-nums;
 }

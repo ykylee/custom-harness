@@ -101,7 +101,11 @@ async function main(): Promise<void> {
               }),
             ]
           : []),
-        ...(grokPath !== undefined ? [new GrokAdapter({ command: grokPath, supervisor })] : []),
+        // 권한 모드는 명시 고정 — 미지정이면 grok 이 사용자 환경에서 모드를 주워와
+        // 승인 채널이 조용히 사라진다 (WBS 7.2.0b 실측)
+        ...(grokPath !== undefined
+          ? [new GrokAdapter({ command: grokPath, supervisor, permissionMode: 'default' })]
+          : []),
       ];
     },
   });

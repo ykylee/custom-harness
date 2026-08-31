@@ -24,7 +24,8 @@ export const SessionMetaSchema = z.looseObject({
   labels: z.record(z.string(), z.string()).optional(),
   archivedAt: z.string().optional(),
   requiresAttention: z.boolean().optional(),
-  attentionReason: z.enum(['finished', 'error', 'permission']).optional(),
+  attentionReason: z.enum(['permission', 'error', 'finished']).optional(),
+  attentionTimestamp: z.string().optional(),
   title: z.string().optional(),
   /** 세션 누적 토큰 (FR-3.7, WBS 2.4.5) — 턴 종료 usage 를 합산 (additive) */
   usageTotals: z

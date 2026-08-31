@@ -64,11 +64,14 @@ const sidebarActions = () => ({
 describe('Sidebar (FR-3.3.1)', () => {
   const sessions: SessionSummary[] = [
     summary({ sessionId: 'run-1', harness: 'pi', cwd: '/w/alpha', status: 'running' }),
+    // 주의 상태는 데몬이 계산해 실어 보낸다 (M7 7.1) — 렌더러가 재계산하지 않는다
     summary({
       sessionId: 'perm-1',
       harness: 'omp',
       cwd: '/w/beta',
       status: 'running',
+      requiresAttention: true,
+      attentionReason: 'permission',
       pendingPermissions: [
         { requestId: 'p', kind: 'shell', summary: 's', options: [] },
       ] as SessionSummary['pendingPermissions'],
@@ -87,6 +90,23 @@ describe('Sidebar (FR-3.3.1)', () => {
     expect(bucketOf(sessions[0]!)).toBe('running');
     expect(bucketOf(sessions[2]!)).toBe('closed');
     expect(bucketOf(sessions[3]!)).toBe('idle');
+  });
+
+  // M7 7.1.3 — 버킷은 데몬의 주의 상태를 그대로 소비한다
+  it('주의 상태는 데몬 값을 따른다 — 렌더러가 status 로 재계산하지 않는다', () => {
+    // 실행 중이어도 데몬이 승인 대기라 했으면 승인 대기다
+    expect(
+      bucketOf({ ...sessions[0]!, requiresAttention: true, attentionReason: 'permission' }),
+    ).toBe('approval');
+    // 완료·에러 사유는 '확인 필요' 로 모인다
+    expect(
+      bucketOf({ ...sessions[3]!, requiresAttention: true, attentionReason: 'finished' }),
+    ).toBe('attention');
+    expect(bucketOf({ ...sessions[2]!, requiresAttention: true, attentionReason: 'error' })).toBe(
+      'attention',
+    );
+    // pendingPermissions 가 남아 있어도 데몬이 주의 아님이라 하면 버킷도 아니다 (확인 처리 후)
+    expect(bucketOf({ ...sessions[1]!, requiresAttention: false })).toBe('running');
   });
 
   it('프로젝트 → 워크스페이스 → 세션 3계층으로 그린다 (WBS 5.6.1)', () => {

@@ -6,7 +6,7 @@
 - 범위: 프로젝트 개요, 문서 구조, 기본 명령, 검증 포인트, 예외 규칙
 - 대상 독자: 개발자, 운영자, AI agent, 프로젝트 온보딩 담당자
 - 상태: draft
-- 최종 수정일: 2026-08-24
+- 최종 수정일: 2026-08-31
 - 관련 문서: [공통 표준](../ai-workflow/core/global_workflow_standard.md)
 
 ## 1. 프로젝트 개요
@@ -22,11 +22,12 @@
 - 환경 기록 위치: <ai-workflow/memory/active/repository_assessment.md>
 
 ## 3. 기본 명령 (Commands)
-- 설치: 미정 (기술 스택 확정 후 기입)
-- 로컬 실행: 미정 (기술 스택 확정 후 기입)
-- 빠른 테스트: 미정 (기술 스택 확정 후 기입)
-- 격리 테스트: 미정 (기술 스택 확정 후 기입)
-- 실행 확인: 미정 (기술 스택 확정 후 기입)
+- 설치: `npm install`
+- 로컬 실행: `npm run typecheck` 후 `npm run -w @custom-harness/shell start` (Electron 앱) / 데몬 단독 `node packages/cli/dist/index.js daemon start`
+- 빠른 테스트: `npm test`
+- 격리 테스트: `npx vitest run <path>`
+- 실행 확인: `npm run smoke:nfr1` (외부 접속 0) / `npm run smoke:terminal` (번들 pty 왕복)
+- 커밋 전 게이트: `npm run typecheck && npm test && npm run lint && npm run format:check`
 
 ## 4. 검증 포인트 (Validation)
 - 작업 진행: **모든 작업은 로드맵·WBS(docs/ROADMAP.md + docs/roadmap/) 기반으로만 진행** — 착수 전 WBS ID 식별, 계획에 없는 작업은 먼저 계획 등재 (2026-08-25 확정)

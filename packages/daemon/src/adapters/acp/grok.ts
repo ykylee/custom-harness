@@ -24,11 +24,29 @@ import {
 import type { ManagedProcess, ProcessSupervisor } from '../../processes.js';
 import { AcpClient } from './client.js';
 
+/**
+ * grok 권한 모드 (WBS 7.2.0b 실측). `'inherit'` 는 플래그를 주지 않고 grok 자신의 설정 탐색에
+ * 맡긴다 — **권장하지 않는다**: 탐색 결과가 환경마다 달라 승인 채널이 조용히 사라질 수 있다.
+ */
+export type GrokPermissionMode =
+  'default' | 'acceptEdits' | 'auto' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'inherit';
+
+/**
+ * 기본값을 `'default'` 로 **고정**하는 근거 (7.2.0b 모드 행렬 실측, grok 1.0.13):
+ * MCP 툴과 내장 파괴적 툴 **양쪽**이 `session/request_permission` 을 띄우는 모드는 `default` 뿐이다.
+ * `acceptEdits`·`dontAsk`·`plan` 은 MCP 툴을 묻지 않고 실행하고, `auto`·`bypassPermissions` 는
+ * 내장 쓰기까지 묻지 않는다. 승인·감사(FR-1.5)는 우리 레이어가 소유해야 하므로 하네스가 임의로
+ * 자동 허용하게 두지 않는다.
+ */
+const DEFAULT_PERMISSION_MODE: GrokPermissionMode = 'default';
+
 export interface GrokAdapterOptions {
   /** 번들 내 grok 실행 파일 절대 경로 (FR-1.1.1 PATH 금지) */
   command: string;
   /** command 뒤·grok 인자 앞에 붙는 인자 (테스트: node 스크립트 경로 주입용) */
   prependArgs?: string[];
+  /** ACP 권한 모드 — 미지정 시 `'default'` (7.2.0b). `'inherit'` 만 플래그를 생략한다 */
+  permissionMode?: GrokPermissionMode;
   supervisor: ProcessSupervisor;
   responseTimeoutMs?: number;
 }
@@ -350,7 +368,12 @@ class GrokSession implements AgentSession {
       kind: permissionKindFor(String(toolCall.kind ?? 'other')),
       summary: String(toolCall.title ?? '승인 요청'),
       detail: request.params,
-      // 실측(1.0.5 기본 권한 모드): allow-once/reject-once 2종, kind 는 ACP 표준과 동일 표기
+      // 실측(1.0.13 `--permission-mode default`, WBS 7.2.0b): **3종**으로 늘었다 —
+      // MCP 툴은 `always-allow`(allow_always)/`allow-once`/`reject-once`,
+      // 파일 쓰기는 `allow-edits-session`(allow_always)/`allow-once`/`reject-once`.
+      // grok 이 ACP 표준 kind 를 그대로 보내므로 아래 매핑이 영속 승인을 1회 승인으로
+      // 잘못 라벨링하지 않는다(실측 확인). 1.0.5 에는 allow_always 가 없었다 —
+      // adapter-contract §4 의 "노출되면 재실측" 조건이 발동한 지점이다.
       options: rawOptions.map((option) => {
         const o = option as { optionId?: unknown; name?: unknown; kind?: unknown };
         const kind = String(o.kind ?? 'allow_once');
@@ -389,6 +412,12 @@ export class GrokAdapter implements AgentAdapter {
   };
 
   constructor(private readonly options: GrokAdapterOptions) {}
+
+  /** 권한 모드는 **명시 고정**한다 — grok 의 설정 탐색에 맡기면 환경마다 달라진다 (7.2.0b) */
+  private permissionArgs(): string[] {
+    const mode = this.options.permissionMode ?? DEFAULT_PERMISSION_MODE;
+    return mode === 'inherit' ? [] : ['--permission-mode', mode];
+  }
 
   /** `--version` 정품 검증 — 비공식 grok CLI 와 바이너리명 충돌 대비 (조사 §2 주의) */
   async probe(): Promise<ProbeResult> {
@@ -454,7 +483,7 @@ export class GrokAdapter implements AgentAdapter {
     try {
       managed = await this.options.supervisor.spawn({
         command: this.options.command,
-        args: [...(this.options.prependArgs ?? []), 'agent', 'stdio'],
+        args: [...(this.options.prependArgs ?? []), ...this.permissionArgs(), 'agent', 'stdio'],
         cwd: config.cwd,
         env: config.env,
         sessionId: config.sessionId,

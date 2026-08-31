@@ -54,11 +54,21 @@ function parseBoolean(raw: unknown): boolean | undefined {
   return undefined;
 }
 
+/** 쉼표 구분 문자열 또는 문자열 배열 → 문자열 배열. 빈 값은 빈 배열(= 반입 없음) */
+function parseStringList(raw: unknown): string[] | undefined {
+  const items = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',') : undefined;
+  if (!items) return undefined;
+  if (!items.every((item) => typeof item === 'string')) return undefined;
+  return items.map((item) => item.trim()).filter((item) => item.length > 0);
+}
+
 /** 키 → 값 타입. 새 설정은 여기와 SETTINGS 양쪽에 추가한다 (한쪽만 빠지면 컴파일이 막는다) */
 export interface SettingValues {
   maxSessions: number;
   autoApprove: boolean;
   workspaceSetupAutoRun: boolean;
+  harnessHomeIsolation: boolean;
+  harnessHomeLinks: string[];
 }
 export type SettingKey = keyof SettingValues;
 
@@ -85,6 +95,25 @@ export const SETTINGS: { [K in SettingKey]: SettingDescriptor<SettingValues[K]> 
     defaultValue: false,
     scope: 'live',
     parse: parseBoolean,
+  },
+  /**
+   * 하네스 `HOME` 격리 (WBS 7.2.0a, NFR-1) — 기본 on. 끄면 하네스가 사용자 실제 홈의
+   * 외부 MCP 설정을 읽어 게이트웨이 경계 밖 서버를 띄울 수 있다 (harness-mcp-support §3.1).
+   */
+  harnessHomeIsolation: {
+    key: 'harness.homeIsolation',
+    env: 'CUSTOM_HARNESS_HOME_ISOLATION',
+    defaultValue: true,
+    scope: 'live',
+    parse: parseBoolean,
+  },
+  /** 격리 홈에 반입할 실제 홈 항목 allowlist — 거부 기본값. 홈 직속 이름만 (경로 금지) */
+  harnessHomeLinks: {
+    key: 'harness.homeLinks',
+    env: 'CUSTOM_HARNESS_HOME_LINKS',
+    defaultValue: ['.gitconfig', '.ssh'],
+    scope: 'live',
+    parse: parseStringList,
   },
 };
 

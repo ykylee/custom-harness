@@ -6,7 +6,7 @@
 - Scope: current focus, task status, key changes, next actions, risks
 - Audience: AI agents, maintainers
 - Status: draft
-- Updated: 2026-08-30
+- Updated: 2026-08-31
 - Related docs: [Project Profile](../../docs/PROJECT_PROFILE.md), [Work Backlog](./work_backlog.md)
 
 ## Current Focus
@@ -21,22 +21,36 @@
 
 - (2026-08-30 6차 갱신) **실기기 피드백 반영 + 진행 중 2건 종료**: Windows 실기기 lint·test 통과 확인, 실기기 피드백 4건 반영(번들 GUI 흰 화면=Vite base `'./'`, 세션 생성 cwd 선검증, win32 번들 grok 설정 템플릿 잔여물 제거, 메뉴바 제거+데몬 하네스 경로 manifest 폴백) → TASK-026 done. 렌더러 다크 우선 토큰 디자인 시스템 + 타임라인 시간순 세그먼트 분할 + 대화 뷰 스크롤 경합 수정 → TASK-027 done. 테스트 195건·3 OS 재조립 그린. **진행 중 0건 — 잔여는 전부 사내 협조(C-1 게이트웨이 실측, C-5 linux/win 매트릭스 나머지)**
 
+- (2026-08-31 11차 갱신) **M7 7.2.2 역방향 툴 카탈로그 확정.** `packages/protocol/src/tools.ts` + [설계서](../../../docs/design/reverse-tool-catalog.md). **프로토콜 층에 둔 이유**: 노출 경로가 둘(omp·grok = 데몬 MCP 서버 / pi = 확장)이라 각자 정의하면 하네스마다 다른 툴 표면이 생긴다. 툴 10종(`session_list`(주의 상태 동봉)·`session_read`·`session_new`·`session_say`·`session_stop`·`ws_list`·`term_list`·`term_new`·`term_send`·`term_read`), 이름 3~24자(하네스가 `mcp__ch_*`/`ch__*` 로 재접두사). **승인은 우리가 소유한다** — 하네스는 우리 서버를 한 덩어리로만 봐 "목록 조회"와 "임의 셸 입력"을 구분 못 한다: `write` 전부 승인 대상 / `read` 승인 불요(조회까지 막으면 감시 불가)를 테스트로 고정. 파라미터는 `z.object`(엄격) — 모델의 환각 파라미터가 조용히 무시되면 안 되므로 와이어 `looseObject` 관례를 따르지 않는다. 테스트 385건 그린. → **7.2.3 착수 가능.**
+- (2026-08-31 10차 갱신) **M7 WP 7.1 주의 상태 1급화 완료.** "사용자가 봐야 할 세션"의 판단을 렌더러 로컬 계산에서 데몬 정본으로 이관했다. `packages/daemon/src/attention.ts` 가 단일 정책 지점 — 사유 우선순위 `permission` > `error` > `finished`, **승인 대기는 확인 처리(ack)로 사라지지 않고**(화면을 본 것이 응답은 아니다), 실행 중·취소된 턴은 주의 대상이 아니며, 같은 사유가 이어지면 `attentionTimestamp` 로 최초 전이 시각을 보존한다. 세션 레코드에 3필드 영속 → **데몬 재기동 후에도 그대로 조회**(클라이언트 부재 구간 보존을 테스트로 고정). `attention_changed` 와이어 이벤트(변화 시에만) + `session.attention.ack` RPC(멱등) 추가. 렌더러는 `bucketOf` 재계산을 버리고 데몬 값만 소비('확인 필요' 버킷 신설), 알림도 `turn_completed`/`permission_requested` 각자 해석에서 `attention_changed` 단일 소비로 이관, 세션을 열면 ack. 테스트 **376건**(+18) 그린. → **7.2.2 착수 가능**(7.1.1 선행 해소).
+- (2026-08-31 9차 갱신) **M7 7.2.0b grok 권한 모드 확정 — WP 7.2 선행 전부 해소.** 7.2.1 의 "grok 이 MCP 툴 호출을 승인 요청 없이 거절" 결함은 **7.2.0a 와 같은 뿌리**였다: grok 이 사용자 실제 `$HOME` 의 `~/.claude/settings.json`(`permissions.defaultMode="auto"`)을 Claude 호환 import 로 읽어 auto 모드로 들어갔고, auto 는 목록에 없는 툴을 *묻지 않고* 거절한다(`grok inspect` 가 `Permissions Source: ~/.claude/settings.json  12 loaded` 를 직접 찍는다). 격리만으로 증상은 사라지지만 미지정 상태는 탐색 결과에 좌우되므로(1.0.5→1.0.13 이미 드리프트) **`GrokAdapter` 가 `--permission-mode default` 를 항상 명시**하도록 고정했다. 모드 행렬 실측(`scripts/grok-permission-probe.mjs` 신설) 결과 **MCP 툴·내장 파괴적 툴이 동시에 승인 대상인 모드는 `default` 뿐** — `acceptEdits`·`dontAsk`·`plan` 은 MCP 툴을 묻지 않고 실행한다. 검증: `mcp-probe --daemon --only grok` 이 우회 플래그 없이 PASS. 테스트 360건 그린. → **7.2.2 착수 가능.**
+- (2026-08-31 8차 갱신) **M7 7.2.0a 격리 누수 봉쇄 완료 — NFR-1 우회 통로 차단.** 7.2.1 에서 검출한 결함을 데몬 차원에서 막았다: `gateway/home-isolation.ts` 신설로 `buildEnv` 가 하네스별 빈 홈(`data/harness-home/<harness>/`)을 만들고 `HOME`·win32 `USERPROFILE`·`XDG_{CONFIG,DATA,STATE,CACHE}_HOME` 을 고정한다 — **거부 기본값 + `harness.homeLinks` allowlist 반입**(기본 `.gitconfig`·`.ssh`). 대조 실측 **`foreign=40 → 0`** 이고 omp·grok 왕복은 CLI·데몬 양 경로 그대로 PASS, git 신원·저장소 조작도 정상(부작용 없음). 트래픽 경계 검사(FR-2.5)에 **원격 MCP 등록** 검사 추가, `nfr1-smoke` 는 v3 로 **자손 프로세스 트리 전체** 감시(손자 포착 확인, PASS). 설정 2종 신설(`harness.homeIsolation`/`harness.homeLinks`). 테스트 357건 그린. → 7.2.3 의 남은 선행은 7.2.0b 뿐.
+- (2026-08-31 7차 갱신) **M7 착수 — 7.2.1 하네스 MCP 실측 게이트 통과.** 킷 진입점 6종 v1.4.0→v1.7.0 부트스트랩(roadmap_context 보고 규칙 + backlog roadmap gate 신설), CLAUDE.md·PROJECT_PROFILE 실행 명령 TODO 해소. **역방향 툴 경로 확정**: omp 17.3.8·grok 1.0.13 은 MCP 네이티브 지원이고 **왕복(등록→노출→호출→결과 반영)이 CLI·데몬 양 경로에서 PASS**, pi 0.84.1 은 설계상 MCP 배제라 확장 API(`pi.registerTool`)로 같은 카탈로그를 노출한다 → 7.2.3 은 "데몬 MCP 서버 + pi 확장" 2경로, CLI(7.5) 승격 불필요. **노출 방식이 하네스마다 다르다** — omp 는 기본값 `tools.xdev=true` 로 `xd://` 디바이스에 은닉(false 로 내려야 top-level), grok 은 항상 `search_tool`→`use_tool` 메타 툴 경유. 측정 도구 `scripts/mcp-probe.mjs` 신설. **결함 2건 검출 → 7.2.0a/7.2.0b 로 WBS 신설**(§Risks). 테스트 346건 그린.
+
 ## Work Status
 
 - 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
 - M3 잔여 후보(사내 협조 무관 순수 사외분 아님 — 대부분 C-1·C-5 후속) — 3.1 업데이트·롤백, 3.3.2 앱 정보 화면 고지 열람·clean-room 검수, 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
+- TASK-2026-08-31-main-006 M7 7.2.2 역방향 툴 카탈로그 정본 정의(FR-9.2): done
+- TASK-2026-08-31-main-005 M7 WP 7.1 주의 상태 1급화(FR-9.1): done
+- TASK-2026-08-31-main-004 M7 7.2.0b grok 권한 모드 확정(FR-1.5): done
+- TASK-2026-08-31-main-003 M7 7.2.0a 하네스 홈 격리 누수 봉쇄(NFR-1): done
+- TASK-2026-08-31-main-002 번들 grok darwin 버전 세트 불변성 결함(manifest 1.0.5 vs 실물 1.0.13): planned
+- TASK-2026-08-31-main-001 M7 7.2.1 하네스 MCP 지원 실측(선행 게이트 통과): done
 - TASK-2026-08-30-main-008 M6 6.4~6.7 파일·diff·스크립트·부하(M6 완료): done
 - TASK-2026-08-30-main-007 M6 6.1~6.3 설계·탭 타깃 일반화·터미널: done
 - TASK-2026-08-30-main-006 M5 5.5~5.7 worktree 격리·UI 재편·검증(M5 완료): done
 - TASK-2026-08-30-main-005 M5 5.4 세션의 워크스페이스 귀속 + 1회 백필: done
-- TASK-2026-08-30-main-004 M5 5.2·5.3 레지스트리(RPC·이벤트·아카이브 가드·라벨 카탈로그): done
-- TASK-2026-08-30-main-003 M5 5.0 선반영(설정 계약·세션 스키마 additive·RPC 네임스페이스 예약): done
-- TASK-2026-08-30-main-002 M5 5.1 워크스페이스 모델 설계서(승인 완료): done
-- TASK-2026-08-30-main-001 paseo 서비스 구성 전수 분석 + 도입 계획(M5~M7 신설): done
-- TASK-2026-08-25-main-027 렌더러 디자인 정비(다크 우선 토큰 시스템·타임라인 세그먼트·스크롤 경합): done
-- TASK-2026-08-25-main-026 Windows 대응 보강(grok 제외 일관화·lint POSIX 제거·실기기 피드백 4건): done
 
 ## Key Changes
+
+- (2026-08-31) **M7 7.2.2 툴 카탈로그**: `packages/protocol/src/tools.ts`(`ToolSpec`·`TOOL_CATALOG` 10종·`TOOL_NAME_PATTERN`·`toolDescriptor()` zod→JSON Schema) + `docs/design/reverse-tool-catalog.md` 신설.
+- (2026-08-31) **M7 WP 7.1 주의 상태**: `packages/daemon/src/attention.ts`(정책) + `SessionManager.refreshAttention()`(턴 종료·상태 전이·승인 요청/해소·ack·새 프롬프트가 전부 여기로 모임) + `attention_changed` 이벤트 + `session.attention.ack` RPC + `summarize()` 주의 3필드. 렌더러 `bucketOf`/알림 경로 단일 소비로 재배선, 세션 열기 시 ack.
+- (2026-08-31) **M7 7.2.0b grok 권한 모드**: `GrokAdapter` 에 `permissionMode`(`GrokPermissionMode`, 기본 `'default'`, `'inherit'` 만 플래그 생략) 추가 — `agent stdio` spawn 에 `--permission-mode` 를 항상 명시. `main.ts` 도 명시 지정. fake grok 픽스처가 `FAKE_GROK_ARGV_FILE` 로 spawn 인자를 기록해 테스트가 검증(3건). 승인 옵션 2종→**3종** 재실측(영속 `always-allow`/`allow-edits-session` 노출, ACP `kind` 정확) — adapter-contract §4 의 재실측 조건 발동.
+- (2026-08-31) **M7 7.2.0a 홈 격리**: `packages/daemon/src/gateway/home-isolation.ts` — 하네스별 빈 홈 생성(XDG 하위 포함) + allowlist 심볼릭 링크 반입 + `HOME`/`USERPROFILE`/XDG 4종 오버레이. `GatewayService.buildEnv` 가 3하네스 모두에 얹고, 격리 홈 생성 실패는 삼키지 않는다(격리는 성립하거나 세션 생성 실패). 기동 시 3하네스 선준비 + 격리 off 경고. `checkTrafficBoundaries` 에 원격 MCP 등록 검사(omp `mcp.json` `mcpServers.*.url` / grok `[mcp_servers.*].url`, stdio 는 위반 아님). `scripts/nfr1-smoke.mjs` v3 = `ps -Ao pid=,ppid=` BFS 자손 감시, `scripts/mcp-probe.mjs` 에 `--no-home-isolation` 대조군 + `foreignMcpTools` 판정축.
+- (2026-08-31) **M7 7.2.1 실측**: `scripts/mcp-probe.mjs` + `scripts/mcp-probe/mock-mcp-server.mjs` 신설 — 목 게이트웨이(요청 `tools[]` 관측 후 tool_call 발행)와 목 MCP stdio 서버(줄 단위 JSON-RPC)로 판정 5축(initialized/registered/exposure/invoked/returned)을 잰다. CLI 경로와 데몬 경로(omp `--mode rpc`, grok ACP)를 **모두** 측정 — 결과가 다르기 때문. 문서: [harness-mcp-support.md](../../../../docs/reference/harness-mcp-support.md) 신설(approved), m7-orchestration v1.1, PROGRESS·FR-9.2 동기화
+- (2026-08-31) **실측 확정**: omp 사용자 스코프 MCP 는 `$PI_CODING_AGENT_DIR/mcp.json` / grok 은 `grok mcp add` 가 `$GROK_HOME/config.toml` 에 기입(하네스 CLI 위임이 정본, `grok mcp doctor` 가 소스별 진단 제공) / omp rpc 경로는 MCP 툴 **비동기 로딩** — 1턴째 미노출, 2턴째부터 왕복 / grok 은 `use_tool` 앞 `search_tool` 선행이 필수(지키면 재현율 3/3, 어기면 간헐 실패)
+- (2026-08-31) **워크플로 킷**: 진입점 6종 v1.7.0 갱신(CLAUDE.md·slash 4종·SKILL.md) — 실질 변경은 session-start 의 `roadmap_context` 보고 규칙, backlog-update 의 roadmap gate 2건뿐(diff 로 손수정 유실 없음 확인). CLAUDE.md §Project run defaults 와 PROJECT_PROFILE §3 의 TODO/미정 명령을 실제 npm 명령으로 채움
 
 - (2026-08-30 5차) **M6 완료**: 파일 접근(`files.ts` — 절대경로·`..`·심링크 탈출 거절, realpath 2차 확인, 2MiB·바이너리 방어) / diff(`diffs.ts` — HEAD 기준 working+미추적, 커밋 sha 검증, `git status` 지문 폴링 감시, 이벤트는 신호만) / 워크스페이스 스크립트를 감독 터미널로 실행 / 터미널 부하 10000줄 무유실·슬롯 격리. **결함 3건 수정**: ① 신뢰가 설정 파일 해시에 묶이는데 setup 명령이 없으면 부여되지 않아 `scripts` 만 있는 프로젝트가 실행 불가 ② 셸이 되울린 명령줄 때문에 실제 출력 없이 통과하던 터미널 테스트 ③ `settled()` 고정 sleep 로 인한 간헐 실패(3회 관측) → 정지 감지로 교체
 - (2026-08-30 4차) **M6 6.1~6.3**: 설계 승인(workbench-tabs v1 + **protocol-design v1.2 바이너리 프레임 채택** — M0 0.2.4 의 capability 조항 발동이라 방향 전환 아님) / 6.3.0 스파이크로 `@lydell/node-pty` 가 N-API 임을 실측(같은 prebuilt 가 Node ABI 141·Electron ABI 149 동작 → Electron 재빌드 불필요) / `workbench/tabs.ts` 순수 탭 모델(타깃 6종·결정적 id·구형 배치 이관·**워크스페이스 단위 배치**) / `TerminalManager`(pty 소유·256KiB 링 버퍼·연결별 슬롯 다중화·attach 시 스냅샷+구독 원자 제공) + `terminal.*` RPC 6종 + xterm 뷰 / 번들에 3 OS prebuilt 고정 조달·NOTICE 고지·`npm run smoke:terminal` 신설(번들 실물 pty 왕복 PASS)
@@ -56,12 +70,20 @@
 
 ## Next Actions
 
-- [ ] **M7 착수**: 7.2.1 하네스 MCP 지원 실측(선행 게이트) → 7.1 주의 상태 1급화 → 7.2 역방향 툴 → 7.3 서브에이전트 → 7.4 검색 → 7.5 CLI 자동화
+- [ ] **M7 다음**: **7.2.3 노출 2경로 구현** — ① 데몬 소유 MCP stdio 서버(omp·grok 공용) ② pi 확장(`pi.registerTool`). 등록은 grok=`grok mcp add` 위임 / omp=격리 홈 `mcp.json` + `tools.xdev=false` / pi=확장 주입. **omp rpc 경로의 MCP 준비 완료 게이트** 필수(1턴째 미노출 실측). 툴 결과 스키마도 여기서 확정 → 7.2.4 안전장치(opt-in·재귀 상한·감사 로그·서버명 선점 탐지)
+- [ ] 7.1 잔여(작음): 트레이 배지·자동 승인이 주의 상태를 **직접** 소비하도록 셸 트랙 배선, `attentionTimestamp` 기반 "오래 기다린 순" 정렬 UI
+- [ ] 7.2.2 툴 카탈로그 정본 정의 → 7.2.3 노출 2경로(데몬 MCP 서버 + pi 확장) → 7.2.4 안전장치
+- [ ] TASK-2026-08-31-main-002 번들 grok 버전 대조 경고 추가 (FR-4.7 회복)
 - [ ] **C-1 실 게이트웨이 실측 회신** → 1.7.3 M1 수용 시나리오 → M1 완료 선언 (M2 완료 선언의 선행)
 - [ ] **C-5 실기기 실측 요청** — linux/win 매트릭스(m2-smoke-matrix.md 절차), install.ps1·uninstall.ps1 검증. 추가 확인 항목: Windows junction 환경에서 git `--show-prefix` 경로 유도
 - [ ] M3 잔여: 3.1 업데이트·롤백, 3.3.2 앱 정보 화면 고지 열람·**clean-room 검수(paseo 유래 코드 부재 확인까지 범위 확장)**
 
 ## Risks & Blockers
+
+- ~~**[결함·7.2.0a] omp·grok 격리 누수**~~ — **해소 (2026-08-31, TASK-003)**: `HOME`·`USERPROFILE`·XDG 4종을 하네스별 빈 홈으로 덮어 유입을 끊었다(대조 실측 `foreign=40 → 0`). `nfr1-smoke` 도 자손 프로세스 트리까지 감시한다. **잔여**: Windows(`USERPROFILE`·심볼릭 링크 권한)에서 동일 봉쇄가 성립하는지 미검증 — C-5 실기기 항목
+- ~~**[결함·7.2.0b] grok ACP 기본 모드가 MCP 툴 호출을 승인 요청 없이 거절**~~ — **해소 (2026-08-31, TASK-004)**: 원인은 사용자 `$HOME` 의 Claude 설정 import(= 7.2.0a 와 같은 뿌리)였고, `--permission-mode default` 를 명시 고정해 MCP 툴·내장 파괴적 툴 양쪽이 승인 대상이 됐다. **잔여**: 영속 승인(`always-allow`/`allow-edits-session`)의 UI 표기·감사 기록은 FR-1.5 후속. 번들 grok 갱신 시 모드 행렬 재실측 필요(1.0.5→1.0.13 사이 이미 드리프트)
+- 프로젝트 스코프 `.mcp.json` 이 사용자 스코프 서버명을 덮는다(grok·omp 공통) — 워크스페이스가 임의 저장소를 여는 구조에서 **저장소가 우리 역방향 툴 이름을 선점 가능** → 7.2.4 에 접두사·선점 탐지
+- 번들 grok darwin 버전 세트 불변성 깨짐 — manifest 1.0.5 vs 실물 1.0.13. `sources.json` 의 `localFile` 경로만 sha256·버전 대조 없이 복사하고 매니페스트에는 고정 버전을 기입한다(체크섬은 복사본 기준이라 `--verify` 통과). TASK-2026-08-31-main-002
 
 - 터미널은 darwin 만 실검증 — Windows 는 conpty 경로라 결과가 그대로 이어지지 않는다. C-5 실기기 항목에 터미널 왕복 추가 필요
 - omp 버전 갱신 시 내장 로컬 프로바이더 id 목록(lm-studio·ollama·llama.cpp·vllm) 재실측 필요 — 새 id 가 추가되면 게이트웨이 우회 통로가 다시 생긴다

@@ -3,8 +3,8 @@
 # FR-1 상세 — 하네스 실행·세션 관리 (데몬)
 
 - 문서 목적: [REQUIREMENTS](../REQUIREMENTS.md) FR-1 그룹의 상세 요구사항. 데몬이 하네스 프로세스와 에이전트 세션을 소유하는 방식.
-- 상태: approved (v1, 2026-08-25 사용자 승인)
-- 최종 수정일: 2026-08-25
+- 상태: approved (v1.1, 2026-08-31 — grok spawn 에 `--permission-mode default` 명시 조항 추가(M7 7.2.0b). v1: 2026-08-25 사용자 승인)
+- 최종 수정일: 2026-08-31
 - 근거 문서: [paseo 분석 §2·§7](../reference/paseo-analysis.md), [하네스 인터페이스 조사](../reference/harness-interfaces.md)
 
 ## FR-1.1 하네스 프로세스 수명주기
@@ -44,6 +44,7 @@
 
 - **통합 경로: ACP(`grok agent stdio`) 확정** (2026-08-25 사용자 승인, [비교·실측](../reference/grok-integration-paths.md)) — 장수 프로세스 + `session/prompt` 멀티턴, `session/cancel` 중단, `session/request_permission` 승인 중재, `session/new` 의 `mcpServers[]` 주입, `session/set_model` 모델 전환.
 - spawn 시 **번들 관리 `GROK_HOME` 격리** 주입 (FR-2.1.3) — 사용자 `~/.grok` 불간섭.
+- spawn 시 **`--permission-mode default` 명시** (M7 7.2.0b 실측) — 지정하지 않으면 grok 이 사용자 환경에서 권한 모드를 주워오고, auto 모드는 툴을 승인 요청 없이 거절해 FR-1.5 승인 채널이 무력화된다. MCP 툴과 내장 파괴적 툴이 동시에 승인 대상이 되는 모드는 `default` 뿐이다.
 - 기동 시 `grok --version` 으로 정품·버전 검증 (커뮤니티 동명 CLI 오인 방지).
 - 세션 재개는 `session/load`(initialize 의 `loadSession: true` 실측 확인) — 핸들은 ACP sessionId.
 - 승인: ACP `request_permission` 왕복 (`allow_once/allow_always/reject_once/reject_always` — allow_always 영속성은 잔여 실측 항목).

@@ -1,4 +1,4 @@
-<!-- standard-ai-workflow-kit: v1.4.0 -->
+<!-- standard-ai-workflow-kit: v1.7.0 -->
 
 # CLAUDE.md (Claude Code entry point)
 
@@ -6,7 +6,7 @@
 - Scope: session restore, the order to consult workflow state docs, working principles, session close order
 - Audience: Claude Code, repository maintainer, workflow designer
 - Status: beta
-- Last updated: 2026-08-24
+- Last updated: 2026-08-31
 - Related: `ai-workflow/memory/active/<branch>/state.json`, `docs/PROJECT_PROFILE.md`
 
 ## What this file is for
@@ -102,13 +102,13 @@ When the user invokes `/workflow-session-start` (or on automatic read), it attem
 
 ## Project run defaults
 
-- **install**: TODO: 설치 명령 입력
-- **run**: TODO: 로컬 실행 명령 입력
-- **quick test**: TODO: 빠른 테스트 명령 입력
-- **isolated test**: TODO: 격리 테스트 명령 입력
-- **smoke check**: TODO: 실행 확인 명령 입력
+- **install**: `npm install`
+- **run**: `npm run typecheck` 후 `npm run -w @custom-harness/shell start` (Electron 앱) / 데몬 단독은 `node packages/cli/dist/index.js daemon start`
+- **quick test**: `npm test`
+- **isolated test**: `npx vitest run <path>`
+- **smoke check**: `npm run smoke:nfr1` (외부 접속 0 검증) / `npm run smoke:terminal` (번들 pty 왕복)
 
-These commands are inferred. Correct them to the project's real commands before committing.
+게이트: `npm run typecheck && npm test && npm run lint && npm run format:check`
 
 ## Read next
 

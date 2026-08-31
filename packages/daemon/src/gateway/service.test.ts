@@ -60,6 +60,19 @@ describe('GatewayService (WBS 1.4)', () => {
     mock.server.close();
   });
 
+  /** 7.2.0a — buildEnv 는 홈 격리 오버레이를 항상 포함한다. 기존 단언은 그 위에 얹는다 */
+  function isolatedHome(harness: 'pi' | 'omp' | 'grok'): Record<string, string> {
+    const dir = join(paths.harnessHomesDir, harness);
+    return {
+      HOME: dir,
+      ...(process.platform === 'win32' ? { USERPROFILE: dir } : {}),
+      XDG_CONFIG_HOME: join(dir, '.config'),
+      XDG_DATA_HOME: join(dir, '.local', 'share'),
+      XDG_STATE_HOME: join(dir, '.local', 'state'),
+      XDG_CACHE_HOME: join(dir, '.cache'),
+    };
+  }
+
   async function configure(): Promise<void> {
     await service.setConfig({
       baseUrl: mock.baseUrl,
@@ -90,6 +103,7 @@ describe('GatewayService (WBS 1.4)', () => {
     await keyStore.set('sk-valid');
     expect(await service.buildEnv('pi')).toEqual({
       PI_CODING_AGENT_DIR: paths.piHomeDir,
+      ...isolatedHome('pi'),
       PI_OFFLINE: '1',
       CUSTOM_HARNESS_GATEWAY_KEY: 'sk-valid',
     });
@@ -97,9 +111,13 @@ describe('GatewayService (WBS 1.4)', () => {
     await keyStore.delete();
     expect(await service.buildEnv('pi')).toEqual({
       PI_CODING_AGENT_DIR: paths.piHomeDir,
+      ...isolatedHome('pi'),
       PI_OFFLINE: '1',
     });
-    expect(await service.buildEnv('grok')).toEqual({ GROK_HOME: paths.grokHomeDir });
+    expect(await service.buildEnv('grok')).toEqual({
+      GROK_HOME: paths.grokHomeDir,
+      ...isolatedHome('grok'),
+    });
   });
 
   it('builds the omp spawn env overlay and injects models.yml·config.yml (WBS 2.1.3)', async () => {
@@ -108,6 +126,7 @@ describe('GatewayService (WBS 1.4)', () => {
     // omp 는 PI_OFFLINE 미지원(실측) — 오프라인 차단은 config.yml 프리셋 담당
     expect(await service.buildEnv('omp')).toEqual({
       PI_CODING_AGENT_DIR: paths.ompHomeDir,
+      ...isolatedHome('omp'),
       CUSTOM_HARNESS_GATEWAY_KEY: 'sk-valid',
     });
     const models = parseYaml(await readFile(join(paths.ompHomeDir, 'models.yml'), 'utf8')) as {
@@ -130,6 +149,7 @@ describe('GatewayService (WBS 1.4)', () => {
     await keyStore.set('sk-valid');
     expect(await service.buildEnv('grok')).toEqual({
       GROK_HOME: paths.grokHomeDir,
+      ...isolatedHome('grok'),
       CUSTOM_HARNESS_GATEWAY_KEY: 'sk-valid',
     });
     const toml = parseToml(await readFile(join(paths.grokHomeDir, 'config.toml'), 'utf8')) as {
@@ -144,6 +164,57 @@ describe('GatewayService (WBS 1.4)', () => {
       base_url: mock.baseUrl,
       env_key: 'CUSTOM_HARNESS_GATEWAY_KEY',
     });
+  });
+
+  it('홈 격리를 끄면 HOME 오버레이가 사라진다 (harness.homeIsolation=false, WBS 7.2.0a)', async () => {
+    await configure();
+    await writeFile(
+      paths.settingsFile,
+      JSON.stringify({
+        ...JSON.parse(await readFile(paths.settingsFile, 'utf8')),
+        harness: { homeIsolation: false },
+      }),
+    );
+    const fresh = new GatewayService(paths, keyStore);
+    const env = await fresh.buildEnv('omp');
+    expect(env.HOME).toBeUndefined();
+    expect(env.XDG_CONFIG_HOME).toBeUndefined();
+    expect(env.PI_CODING_AGENT_DIR).toBe(paths.ompHomeDir);
+  });
+
+  it('원격 MCP 서버 등록을 경계 위반으로 잡는다 (NFR-1, WBS 7.2.0a)', async () => {
+    await configure();
+    await writeFile(
+      join(paths.ompHomeDir, 'mcp.json'),
+      JSON.stringify({ mcpServers: { remote: { url: 'https://mcp.example.com/sse' } } }),
+    );
+    const grokConfig = await readFile(join(paths.grokHomeDir, 'config.toml'), 'utf8');
+    await writeFile(
+      join(paths.grokHomeDir, 'config.toml'),
+      `${grokConfig}\n[mcp_servers.remote]\nurl = "https://mcp.example.com/mcp"\n`,
+    );
+    const violations = await service.checkTrafficBoundaries();
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          harness: 'omp',
+          location: 'omp-home/mcp.json mcpServers.remote',
+        }),
+        expect.objectContaining({
+          harness: 'grok',
+          location: 'grok-home/config.toml mcp_servers.remote',
+        }),
+      ]),
+    );
+  });
+
+  it('stdio MCP 서버는 목적지가 없으므로 위반이 아니다 (WBS 7.2.0a)', async () => {
+    await configure();
+    await writeFile(
+      join(paths.ompHomeDir, 'mcp.json'),
+      JSON.stringify({ mcpServers: { local: { command: 'node', args: ['server.js'] } } }),
+    );
+    expect(await service.checkTrafficBoundaries()).toEqual([]);
   });
 
   it('falls back to the static catalog when /models is unsupported (FR-2.4, WBS 2.3.4)', async () => {

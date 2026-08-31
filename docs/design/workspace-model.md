@@ -3,8 +3,8 @@
 # 워크스페이스 모델 설계 (M5 WBS 5.1)
 
 - 문서 목적: 프로젝트 → 워크스페이스 → 세션 3계층의 **식별자 정책·정합화 계약·레코드 스키마·저장 배치·RPC 표면**을 확정한다.
-- 상태: approved (v1, 2026-08-30 사용자 승인 — 5.1.3 완료)
-- 최종 수정일: 2026-08-30
+- 상태: approved (v1.1, 2026-08-31 — §3.3 세션 레코드에 `attentionTimestamp` 추가·사유 순서 확정(M7 7.1.1). v1: 2026-08-30 사용자 승인 — 5.1.3 완료)
+- 최종 수정일: 2026-08-31
 - 입력: [FR-7](../requirements/fr7-workspaces.md), [paseo 서비스 분석 §1.1~1.3](../reference/paseo-service-inventory.md), [데몬 상세 설계](./daemon-design.md), [프로토콜 설계](./protocol-design.md)
 - 산출: M5 WP 5.0·5.2~5.6 의 구현 근거
 
@@ -88,7 +88,8 @@ Project  (프로젝트 루트 1개)
 | `labels` | `Record<string,string>?` | 5.0.2 |
 | `archivedAt` | `string?` | 5.0.2 |
 | `requiresAttention` | `boolean?` | 5.0.2 (M7 7.1 이 채운다) |
-| `attentionReason` | `'finished' \| 'error' \| 'permission'` `?` | 5.0.2 |
+| `attentionReason` | `'permission' \| 'error' \| 'finished'` `?` | 5.0.2 (M7 7.1.1 이 채운다 — 나열 순서가 곧 우선순위) |
+| `attentionTimestamp` | `string` `?` | M7 7.1.1 — 주의 상태로 전이한 시각 |
 | `title` | `string?` | 5.0.2 (M7 7.6 이 채운다) |
 
 > `cwd` 는 남긴다. 다만 **소유권 판정에서는 배제**되고 표시·진단 용도로만 쓰인다.

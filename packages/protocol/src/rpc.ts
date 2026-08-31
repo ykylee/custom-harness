@@ -82,7 +82,9 @@ export const SessionSummarySchema = z.looseObject({
   archivedAt: z.string().optional(),
   /** 사용자 주의 필요 여부 — 데몬이 정본으로 계산한다 (M7 7.1) */
   requiresAttention: z.boolean().optional(),
-  attentionReason: z.enum(['finished', 'error', 'permission']).optional(),
+  attentionReason: z.enum(['permission', 'error', 'finished']).optional(),
+  /** 주의 상태로 전이한 시각 — "얼마나 기다렸나" 정렬 기준 (M7 7.1.1) */
+  attentionTimestamp: z.string().optional(),
   /** 사용자 표시 제목 (M7 7.6 이 채운다) */
   title: z.string().optional(),
 });
@@ -188,6 +190,15 @@ export const rpc = {
     modelSet: rpcPair(
       'session.model.set',
       z.looseObject({ sessionId: z.string(), modelId: z.string() }),
+      z.looseObject({}),
+    ),
+    /**
+     * 주의 상태 확인 처리 (M7 7.1.2, FR-9.1) — 사용자가 세션을 열어 봤다는 신호.
+     * 멱등. 승인 대기는 이 호출로 사라지지 않는다 — 화면을 본 것이 응답은 아니다.
+     */
+    attentionAck: rpcPair(
+      'session.attention.ack',
+      z.looseObject({ sessionId: z.string() }),
       z.looseObject({}),
     ),
     /** 재연결 갭 발생 시 타임라인 재동기화 (protocol-design §5) */
@@ -460,6 +471,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.session.interrupt.request,
   rpc.session.permissionRespond.request,
   rpc.session.modelSet.request,
+  rpc.session.attentionAck.request,
   rpc.session.timeline.request,
   rpc.config.keySet.request,
   rpc.config.keyTest.request,
@@ -505,6 +517,7 @@ export const RpcResponseSchema = z.union([
   rpc.session.interrupt.response,
   rpc.session.permissionRespond.response,
   rpc.session.modelSet.response,
+  rpc.session.attentionAck.response,
   rpc.session.timeline.response,
   rpc.config.keySet.response,
   rpc.config.keyTest.response,

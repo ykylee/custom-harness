@@ -3,8 +3,8 @@
 # 설정 계약 (M5 WBS 5.0.1)
 
 - 문서 목적: 데몬 설정의 **우선순위·선언 방식·재적용 범위**를 확정한다. 워크스페이스 모델(M5) 이후 설정 키가 급격히 늘기 전에 규칙을 고정하는 것이 목적이다.
-- 상태: approved (v1, 2026-08-30 — M5 WP5.0 승인 범위 내 구현 완료)
-- 최종 수정일: 2026-08-30
+- 상태: approved (v1.1, 2026-08-31 — M7 7.2.0a 하네스 홈 격리 키 2종 추가. v1: 2026-08-30 M5 WP5.0)
+- 최종 수정일: 2026-08-31
 - 입력: [워크스페이스 모델 설계](./workspace-model.md), [데몬 상세 설계](./daemon-design.md)
 - 구현: `packages/daemon/src/settings.ts`
 
@@ -39,6 +39,10 @@
 | `maxSessions` | `CUSTOM_HARNESS_MAX_SESSIONS` | 8 | live |
 | `autoApprove` | `CUSTOM_HARNESS_AUTO_APPROVE` | false | live |
 | `workspace.setupAutoRun` | `CUSTOM_HARNESS_WORKSPACE_SETUP_AUTORUN` | false | live |
+| `harness.homeIsolation` | `CUSTOM_HARNESS_HOME_ISOLATION` | true | live |
+| `harness.homeLinks` | `CUSTOM_HARNESS_HOME_LINKS` | `.gitconfig`, `.ssh` | live |
+
+`harness.homeIsolation` 은 보안 스위치다(M7 7.2.0a, NFR-1) — 하네스가 사용자 실제 `$HOME` 의 외부 MCP 설정을 읽어 게이트웨이 경계 밖 서버를 띄우는 것을 막는다. 끄면 데몬이 기동 경고를 남긴다. `harness.homeLinks` 는 **거부 기본값 위의 allowlist** 로, 격리 홈에 반입할 실제 홈 항목을 지정한다(홈 직속 이름만 — 경로 표기 거부). 쉼표 구분 문자열도 받는다.
 
 ## 3. 재적용(핫 리로드)
 

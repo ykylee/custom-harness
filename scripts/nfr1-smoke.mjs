@@ -6,6 +6,8 @@
 //   비루프백 원격 = 즉시 위반. 루프백은 양 끝점이 (게이트웨이·데몬·감시 대상 pid 의 LISTEN 포트)
 //   에 속하지 않을 때만 위반 — 하네스 내부 루프백(LSP 등)은 오탐하지 않되, 외부 프로세스로의
 //   루프백 릴레이는 계속 검출한다. 보조로 HTTP(S)_PROXY 블랙홀 강제.
+// v3 (7.2.0a): 감시 대상을 하네스의 **자손 프로세스 트리**까지 확장 — MCP 서버 자식이
+//   게이트웨이 밖으로 나가는 통로를 원장 pid 감시만으로는 못 잡는다 (harness-mcp-support §3.1).
 // 사용: node scripts/nfr1-smoke.mjs [--pi <path>|--pi-entry <js>] [--omp <path>] [--grok <path>] [--keep]
 //   경로 미지정 시 env(CUSTOM_HARNESS_{PI,OMP,GROK}_PATH) → PATH/관례 위치 순.
 // CI 게이트 (2.7.1): `npm run smoke:nfr1` — 사내 CI 확정 시 필수 게이트로 배선 (원격 저장소 대기).
@@ -186,10 +188,43 @@ if (!keyTest.valid) {
 }
 console.log('[smoke] 온보딩 연결 확인 통과');
 
-// ── 4. 커넥션 감시 (lsof 폴링 — 데몬 + PID 원장의 하네스들) ───────────────
+// ── 4. 커넥션 감시 (lsof 폴링 — 데몬 + PID 원장의 하네스 + 그 자식 프로세스 트리) ──
+// v3 (WBS 7.2.0a): 원장 pid 만 보면 하네스가 띄운 **MCP 서버 자식 프로세스**의 접속을 놓친다.
+// 7.2.1 실측에서 omp·grok 이 사용자 홈의 외부 MCP 설정을 읽어 서버를 띄우는 것이 확인됐고,
+// 그 서버가 원격이면 NFR-1 우회다. 그래서 감시 대상을 자손 전체로 넓힌다.
 const allowedPorts = new Set([String(gatewayPort), String(daemon.port)]);
 const violations = new Map();
 let monitoring = true;
+
+/** ps 로 전체 ppid 맵을 읽어 주어진 pid 들의 자손을 모두 모은다 (darwin·linux) */
+function withDescendants(roots) {
+  let table = '';
+  try {
+    table = execFileSync('ps', ['-Ao', 'pid=,ppid='], { encoding: 'utf8' });
+  } catch {
+    return roots; // ps 불가 — 루트만 감시 (판정은 보수적으로 유지)
+  }
+  const children = new Map();
+  for (const line of table.split('\n')) {
+    const m = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+    if (!m) continue;
+    const pid = Number(m[1]);
+    const ppid = Number(m[2]);
+    if (!children.has(ppid)) children.set(ppid, []);
+    children.get(ppid).push(pid);
+  }
+  const seen = new Set(roots);
+  const queue = [...roots];
+  while (queue.length > 0) {
+    for (const child of children.get(queue.shift()) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+  return [...seen];
+}
+
 async function monitoredPids() {
   const pids = [process.pid];
   try {
@@ -198,11 +233,13 @@ async function monitoredPids() {
   } catch {
     /* 원장 없음 — 데몬만 감시 */
   }
-  return pids;
+  return withDescendants(pids);
 }
+let maxMonitored = 0;
 const monitor = (async () => {
   while (monitoring) {
     const pids = await monitoredPids();
+    if (pids.length > maxMonitored) maxMonitored = pids.length;
     let out = '';
     try {
       out = execFileSync('lsof', ['-nP', '-a', '-p', pids.join(','), '-iTCP'], {
@@ -327,6 +364,7 @@ await monitor;
 await daemon.stop();
 mockGateway.close();
 
+console.log(`[smoke] 감시 프로세스 최대 폭: ${maxMonitored}개 (자손 트리 포함)`);
 const llmCalls = gatewayLog.filter((r) => r.url === '/v1/chat/completions').length;
 console.log(`[smoke] 게이트웨이 LLM 호출: ${llmCalls}건`);
 if (!failReason && llmCalls === 0) failReason = '게이트웨이 LLM 호출이 관측되지 않음';
@@ -343,4 +381,6 @@ if (failReason) {
   console.error(`[smoke] FAIL — ${failReason}`);
   process.exit(1);
 }
-console.log('[smoke] PASS — 허용 외 커넥션 0건 · 3하네스 1턴 + 혼합 6세션 부하 완료 (NFR-1 v2)');
+console.log(
+  '[smoke] PASS — 허용 외 커넥션 0건 · 3하네스 1턴 + 혼합 6세션 부하 완료 (NFR-1 v3, 자손 트리 감시)',
+);

@@ -410,6 +410,10 @@ export class DaemonServer {
       case 'session.model.set.request':
         await manager.setModel(message.params.sessionId, message.params.modelId);
         return {};
+      case 'session.attention.ack.request':
+        // 멱등 (M7 7.1.2) — 승인 대기는 이 호출로 사라지지 않는다
+        manager.acknowledgeAttention(message.params.sessionId);
+        return {};
       case 'session.timeline.request':
         return {
           events: await manager.timeline(message.params.sessionId, message.params.fromSeq),

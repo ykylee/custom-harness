@@ -10,19 +10,28 @@ export function HarnessBadge({ harness }: { harness: string }): React.JSX.Elemen
   return <span className={`harness-badge harness-${harness}`}>{harness}</span>;
 }
 
-type Bucket = 'approval' | 'running' | 'idle' | 'error' | 'closed';
+type Bucket = 'approval' | 'attention' | 'running' | 'idle' | 'error' | 'closed';
 
-const BUCKET_ORDER: Bucket[] = ['approval', 'running', 'idle', 'error', 'closed'];
+const BUCKET_ORDER: Bucket[] = ['approval', 'attention', 'running', 'idle', 'error', 'closed'];
 const BUCKET_LABEL: Record<Bucket, string> = {
   approval: '승인 대기',
+  attention: '확인 필요',
   running: '실행 중',
   idle: '유휴',
   error: '에러',
   closed: '완료·보관',
 };
 
+/**
+ * 버킷은 **데몬이 계산한 주의 상태**를 우선 소비한다 (M7 7.1.3, FR-9.1).
+ * 렌더러가 자체 규칙으로 다시 판단하지 않는다 — 트레이 배지·알림·자동 승인과
+ * 서로 다른 답을 내던 원인이었고, 클라이언트가 없던 동안의 상태도 못 봤다.
+ * `status` 기반 분기는 주의 대상이 아닌 세션을 어디에 둘지에만 쓴다.
+ */
 export function bucketOf(session: SessionSummary): Bucket {
-  if (session.pendingPermissions?.length) return 'approval';
+  if (session.requiresAttention === true) {
+    return session.attentionReason === 'permission' ? 'approval' : 'attention';
+  }
   if (session.status === 'running') return 'running';
   if (session.status === 'error') return 'error';
   if (session.status === 'closed') return 'closed';
@@ -386,6 +395,8 @@ export function Sidebar({
           <button
             key={bucket}
             className={filter === bucket ? 'selected' : ''}
+            // 주의 버킷만 색을 준다 — "지금 무엇이 급한가"가 한눈에 보여야 한다 (FR-9.1)
+            data-attention={bucket === 'approval' || bucket === 'attention' ? 'true' : undefined}
             data-testid={`filter-${bucket}`}
             onClick={() => setFilter(filter === bucket ? 'all' : bucket)}
           >

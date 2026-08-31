@@ -17,6 +17,8 @@ export interface DaemonPaths {
   piHomeDir: string;
   /** omp 격리 홈 (PI_CODING_AGENT_DIR, omp 도 동일 env 실측) — models.yml·config.yml 주입 대상 (WBS 2.1.3) */
   ompHomeDir: string;
+  /** 하네스 `HOME` 격리 루트 (WBS 7.2.0a, NFR-1) — 하위에 하네스별 가짜 홈 (`<harness>/`) */
+  harnessHomesDir: string;
   tokenFile: string;
   pidFile: string;
   processesFile: string;
@@ -41,6 +43,7 @@ export function resolvePaths(
     grokHomeDir: join(dataDir, 'grok-home'),
     piHomeDir: join(dataDir, 'pi-home'),
     ompHomeDir: join(dataDir, 'omp-home'),
+    harnessHomesDir: join(dataDir, 'harness-home'),
     tokenFile: join(dataDir, 'daemon.token'),
     pidFile: join(dataDir, 'daemon.pid'),
     processesFile: join(dataDir, 'processes.json'),

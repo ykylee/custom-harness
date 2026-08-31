@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -6,16 +6,17 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '@custom-harness/protocol';
 import { ProcessSupervisor } from '../../processes.js';
 import { runAdapterContractTests, type AdapterHarness } from '../contract-suite.js';
-import { GrokAdapter, mapAcpToolKind } from './grok.js';
+import { GrokAdapter, mapAcpToolKind, type GrokAdapterOptions } from './grok.js';
 
 const fakeGrok = fileURLToPath(new URL('./fake-grok.fixture.cjs', import.meta.url));
 
-function makeAdapter(): GrokAdapter {
+function makeAdapter(options: Partial<GrokAdapterOptions> = {}): GrokAdapter {
   return new GrokAdapter({
     command: process.execPath,
     prependArgs: [fakeGrok],
     supervisor: new ProcessSupervisor({ gracePeriodMs: 500 }),
     responseTimeoutMs: 3000,
+    ...options,
   });
 }
 
@@ -34,9 +35,12 @@ async function factory(): Promise<AdapterHarness> {
 // 턴을 완결한다 (실측) — rejectionCancelsTurn: false.
 runAdapterContractTests('grok(fake)', factory, { rejectionCancelsTurn: false });
 
-async function openSession(env: Record<string, string> = {}) {
+async function openSession(
+  env: Record<string, string> = {},
+  options: Partial<GrokAdapterOptions> = {},
+) {
   const cwd = await mkdtemp(join(tmpdir(), 'ch-grok-'));
-  const session = await makeAdapter().createSession(
+  const session = await makeAdapter(options).createSession(
     baseConfig(`grok-x-${Math.random().toString(36).slice(2)}`, cwd, env),
   );
   const events: AgentEvent[] = [];
@@ -151,6 +155,42 @@ describe('GrokAdapter specifics', () => {
       status: 'error',
       error: { kind: 'spawn' },
     });
+    await session.close();
+  });
+
+  // WBS 7.2.0b — 권한 모드는 명시 고정한다. 미지정으로 두면 grok 이 사용자 환경에서
+  // 모드를 주워오고(실측: Claude 호환 import), auto 모드가 승인 요청 없이 툴을 거절해
+  // 승인 채널(FR-1.5)이 조용히 사라진다.
+  it('spawns with --permission-mode default by default (WBS 7.2.0b)', async () => {
+    const argvFile = join(await mkdtemp(join(tmpdir(), 'ch-grok-argv-')), 'argv.json');
+    const { session } = await openSession({ FAKE_GROK_ARGV_FILE: argvFile });
+    const argv = JSON.parse(await readFile(argvFile, 'utf8')) as string[];
+    expect(argv).toEqual(['--permission-mode', 'default', 'agent', 'stdio']);
+    await session.close();
+  });
+
+  it("omits the flag only for permissionMode: 'inherit' (WBS 7.2.0b)", async () => {
+    const argvFile = join(await mkdtemp(join(tmpdir(), 'ch-grok-argv-')), 'argv.json');
+    const { session } = await openSession(
+      { FAKE_GROK_ARGV_FILE: argvFile },
+      { permissionMode: 'inherit' },
+    );
+    expect(JSON.parse(await readFile(argvFile, 'utf8'))).toEqual(['agent', 'stdio']);
+    await session.close();
+  });
+
+  it('honours an explicit permission mode (WBS 7.2.0b)', async () => {
+    const argvFile = join(await mkdtemp(join(tmpdir(), 'ch-grok-argv-')), 'argv.json');
+    const { session } = await openSession(
+      { FAKE_GROK_ARGV_FILE: argvFile },
+      { permissionMode: 'acceptEdits' },
+    );
+    expect(JSON.parse(await readFile(argvFile, 'utf8'))).toEqual([
+      '--permission-mode',
+      'acceptEdits',
+      'agent',
+      'stdio',
+    ]);
     await session.close();
   });
 });

@@ -13,6 +13,7 @@ export * from './connection.js';
 export * from './events.js';
 export * from './rpc.js';
 export * from './terminal.js';
+export * from './tools.js';
 export * from './workspaces.js';
 
 /** 클라이언트 → 데몬 전체 프레임 */

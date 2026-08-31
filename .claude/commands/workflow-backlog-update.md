@@ -2,7 +2,7 @@
 description: Standard AI workflow backlog update — register/update a task in today's backlog and warn about scope creep when it overlaps PURPOSE.md's excluded areas.
 ---
 
-<!-- standard-ai-workflow-kit: v1.4.0 -->
+<!-- standard-ai-workflow-kit: v1.7.0 -->
 
 # /workflow-backlog-update
 
@@ -31,6 +31,9 @@ wk backlog-update --help
    - on a match, emit one `scope_creep_warnings` line (hard warning)
 4. Task status: one of `planned` / `in_progress` / `blocked` / `done`
 5. State priority, owner, and acceptance criteria
+6. **roadmap gate** (ADR-027 §6) — when `ai-workflow/memory/active/roadmap/` exists,
+   creating a task requires `--wbs M-NNN/WBS-N.N`; off-roadmap work is declared with
+   `--wbs exempt --wbs-exempt-reason "<why>"`. Projects without a roadmap are unaffected.
 
 ## When PURPOSE.md is absent
 

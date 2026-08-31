@@ -16,6 +16,7 @@ import { hasCapability } from '@custom-harness/protocol';
 import type { ProbeResult } from '@custom-harness/protocol';
 import type { AgentAdapter, AgentSession, Unsubscribe } from './adapters/contract.js';
 import { DaemonError } from './errors.js';
+import { attentionChanged, computeAttention, type AttentionState } from './attention.js';
 import { verifyProbeAgainstManifest, type BundleManifest } from './manifest.js';
 import type { SessionMeta, SessionStore } from './store.js';
 
@@ -27,6 +28,10 @@ interface LiveSession {
   nextSeq: number;
   activeTurnId: string | undefined;
   pending: Map<string, PermissionRequest>;
+  /** 마지막 턴 종료 결과 — 주의 상태 정책 입력 (M7 7.1.1) */
+  lastTurnOutcome: 'completed' | 'failed' | 'canceled' | undefined;
+  /** 사용자가 확인한 뒤 새 사건이 없는가 — 주의 상태 정책 입력 (M7 7.1.1) */
+  attentionAcknowledged: boolean;
   /** 영속화·팬아웃 순서 보장용 직렬 체인 */
   chain: Promise<void>;
   /**
@@ -97,6 +102,9 @@ export class SessionManager {
         nextSeq: (await this.store.lastSeq(meta.sessionId)) + 1,
         activeTurnId: undefined,
         pending: new Map(),
+        lastTurnOutcome: undefined,
+        // 재기동 복원 — 영속된 주의 상태를 그대로 되살린다 (FR-9.1 재접속 조회)
+        attentionAcknowledged: meta.requiresAttention !== true,
         chain: Promise.resolve(),
         metaChain: Promise.resolve(),
       });
@@ -164,6 +172,8 @@ export class SessionManager {
       nextSeq: 0,
       activeTurnId: undefined,
       pending: new Map(),
+      lastTurnOutcome: undefined,
+      attentionAcknowledged: true,
       chain: Promise.resolve(),
       metaChain: Promise.resolve(),
     };
@@ -279,6 +289,9 @@ export class SessionManager {
 
     const { turnId } = await live.runtime.startTurn(text);
     live.activeTurnId = turnId;
+    // 새 프롬프트 = 사용자가 이 세션에 붙어 있다 (7.1.1)
+    live.attentionAcknowledged = true;
+    live.lastTurnOutcome = undefined;
     // 매니저 소유 타임라인 행 — user_message + turn_started 는 즉시 발행 (FR-1.4)
     this.emit(live, { type: 'user_message', turnId, text });
     this.emit(live, { type: 'turn_started', turnId });
@@ -380,22 +393,36 @@ export class SessionManager {
         }
         this.emit(live, event);
         live.activeTurnId = undefined;
+        live.lastTurnOutcome =
+          event.type === 'turn_completed'
+            ? 'completed'
+            : event.type === 'turn_failed'
+              ? 'failed'
+              : 'canceled';
+        // 턴이 끝났다 = 사용자가 아직 결과를 못 봤다 (7.1.1)
+        live.attentionAcknowledged = false;
         void this.transition(live, 'idle');
         return;
       case 'session_status_changed':
         // 어댑터는 신호만 — 상태 반영 후 단일 이벤트로 통과 (비정상 종료 등)
         live.meta.status = event.status;
-        if (event.status === 'error') live.activeTurnId = undefined;
+        if (event.status === 'error') {
+          live.activeTurnId = undefined;
+          live.attentionAcknowledged = false;
+        }
         void this.persistMeta(live);
         this.emit(live, event);
+        this.refreshAttention(live);
         return;
       case 'permission_requested':
         live.pending.set(event.request.requestId, event.request);
         this.emit(live, event);
+        this.refreshAttention(live);
         return;
       case 'permission_resolved':
         live.pending.delete(event.requestId);
         this.emit(live, event);
+        this.refreshAttention(live);
         return;
       default:
         this.emit(live, event);
@@ -405,7 +432,16 @@ export class SessionManager {
   /** seq 부여는 동기, 영속화·팬아웃은 세션 체인으로 직렬화 — 순서 보장 */
   private emit(
     live: LiveSession,
-    body: AgentEvent | { type: 'user_message'; turnId: string; text: string },
+    body:
+      | AgentEvent
+      | { type: 'user_message'; turnId: string; text: string }
+      // 데몬 소유 이벤트 (M7 7.1.2) — 어댑터 유니온에는 없다
+      | {
+          type: 'attention_changed';
+          requiresAttention: boolean;
+          attentionReason?: AttentionState['attentionReason'];
+          attentionTimestamp?: string;
+        },
   ): void {
     const event = {
       ...body,
@@ -427,6 +463,58 @@ export class SessionManager {
     live.meta.status = status;
     await this.persistMeta(live);
     this.emit(live, { type: 'session_status_changed', status });
+    this.refreshAttention(live);
+  }
+
+  // ── 주의 상태 (M7 7.1.1·7.1.2, FR-9.1) ───────────────────────────────────
+
+  /**
+   * 정책 모듈을 돌려 상태가 달라졌을 때만 영속화 + 이벤트 발행.
+   * 상태를 바꿀 수 있는 지점(턴 종료·상태 전이·승인 요청/해소·확인)이 전부 여기로 모인다.
+   */
+  private refreshAttention(live: LiveSession): void {
+    const previous: AttentionState = {
+      requiresAttention: live.meta.requiresAttention === true,
+      ...(live.meta.attentionReason !== undefined
+        ? { attentionReason: live.meta.attentionReason }
+        : {}),
+      ...(live.meta.attentionTimestamp !== undefined
+        ? { attentionTimestamp: live.meta.attentionTimestamp }
+        : {}),
+    };
+    const next = computeAttention(
+      {
+        status: live.meta.status,
+        pendingPermissions: live.pending.size,
+        lastTurnOutcome: live.lastTurnOutcome,
+        acknowledged: live.attentionAcknowledged,
+      },
+      previous,
+    );
+    if (!attentionChanged(previous, next)) return;
+    live.meta.requiresAttention = next.requiresAttention;
+    live.meta.attentionReason = next.attentionReason;
+    live.meta.attentionTimestamp = next.attentionTimestamp;
+    void this.persistMeta(live);
+    this.emit(live, {
+      type: 'attention_changed',
+      requiresAttention: next.requiresAttention,
+      ...(next.attentionReason !== undefined ? { attentionReason: next.attentionReason } : {}),
+      ...(next.attentionTimestamp !== undefined
+        ? { attentionTimestamp: next.attentionTimestamp }
+        : {}),
+    });
+  }
+
+  /**
+   * 사용자가 세션을 확인했다 (7.1.2). 멱등. 승인 대기는 지워지지 않는다 —
+   * 화면을 본 것이 승인 응답은 아니다(정책 모듈이 그렇게 계산한다).
+   */
+  acknowledgeAttention(sessionId: string): void {
+    const live = this.requireSession(sessionId);
+    live.attentionAcknowledged = true;
+    live.lastTurnOutcome = undefined;
+    this.refreshAttention(live);
   }
 
   /** 세션별 직렬화 — 스냅샷을 체인에 태워 tmp+rename 경합 없이 호출 순서대로 기록 */
@@ -453,6 +541,15 @@ export class SessionManager {
       ...(live.meta.usageTotals !== undefined ? { usage: live.meta.usageTotals } : {}),
       createdAt: live.meta.createdAt,
       updatedAt: live.meta.updatedAt,
+      // 주의 상태는 목록에 항상 실린다 — 재접속 시 클라이언트가 없던 동안의 상태를
+      // 그대로 되찾는 경로다 (FR-9.1)
+      requiresAttention: live.meta.requiresAttention === true,
+      ...(live.meta.attentionReason !== undefined
+        ? { attentionReason: live.meta.attentionReason }
+        : {}),
+      ...(live.meta.attentionTimestamp !== undefined
+        ? { attentionTimestamp: live.meta.attentionTimestamp }
+        : {}),
     };
   }
 }

@@ -151,6 +151,33 @@ describe('DaemonServer', () => {
     expect(statuses).toContain('idle');
   });
 
+  it('routes session.attention.ack and is idempotent (M7 7.1.2)', async () => {
+    const ws = connect();
+    await hello(ws);
+    const ask = <T>(requestId: string, type: string, params: unknown): Promise<T> => {
+      const done = new Promise<T>((resolve) => {
+        ws.on('message', (data) => {
+          const message = JSON.parse(String(data)) as { requestId?: string };
+          if (message.requestId === requestId) resolve(message as T);
+        });
+      });
+      ws.send(JSON.stringify({ type, requestId, params }));
+      return done;
+    };
+    const created = await ask<{ result: { session: { sessionId: string } } }>(
+      'a-1',
+      'session.create.request',
+      { harness: 'mock', cwd: process.cwd() },
+    );
+    const { sessionId } = created.result.session;
+    for (const requestId of ['a-2', 'a-3']) {
+      const acked = await ask<{ ok: boolean }>(requestId, 'session.attention.ack.request', {
+        sessionId,
+      });
+      expect(acked.ok).toBe(true);
+    }
+  });
+
   it('projects DaemonError onto the RPC error shape', async () => {
     const ws = connect();
     await hello(ws);

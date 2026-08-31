@@ -9,6 +9,10 @@
 'use strict';
 
 const args = process.argv.slice(2);
+// spawn 인자 관측용 — 어댑터가 실제로 무엇을 붙였는지 테스트가 확인한다 (WBS 7.2.0b)
+if (process.env.FAKE_GROK_ARGV_FILE) {
+  require('node:fs').writeFileSync(process.env.FAKE_GROK_ARGV_FILE, JSON.stringify(args));
+}
 if (args.includes('--version')) {
   if (process.env.FAKE_GROK_BOGUS === '1') {
     process.stdout.write('SuperGrok CLI v9.9 (unofficial)\n');

@@ -28,6 +28,7 @@ export * from './gateway/key-store.js';
 export * from './gateway/pi-injection.js';
 export * from './gateway/omp-injection.js';
 export * from './gateway/grok-injection.js';
+export * from './gateway/home-isolation.js';
 export * from './gateway/service.js';
 export * from './launcher.js';
 export * from './manifest.js';
@@ -146,6 +147,20 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
       `[daemon] grok config.toml 관리 항목 드리프트 감지 — 자동 복구 안 함 (${grokInjection.configPath})`,
     );
   }
+  // 하네스 HOME 격리 준비 (WBS 7.2.0a, NFR-1) — 사용자 홈의 외부 MCP 설정 유입을 끊는다.
+  // 준비 실패는 기동을 막는다(격리 없이 spawn 하면 NFR-1 우회 통로가 열린 채로 동작한다).
+  for (const harness of ['pi', 'omp', 'grok'] as const) {
+    const isolated = await gateway.ensureHarnessHome(harness);
+    if (isolated === undefined) {
+      console.warn(
+        `[daemon] ${harness}: HOME 격리 꺼짐 (harness.homeIsolation=false) — 사용자 홈의 외부 MCP 설정이 유입될 수 있음 (NFR-1)`,
+      );
+      continue;
+    }
+    for (const warning of isolated.warnings)
+      console.warn(`[daemon] ${harness} 홈 격리: ${warning}`);
+  }
+
   // 트래픽 경계 검사 (FR-2.5, WBS 2.3.5) — 수동 변경으로 통제가 깨진 경우의 탐지 장치
   for (const violation of await gateway.checkTrafficBoundaries()) {
     console.warn(

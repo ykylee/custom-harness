@@ -92,8 +92,9 @@ describe('SessionManager', () => {
       'message_delta',
       'turn_completed',
       'session_status_changed', // idle
+      'attention_changed', // 턴 종료 → 확인 필요 (M7 7.1.2)
     ]);
-    expect(events.map((e) => e.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(events.map((e) => e.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     // 타임라인 영속화 동일 순서 (FR-1.3.1)
     expect((await manager.timeline(sessionId)).map((e) => e.type)).toEqual(types);
 
@@ -147,6 +148,90 @@ describe('SessionManager', () => {
     await settled();
     [summary] = await manager.listSessions();
     expect(summary?.pendingPermissions).toBeUndefined();
+  });
+
+  // ── 주의 상태 1급화 (M7 7.1.1·7.1.2, FR-9.1) ────────────────────────────
+
+  it('턴 종료가 주의 상태를 세우고 목록·이벤트에 함께 실린다', async () => {
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    const { turnId } = await manager.prompt(sessionId, '해줘');
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId });
+    await settled();
+
+    const changed = events.filter((e) => e.type === 'attention_changed');
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toMatchObject({ requiresAttention: true, attentionReason: 'finished' });
+    // 재접속 조회 경로 — 목록에 그대로 실린다
+    const [summary] = await manager.listSessions();
+    expect(summary).toMatchObject({ requiresAttention: true, attentionReason: 'finished' });
+    expect(typeof summary?.attentionTimestamp).toBe('string');
+  });
+
+  it('확인 처리(ack)는 완료 주의를 지우고 이벤트를 1번만 낸다 — 멱등', async () => {
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    const { turnId } = await manager.prompt(sessionId, '해줘');
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId });
+    await settled();
+
+    manager.acknowledgeAttention(sessionId);
+    manager.acknowledgeAttention(sessionId); // 두 번 불러도 변화는 1회
+    await settled();
+    expect(events.filter((e) => e.type === 'attention_changed')).toHaveLength(2);
+    const [summary] = await manager.listSessions();
+    expect(summary?.requiresAttention).toBe(false);
+  });
+
+  it('승인 대기는 확인 처리로 사라지지 않는다 — 화면을 본 것이 응답은 아니다', async () => {
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    adapter.sessions[0]!.emit({
+      type: 'permission_requested',
+      request: {
+        requestId: 'p-1',
+        kind: 'shell',
+        summary: 'rm 실행',
+        options: [{ optionId: 'o-1', label: '허용', kind: 'allow_once' }],
+      },
+    });
+    await settled();
+    manager.acknowledgeAttention(sessionId);
+    await settled();
+
+    const [summary] = await manager.listSessions();
+    expect(summary).toMatchObject({ requiresAttention: true, attentionReason: 'permission' });
+
+    // 승인에 응답하면 비로소 풀린다
+    await manager.respondPermission(sessionId, 'p-1', { optionId: 'o-1' });
+    await settled();
+    expect((await manager.listSessions())[0]?.requiresAttention).toBe(false);
+  });
+
+  it('새 프롬프트는 주의 상태를 해제한다 — 사용자가 붙어 있다', async () => {
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    const first = await manager.prompt(sessionId, '하나');
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId: first.turnId });
+    await settled();
+    expect((await manager.listSessions())[0]?.requiresAttention).toBe(true);
+
+    await manager.prompt(sessionId, '둘');
+    await settled();
+    expect((await manager.listSessions())[0]?.requiresAttention).toBe(false);
+  });
+
+  it('데몬 재기동 후에도 주의 상태가 그대로 조회된다 (클라이언트 부재 구간)', async () => {
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    const { turnId } = await manager.prompt(sessionId, '해줘');
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId });
+    await settled();
+
+    // 같은 저장소 위에 새 매니저를 세운다 = 데몬 재기동
+    const restarted = new SessionManager({ store, adapters: [new FakeAdapter()] });
+    await restarted.init();
+    const [summary] = await restarted.listSessions();
+    expect(summary).toMatchObject({
+      sessionId,
+      requiresAttention: true,
+      attentionReason: 'finished',
+    });
   });
 
   it('rejects model switch when unsupported — silent 실패 금지', async () => {

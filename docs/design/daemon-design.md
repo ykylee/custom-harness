@@ -3,8 +3,8 @@
 # 데몬 상세 설계 (M0 WBS 0.3)
 
 - 문서 목적: 세션 영속화 포맷, 프로세스 관리, 데이터 디렉토리 배치를 확정한다.
-- 상태: approved (v1, 2026-08-25 사용자 승인)
-- 최종 수정일: 2026-08-25
+- 상태: approved (v1.1, 2026-08-31 — spawn env 오버레이에 하네스 홈 격리 추가(M7 7.2.0a). v1: 2026-08-25 사용자 승인)
+- 최종 수정일: 2026-08-31
 - 입력: [어댑터 설계서](./adapter-contract.md), [프로토콜 설계](./protocol-design.md), [FR-1](../requirements/fr1-harness-sessions.md), [FR-4.3](../requirements/fr4-packaging.md)
 
 ## 1. 데이터 디렉토리 배치 (0.3.3)
@@ -16,6 +16,7 @@
 ├── data/                         # 버전 무관 사용자 데이터 — 롤백 영향 없음 (FR-4.4.2)
 │   ├── sessions/<sessionId>/     # §2 세션 영속화
 │   ├── grok-home/                # grok 격리 GROK_HOME (FR-2.1.3)
+│   ├── harness-home/<harness>/   # 하네스 HOME 격리 (M7 7.2.0a, NFR-1) — 빈 홈 + allowlist 반입
 │   ├── daemon.token              # 프로토콜 인증 토큰 (0600)
 │   ├── daemon.pid                # {pid, managedBy, bundleVersion} (FR-5.2)
 │   ├── processes.json            # PID 원장 (§3)
@@ -40,7 +41,7 @@ data/sessions/<sessionId>/
 
 ## 3. 프로세스 관리 (0.3.2)
 
-- **spawn 규약**: 어댑터가 인자 조립, 데몬이 실행. 실행 파일은 `current/harnesses/<h>/` 절대 경로 (PATH 금지, FR-1.1.1). env 오버레이 = 게이트웨이 키(env 전달) + 오프라인 스위치 + grok `GROK_HOME=data/grok-home`.
+- **spawn 규약**: 어댑터가 인자 조립, 데몬이 실행. 실행 파일은 `current/harnesses/<h>/` 절대 경로 (PATH 금지, FR-1.1.1). env 오버레이 = 게이트웨이 키(env 전달) + 오프라인 스위치 + grok `GROK_HOME=data/grok-home` + **홈 격리**(`HOME`·win32 `USERPROFILE`·XDG 4종 → `data/harness-home/<harness>/`, M7 7.2.0a).
 - **PID 원장** `processes.json`: `{ pid, sessionId, harness, spawnedAt, bundleVersion }` append → 종료 시 제거. 데몬 기동 시 원장 스캔: 살아있는 프로세스는 **소유 세션이 재개 가능하면 연결 복원 시도 없이 정리**(1차 단순화 — 어댑터 재접속은 하지 않고 graceful kill 후 세션은 재개 경로로), 죽은 항목은 제거. (프로세스 재접속 지원은 과설계로 판단, 필요 시 개정)
 - **종료 단계화**: graceful(프로토콜 종료/ SIGTERM) → 5초 → SIGKILL. grok 은 SIGTERM 세션 저장 보장이 잔여 실측 — 결과에 따라 종료 전 `session/cancel` 선행 여부 결정.
 - **데몬 수명**: 셸이 detached spawn(FR-1.1.5), `daemon.pid` 의 `managedBy` 로 소유 구분(FR-5.2). 데몬 셧다운 시: 실행 중 턴 interrupt → 하네스 정리 → 원장 비우기 → 토큰 파일 삭제.

@@ -133,6 +133,16 @@ const sessionStatusChanged = z.looseObject({
   error: ErrorInfoSchema.optional(),
 });
 const errorEvent = z.looseObject({ type: z.literal('error'), error: ErrorInfoSchema });
+/**
+ * 주의 상태 전이 (M7 7.1.2, FR-9.1) — 데몬의 단일 정책 모듈만 발행한다.
+ * 사이드바 버킷·트레이 배지·OS 알림·자동 승인이 전부 이 하나를 소비한다.
+ */
+const attentionChanged = z.looseObject({
+  type: z.literal('attention_changed'),
+  requiresAttention: z.boolean(),
+  attentionReason: z.enum(['permission', 'error', 'finished']).optional(),
+  attentionTimestamp: z.string().optional(),
+});
 
 /** 어댑터가 올리는 이벤트 — sessionId/seq 없음 (세션 스코프는 데몬이 부여) */
 export const AgentEventSchema = z.discriminatedUnion('type', [
@@ -184,5 +194,7 @@ export const SessionEventSchema = z.discriminatedUnion('type', [
   usageUpdated.extend(wireEnvelope),
   sessionStatusChanged.extend(wireEnvelope),
   errorEvent.extend(wireEnvelope),
+  // 데몬 소유 — 어댑터 유니온(AgentEvent)에는 없다 (user_message 와 같은 층)
+  attentionChanged.extend(wireEnvelope),
 ]);
 export type SessionEvent = z.infer<typeof SessionEventSchema>;
