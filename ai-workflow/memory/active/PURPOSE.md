@@ -14,9 +14,9 @@ last_purpose_review: 2026-08-24
 
 ## 1. Goals
 
-- **G1**: 폐쇄망(사내망)에서 여러 오픈소스 코딩 에이전트 하네스를 하나의 데스크톱 UI 로 선택·사용할 수 있게 하는 오케스트레이션 도구를 만든다. 에이전트 루프는 래핑된 하네스가 소유하고, 이 도구는 하네스의 실행·상태·UI 를 소유한다.
-- **G2**: 설치 패키지에 지원 하네스와 게이트웨이 연결 설정을 동봉해, 설치 즉시 사용 가능한(zero-config) 상태를 제공한다 — 폐쇄망에서는 이것이 편의가 아니라 성립 조건이다.
-- **G3**: 모든 LLM 트래픽이 커스텀 게이트웨이(OpenAI 호환)만 경유하도록 하네스 연결을 통제하고, 외부 네트워크 참조를 제거한다.
+- **G1**: 폐쇄망(사내망)에서 여러 오픈소스 코딩 에이전트 하네스를 하나의 데스크톱 UI 로 선택·사용할 수 있게 하는 오케스트레이션 도구를 만든다. 에이전트 루프는 [[harness-wrapping|래핑된 하네스]]가 소유하고, 이 도구는 하네스의 실행·상태·UI 를 소유한다.
+- **G2**: 설치 패키지에 지원 하네스와 게이트웨이 연결 설정을 동봉해, 설치 즉시 사용 가능한([[zero-config-bundle|zero-config]]) 상태를 제공한다 — 폐쇄망에서는 이것이 편의가 아니라 성립 조건이다.
+- **G3**: 모든 LLM 트래픽이 커스텀 게이트웨이(OpenAI 호환)만 경유하도록 하네스 연결을 [[credential-injection|통제]]하고, [[closed-network-self-containment|외부 네트워크 참조를 제거]]한다.
 
 ## 2. Key Questions (설계 단계로 이월)
 
@@ -29,12 +29,12 @@ last_purpose_review: 2026-08-24
 
 ### 포함 영역
 
-- 하네스 래핑 어댑터 (1차: pi / oh my pi / grok build → 확장: opencode → 후순위: claude, codex)
+- [[harness-wrapping|하네스 래핑]] 어댑터 (1차: pi / oh my pi / grok build → 확장: opencode → 후순위: claude, codex)
 - 데몬 + 데스크톱 UI (TypeScript / Electron / React — 데몬 중심, 셸은 수명주기만)
-- 게이트웨이 연결 설정 주입과 트래픽 통제
-- 하네스 동봉 오프라인 패키지(3 OS 아카이브, manifest 버전 세트) 설계
+- [[credential-injection|게이트웨이 연결 설정 주입]]과 [[closed-network-self-containment|트래픽 통제]]
+- [[zero-config-bundle|하네스 동봉 오프라인 패키지]](3 OS 아카이브, manifest 버전 세트) 설계
 - (후순위) 조직 공용 스킬/MCP 세트 공유
-- (2026-08-30 범위 확장) 프로젝트·워크스페이스 3계층 모델(M5) → 작업 캔버스: 터미널·파일·diff(M6) → 오케스트레이션: 주의 상태·역방향 툴·서브에이전트 위임·CLI 자동화(M7). 근거: docs/reference/paseo-service-inventory.md
+- (2026-08-30 범위 확장) [[workspace-three-layer|프로젝트·워크스페이스 3계층 모델]](M5) → [[workbench-canvas|작업 캔버스]]: 터미널·파일·diff(M6) → 오케스트레이션: [[attention-state|주의 상태]]·[[reverse-tools|역방향 툴]]·서브에이전트 위임·CLI 자동화(M7). 근거: docs/reference/paseo-service-inventory.md
 
 ### 제외 영역
 
@@ -47,4 +47,4 @@ last_purpose_review: 2026-08-24
 
 ## 4. Evolving Thesis
 
-폐쇄망에서는 하네스를 개별 설치하고 프로바이더에 연결하는 전제 자체가 성립하지 않는다. 따라서 "하네스 동봉 배포 + 게이트웨이 사전 구성 + 통합 데스크톱 UI"의 결합이 곧 제품 가치다. 아키텍처는 paseo 가 실증한 데몬 중심 + 얇은 클라이언트 패턴을 따르되, paseo(AGPL-3.0)의 코드는 재사용하지 않고 패턴만 참고한다.
+폐쇄망에서는 하네스를 개별 설치하고 프로바이더에 연결하는 전제 자체가 성립하지 않는다. 따라서 "하네스 동봉 배포 + 게이트웨이 사전 구성 + 통합 데스크톱 UI"의 결합이 곧 제품 가치다. 아키텍처는 paseo 가 실증한 데몬 중심 + 얇은 클라이언트 패턴을 따르되([[home-isolation|하네스 격리]]는 폐쇄망 요건에서 우리가 추가한 층이다), paseo(AGPL-3.0)의 코드는 재사용하지 않고 패턴만 참고한다.

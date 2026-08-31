@@ -21,6 +21,7 @@
 
 - (2026-08-30 6차 갱신) **실기기 피드백 반영 + 진행 중 2건 종료**: Windows 실기기 lint·test 통과 확인, 실기기 피드백 4건 반영(번들 GUI 흰 화면=Vite base `'./'`, 세션 생성 cwd 선검증, win32 번들 grok 설정 템플릿 잔여물 제거, 메뉴바 제거+데몬 하네스 경로 manifest 폴백) → TASK-026 done. 렌더러 다크 우선 토큰 디자인 시스템 + 타임라인 시간순 세그먼트 분할 + 대화 뷰 스크롤 경합 수정 → TASK-027 done. 테스트 195건·3 OS 재조립 그린. **진행 중 0건 — 잔여는 전부 사내 협조(C-1 게이트웨이 실측, C-5 linux/win 매트릭스 나머지)**
 
+- (2026-08-31 12차 갱신) **워크플로 지식 계층 신설 — `ai-workflow/wiki/`.** 부트스트랩 시 `--enable-wiki` 를 안 켠 탓에 위키 계층이 처음부터 없었고, `CLAUDE.md:35` 는 없는 `wiki/index.md` 를 "에이전트 질의 시 가장 먼저 로드하라"고 지시하고 있었다(매 세션 진입 규칙의 끊긴 참조). 누적 지식을 소급 정리해 **26 페이지**를 세웠다 — concepts 9 / entities 5 / decisions 5 / patterns 3 / queries 4. **본체는 handoff 에 쌓여 있던 실측 사실의 주제별 재배치**다: 하네스 3종의 버전별 실측(omp `tools.xdev` 은닉·비동기 로딩, grok 권한 모드 행렬·메타 툴 규약, pi 의 MCP 배제와 확장 대체), 결정 5건의 **왜**, 반복 질의 4종의 경로. 원 문서는 복사하지 않고 링크로 넘기며 전 페이지에 `last_ingested_from`(36 경로 실재 확인)을 남겨 스테일 판정이 가능하다. PURPOSE.md 에 `[[슬러그|표시]]` 8곳 연결(표시 문구 불변) → 교차참조 matched 9 / missing 0. `wk session-start`·`doc-sync` 의 상시 경고 소멸. → TASK-007 done.
 - (2026-08-31 11차 갱신) **M7 7.2.2 역방향 툴 카탈로그 확정.** `packages/protocol/src/tools.ts` + [설계서](../../../docs/design/reverse-tool-catalog.md). **프로토콜 층에 둔 이유**: 노출 경로가 둘(omp·grok = 데몬 MCP 서버 / pi = 확장)이라 각자 정의하면 하네스마다 다른 툴 표면이 생긴다. 툴 10종(`session_list`(주의 상태 동봉)·`session_read`·`session_new`·`session_say`·`session_stop`·`ws_list`·`term_list`·`term_new`·`term_send`·`term_read`), 이름 3~24자(하네스가 `mcp__ch_*`/`ch__*` 로 재접두사). **승인은 우리가 소유한다** — 하네스는 우리 서버를 한 덩어리로만 봐 "목록 조회"와 "임의 셸 입력"을 구분 못 한다: `write` 전부 승인 대상 / `read` 승인 불요(조회까지 막으면 감시 불가)를 테스트로 고정. 파라미터는 `z.object`(엄격) — 모델의 환각 파라미터가 조용히 무시되면 안 되므로 와이어 `looseObject` 관례를 따르지 않는다. 테스트 385건 그린. → **7.2.3 착수 가능.**
 - (2026-08-31 10차 갱신) **M7 WP 7.1 주의 상태 1급화 완료.** "사용자가 봐야 할 세션"의 판단을 렌더러 로컬 계산에서 데몬 정본으로 이관했다. `packages/daemon/src/attention.ts` 가 단일 정책 지점 — 사유 우선순위 `permission` > `error` > `finished`, **승인 대기는 확인 처리(ack)로 사라지지 않고**(화면을 본 것이 응답은 아니다), 실행 중·취소된 턴은 주의 대상이 아니며, 같은 사유가 이어지면 `attentionTimestamp` 로 최초 전이 시각을 보존한다. 세션 레코드에 3필드 영속 → **데몬 재기동 후에도 그대로 조회**(클라이언트 부재 구간 보존을 테스트로 고정). `attention_changed` 와이어 이벤트(변화 시에만) + `session.attention.ack` RPC(멱등) 추가. 렌더러는 `bucketOf` 재계산을 버리고 데몬 값만 소비('확인 필요' 버킷 신설), 알림도 `turn_completed`/`permission_requested` 각자 해석에서 `attention_changed` 단일 소비로 이관, 세션을 열면 ack. 테스트 **376건**(+18) 그린. → **7.2.2 착수 가능**(7.1.1 선행 해소).
 - (2026-08-31 9차 갱신) **M7 7.2.0b grok 권한 모드 확정 — WP 7.2 선행 전부 해소.** 7.2.1 의 "grok 이 MCP 툴 호출을 승인 요청 없이 거절" 결함은 **7.2.0a 와 같은 뿌리**였다: grok 이 사용자 실제 `$HOME` 의 `~/.claude/settings.json`(`permissions.defaultMode="auto"`)을 Claude 호환 import 로 읽어 auto 모드로 들어갔고, auto 는 목록에 없는 툴을 *묻지 않고* 거절한다(`grok inspect` 가 `Permissions Source: ~/.claude/settings.json  12 loaded` 를 직접 찍는다). 격리만으로 증상은 사라지지만 미지정 상태는 탐색 결과에 좌우되므로(1.0.5→1.0.13 이미 드리프트) **`GrokAdapter` 가 `--permission-mode default` 를 항상 명시**하도록 고정했다. 모드 행렬 실측(`scripts/grok-permission-probe.mjs` 신설) 결과 **MCP 툴·내장 파괴적 툴이 동시에 승인 대상인 모드는 `default` 뿐** — `acceptEdits`·`dontAsk`·`plan` 은 MCP 툴을 묻지 않고 실행한다. 검증: `mcp-probe --daemon --only grok` 이 우회 플래그 없이 PASS. 테스트 360건 그린. → **7.2.2 착수 가능.**
@@ -31,6 +32,7 @@
 
 - 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
 - M3 잔여 후보(사내 협조 무관 순수 사외분 아님 — 대부분 C-1·C-5 후속) — 3.1 업데이트·롤백, 3.3.2 앱 정보 화면 고지 열람·clean-room 검수, 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
+- TASK-2026-08-31-main-007 워크플로 지식 계층 소급 구축(ai-workflow/wiki 26 페이지): done
 - TASK-2026-08-31-main-006 M7 7.2.2 역방향 툴 카탈로그 정본 정의(FR-9.2): done
 - TASK-2026-08-31-main-005 M7 WP 7.1 주의 상태 1급화(FR-9.1): done
 - TASK-2026-08-31-main-004 M7 7.2.0b grok 권한 모드 확정(FR-1.5): done
@@ -40,10 +42,10 @@
 - TASK-2026-08-30-main-008 M6 6.4~6.7 파일·diff·스크립트·부하(M6 완료): done
 - TASK-2026-08-30-main-007 M6 6.1~6.3 설계·탭 타깃 일반화·터미널: done
 - TASK-2026-08-30-main-006 M5 5.5~5.7 worktree 격리·UI 재편·검증(M5 완료): done
-- TASK-2026-08-30-main-005 M5 5.4 세션의 워크스페이스 귀속 + 1회 백필: done
 
 ## Key Changes
 
+- (2026-08-31) **워크플로 지식 계층**: `ai-workflow/wiki/` 신설 — `SCHEMA.md`(운영 헌법: 타입 경계·frontmatter 계약·PURPOSE 교차참조 규칙·갱신 규칙) + `index.md`(R4 앵커 26건) + `log.md`(append-only) + 페이지 26종. `PURPOSE.md` 에 위키 링크 8곳(표시 문구 불변). **주의**: 페이지 갱신 규칙은 SCHEMA §5 — 하네스 번들을 갱신하면 `entities/harness-*` 의 실측값과 `updated` 를 같은 커밋에서 고친다. 자동 드리프트 검사는 없다(킷의 `score_wiki_maintainability` 는 킷 저장소 기준이라 이 저장소를 채점하지 않는다).
 - (2026-08-31) **M7 7.2.2 툴 카탈로그**: `packages/protocol/src/tools.ts`(`ToolSpec`·`TOOL_CATALOG` 10종·`TOOL_NAME_PATTERN`·`toolDescriptor()` zod→JSON Schema) + `docs/design/reverse-tool-catalog.md` 신설.
 - (2026-08-31) **M7 WP 7.1 주의 상태**: `packages/daemon/src/attention.ts`(정책) + `SessionManager.refreshAttention()`(턴 종료·상태 전이·승인 요청/해소·ack·새 프롬프트가 전부 여기로 모임) + `attention_changed` 이벤트 + `session.attention.ack` RPC + `summarize()` 주의 3필드. 렌더러 `bucketOf`/알림 경로 단일 소비로 재배선, 세션 열기 시 ack.
 - (2026-08-31) **M7 7.2.0b grok 권한 모드**: `GrokAdapter` 에 `permissionMode`(`GrokPermissionMode`, 기본 `'default'`, `'inherit'` 만 플래그 생략) 추가 — `agent stdio` spawn 에 `--permission-mode` 를 항상 명시. `main.ts` 도 명시 지정. fake grok 픽스처가 `FAKE_GROK_ARGV_FILE` 로 spawn 인자를 기록해 테스트가 검증(3건). 승인 옵션 2종→**3종** 재실측(영속 `always-allow`/`allow-edits-session` 노출, ACP `kind` 정확) — adapter-contract §4 의 재실측 조건 발동.
