@@ -5,12 +5,16 @@ import type { AgentAdapter } from './adapters/contract.js';
 import { KeyStore, type SecretCipher } from './gateway/key-store.js';
 import { GatewayService } from './gateway/service.js';
 import { loadBundleManifest } from './manifest.js';
+import { createAuditLogger } from './mcp/audit.js';
 import {
   piExtensionEnv,
   registerGrokMcpServer,
   registerOmpMcpServer,
   registerPiExtension,
   resolveMcpServerSpec,
+  unregisterGrokMcpServer,
+  unregisterOmpMcpServer,
+  unregisterPiExtension,
 } from './mcp/registration.js';
 import { resolvePaths, type DaemonPaths } from './paths.js';
 import { ProcessSupervisor } from './processes.js';
@@ -189,9 +193,41 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
   // 역방향 툴 MCP 등록 (WBS 7.2.3, FR-9.2) — 홈 격리 뒤에 온다(등록 대상이 격리 홈이다).
   // 실패는 기동을 막지 않는다: 격리와 달리 이건 보안 경계가 아니라 기능이고, 못 붙으면
   // 역방향 툴이 안 보일 뿐 하네스는 정상 동작한다.
+  //
+  // **opt-in (WBS 7.2.4)**: 기본 off. 꺼져 있으면 등록하지 않는 데서 그치지 않고 **이전에
+  // 남긴 등록을 지운다** — 남겨 두면 하네스가 서버를 계속 띄우고 모델에게는 부를 때마다
+  // 거부되는 툴 10개가 보인다.
   const registeredHarnesses = new Set(adapters.map((adapter) => adapter.id));
+  const reverseToolsEnabled = settings.resolve('toolsReverseExposure').value;
   const mcpSpec = resolveMcpServerSpec({ root: paths.root });
-  if (registeredHarnesses.has('omp')) {
+  if (!reverseToolsEnabled) {
+    for (const [harness, remove] of [
+      ['omp', () => unregisterOmpMcpServer(paths.ompHomeDir)],
+      ['pi', () => unregisterPiExtension(paths.piHomeDir)],
+      [
+        'grok',
+        async () =>
+          options.harnessExecPaths?.grok === undefined
+            ? { status: 'absent' as const }
+            : unregisterGrokMcpServer({
+                execPath: options.harnessExecPaths.grok,
+                grokHome: paths.grokHomeDir,
+                env: await gateway.buildEnv('grok'),
+              }),
+      ],
+    ] as const) {
+      if (!registeredHarnesses.has(harness)) continue;
+      try {
+        const result = await remove();
+        if (result.status === 'removed') {
+          console.warn(`[daemon] ${harness} 역방향 툴 등록 해제 (tools.reverseExposure=false)`);
+        }
+      } catch (error) {
+        console.warn(`[daemon] ${harness} 역방향 툴 등록 해제 실패:`, error);
+      }
+    }
+  }
+  if (reverseToolsEnabled && registeredHarnesses.has('omp')) {
     try {
       const result = await registerOmpMcpServer(paths.ompHomeDir, mcpSpec);
       if (result.status !== 'unchanged') {
@@ -203,7 +239,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
   }
   // pi 는 MCP 를 배제하므로 같은 카탈로그를 확장으로 노출한다 (7.2.3b).
   // 확장이 MCP 서버를 자식으로 띄우므로 카탈로그·승인 게이트·바인딩이 그대로 재사용된다.
-  if (registeredHarnesses.has('pi')) {
+  if (reverseToolsEnabled && registeredHarnesses.has('pi')) {
     try {
       const installed = await registerPiExtension(paths.piHomeDir);
       piReverseToolsEnv = piExtensionEnv(mcpSpec);
@@ -212,7 +248,11 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
       console.warn('[daemon] pi 역방향 툴 확장 설치 실패 — 역방향 툴 미노출:', error);
     }
   }
-  if (registeredHarnesses.has('grok') && options.harnessExecPaths?.grok !== undefined) {
+  if (
+    reverseToolsEnabled &&
+    registeredHarnesses.has('grok') &&
+    options.harnessExecPaths?.grok !== undefined
+  ) {
     try {
       await registerGrokMcpServer({
         execPath: options.harnessExecPaths.grok,
@@ -241,6 +281,14 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     keyStore,
     provisioning,
     terminals,
+    // 역방향 툴 관문 (WBS 7.2.4). opt-in 은 **호출 시점에** 다시 읽는다 — 기동 시 값을 굳히면
+    // 설정을 끈 뒤에도 이미 떠 있는 MCP 서버가 계속 통과한다.
+    reverseTools: {
+      audit: createAuditLogger(join(paths.logsDir, 'reverse-tools.jsonl')),
+      supervisor,
+      isEnabled: () => settings.resolve('toolsReverseExposure').value,
+      maxSessionDepth: () => settings.resolve('toolsMaxSessionDepth').value,
+    },
     ...(options.port !== undefined ? { port: options.port } : {}),
     onShutdownRequest: () => void stop(),
   });

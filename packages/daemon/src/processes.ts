@@ -208,6 +208,17 @@ export class ProcessSupervisor {
     return result;
   }
 
+  /**
+   * pid → 세션 역인덱스 (M7 7.2.4).
+   *
+   * 역방향 툴을 부른 MCP 서버 프로세스는 **하네스의 자식**이라, 그 부모 pid 가 원장에 있다.
+   * 노출 프로세스가 자기 세션을 스스로 주장하게 두지 않는 이유: 그 값은 하네스가 spawn 한
+   * 프로세스의 자기 신고라 검증할 수 없다. 원장은 우리가 spawn 하며 직접 적은 기록이다.
+   */
+  async findByPid(pid: number): Promise<{ sessionId?: string; harness?: string } | undefined> {
+    return (await this.readLedger()).find((entry) => entry.pid === pid);
+  }
+
   /** 데몬 셧다운 경로 — 남은 프로세스 전부 단계적 종료 */
   async terminateAll(): Promise<void> {
     await Promise.all([...this.live].map((p) => p.terminate()));

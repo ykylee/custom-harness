@@ -118,7 +118,7 @@ describe('createLineReader', () => {
 });
 
 describe('createToolInvoker — 승인 게이트', () => {
-  it('카탈로그의 write 툴 전부가 거부된다 (승인 채널은 7.2.4)', async () => {
+  it('게이트 없는 경로에서는 write 툴 전부가 거부된다', async () => {
     const invoker = createToolInvoker({ rpc: fakeRpc() });
     const writeTools = TOOL_CATALOG.filter((tool) => tool.effect === 'write');
     expect(writeTools.length).toBeGreaterThan(0);
@@ -148,12 +148,35 @@ describe('createToolInvoker — 승인 게이트', () => {
     expect(rpc.calls[0]!.method).toBe('workspace.list');
   });
 
-  it('allowApprovalRequired 를 켜도 바인딩 없는 write 툴은 명시적으로 실패한다', async () => {
-    // 7.2.4 가 게이트를 열 때 바인딩을 잊으면 조용한 no-op 이 아니라 오류로 드러나야 한다
-    const invoker = createToolInvoker({ rpc: fakeRpc(), allowApprovalRequired: true });
+  it('게이트가 통과시키면 write 툴이 데몬 RPC 까지 간다 (7.2.4)', async () => {
+    const rpc = fakeRpc({ 'session.interrupt': {} });
+    const invoker = createToolInvoker({ rpc, gate: async () => ({ allow: true }) });
+    const result = await invoker.call('session_stop', { sessionId: 's1' });
+    expect(result.isError).toBe(false);
+    expect(rpc.calls[0]!.method).toBe('session.interrupt');
+  });
+
+  it('게이트가 거부하면 사유가 그대로 모델에게 간다 — RPC 는 불리지 않는다', async () => {
+    const rpc = fakeRpc({ 'session.interrupt': {} });
+    const invoker = createToolInvoker({
+      rpc,
+      gate: async () => ({ allow: false, reason: '사용자가 거부했다' }),
+    });
     const result = await invoker.call('session_stop', { sessionId: 's1' });
     expect(result.isError).toBe(true);
-    expect(textOf(result)).toContain('7.2.4');
+    expect(textOf(result)).toContain('사용자가 거부했다');
+    expect(rpc.calls).toHaveLength(0);
+  });
+
+  it('게이트가 만든 라벨이 session.create 로 전달된다 — 재귀 깊이의 근거', async () => {
+    const rpc = fakeRpc({ 'session.create': { session: { sessionId: 'child' } } });
+    const invoker = createToolInvoker({
+      rpc,
+      gate: async () => ({ allow: true, labels: { 'ch.toolDepth': '1' } }),
+    });
+    const result = await invoker.call('session_new', { harness: 'mock', cwd: '/tmp' });
+    expect(result.isError).toBe(false);
+    expect(rpc.calls[0]!.params.labels).toEqual({ 'ch.toolDepth': '1' });
   });
 });
 

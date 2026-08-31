@@ -22,6 +22,12 @@ export interface DaemonRpcClientOptions {
    */
   root: string;
   timeoutMs?: number;
+  /**
+   * RPC 응답 대기 상한. 접속 타임아웃과 나눈 이유는 `tool.invoke` 때문이다 (WBS 7.2.4):
+   * 승인 대상 툴은 **사용자가 승인 카드를 누를 때까지** 응답하지 않으므로 접속에 쓰는
+   * 10초로는 턱없이 짧다. 데몬 쪽 승인 만료(120초)보다 넉넉해야 만료 응답을 받아볼 수 있다.
+   */
+  callTimeoutMs?: number;
 }
 
 export interface DaemonRpcClient extends DaemonRpc {
@@ -36,6 +42,7 @@ interface Pending {
 
 export async function connectDaemonRpc(options: DaemonRpcClientOptions): Promise<DaemonRpcClient> {
   const timeoutMs = options.timeoutMs ?? 10_000;
+  const callTimeoutMs = options.callTimeoutMs ?? timeoutMs;
   const paths = resolvePaths(options.root);
   const info = await readDaemonInfo(paths);
   if (!info?.port) {
@@ -109,7 +116,7 @@ export async function connectDaemonRpc(options: DaemonRpcClientOptions): Promise
       const timer = setTimeout(() => {
         pending.delete(requestId);
         reject(new Error(`${method} 응답 타임아웃`));
-      }, timeoutMs);
+      }, callTimeoutMs);
       pending.set(requestId, { resolve, reject, timer });
       ws.send(JSON.stringify({ type: `${method}.request`, requestId, params }));
     });

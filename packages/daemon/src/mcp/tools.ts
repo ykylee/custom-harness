@@ -1,8 +1,12 @@
-// 역방향 툴 → 데몬 RPC 바인딩 (WBS 7.2.3, FR-9.2)
+// 역방향 툴 → 데몬 RPC 바인딩 (WBS 7.2.3·7.2.4, FR-9.2)
 //
 // 카탈로그(`@custom-harness/protocol` tools.ts)는 무엇을 노출할지를 정하고, 여기서는 그것을
 // 데몬 RPC 에 잇는다. 노출 경로가 둘(MCP 서버 / pi 확장)이므로 이 바인딩도 경로와 무관해야
 // 한다 — 그래서 전송이 아니라 `DaemonRpc` 인터페이스에만 의존한다.
+//
+// 7.2.4 부터 이 invoker 는 **데몬 안에서** 돈다(`tool.invoke` RPC). 노출 프로세스는 전송만
+// 한다 — 승인·감사·재귀 상한이 전부 게이트를 통과해야 하는데, 그 셋의 근거(사용자 연결·단일
+// 기록자·세션 그래프)가 데몬에만 있기 때문이다.
 import {
   TOOL_CATALOG,
   findTool,
@@ -12,30 +16,43 @@ import {
 } from '@custom-harness/protocol';
 import type { ToolCallResult, ToolInvoker } from './server.js';
 
-/** 데몬 RPC 한 번 — 전송(WS)은 호출자가 소유한다 */
+/** 데몬 RPC 한 번 — 전송(WS 또는 데몬 내부 호출)은 호출자가 소유한다 */
 export interface DaemonRpc {
   call(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
+/** 게이트 판정 — 통과 여부와, 통과 시 실행에 얹을 부가 정보 */
+export interface ToolGateDecision {
+  allow: boolean;
+  /** 거부 사유. **모델이 읽는다** — 다른 수단을 찾을 수 있는 문장이어야 한다 */
+  reason?: string;
+  /** 세션 생성 툴에 붙일 라벨 (부모·깊이) — 게이트가 깊이를 세므로 게이트가 만든다 */
+  labels?: Record<string, string>;
+}
+
+/**
+ * 실행 직전 관문. 파라미터 검증을 통과한 뒤에 불린다 — 무엇을 하려는지 확정된 뒤라야
+ * 사용자에게 물을 문장을 만들 수 있고, 감사 로그도 같은 것을 적을 수 있다.
+ */
+export type ToolGate = (spec: ToolSpec, args: Record<string, unknown>) => Promise<ToolGateDecision>;
+
 export interface ToolInvokerOptions {
   rpc: DaemonRpc;
   /**
-   * 승인 대상(write) 툴을 실행할 수 있는가.
+   * 없으면 승인 대상(write) 툴은 전부 거부된다.
    *
-   * 7.2.3 은 **노출**까지가 범위이고 승인 채널(데몬이 스스로 사용자에게 묻는 경로)은 7.2.4 다.
-   * 그때까지 write 툴은 카탈로그에 보이되 실행되지 않는다 — 승인 없이 실행하면 카탈로그가
-   * 테스트로 고정한 "write 는 전부 승인 대상" 규칙이 표면에서만 참인 상태가 된다.
+   * 게이트를 옵션으로 둔 이유는 테스트 편의가 아니라 **기본값의 방향** 때문이다: 게이트를
+   * 붙이는 것을 잊은 호출 경로가 생기면 write 툴이 승인 없이 열리는 것이 아니라 막힌다.
    */
-  allowApprovalRequired?: boolean;
+  gate?: ToolGate;
 }
 
-/** 승인 채널이 없어 거부할 때의 문구 — 모델이 읽고 다른 수단을 찾을 수 있어야 한다 */
-function approvalRequiredText(spec: ToolSpec): string {
+/** 게이트가 없어 거부할 때의 문구 — 모델이 읽고 다른 수단을 찾을 수 있어야 한다 */
+function noGateText(spec: ToolSpec): string {
   return (
-    `${spec.name} 은(는) 사용자 승인이 필요한 툴이라 현재 실행할 수 없다. ` +
-    `승인 채널은 아직 구현 전이다(WBS 7.2.4). 조회 툴(session_list · session_read · ` +
-    `ws_list · term_list · term_read)은 그대로 쓸 수 있으니, 상태를 확인한 뒤 ` +
-    `변경이 필요한 일은 사용자에게 요청하라.`
+    `${spec.name} 은(는) 사용자 승인이 필요한 툴인데 이 경로에는 승인 채널이 없다. ` +
+    `조회 툴(session_list · session_read · ws_list · term_list · term_read)은 그대로 쓸 수 ` +
+    `있으니, 상태를 확인한 뒤 변경이 필요한 일은 사용자에게 요청하라.`
   );
 }
 
@@ -83,7 +100,7 @@ const asArray = (value: unknown): Record<string, unknown>[] =>
  * 환각 파라미터가 조용히 무시되면 잘못된 대상에 작업이 나갈 수 있다 (7.2.2 결정).
  */
 export function createToolInvoker(options: ToolInvokerOptions): ToolInvoker {
-  const { rpc, allowApprovalRequired = false } = options;
+  const { rpc, gate } = options;
 
   return {
     list(): ToolDescriptor[] {
@@ -107,15 +124,15 @@ export function createToolInvoker(options: ToolInvokerOptions): ToolInvoker {
       }
       const args = parsed.data as Record<string, unknown>;
 
-      if (spec.approval && !allowApprovalRequired) {
-        return fail(approvalRequiredText(spec));
+      if (!gate) {
+        // 게이트 없는 경로는 조회만 흘려보낸다
+        if (spec.approval) return fail(noGateText(spec));
+        return dispatch(rpc, spec, args, { allow: true });
       }
 
-      try {
-        return await dispatch(rpc, spec, args);
-      } catch (error) {
-        return fail(`${name} 실행 실패: ${error instanceof Error ? error.message : String(error)}`);
-      }
+      const decision = await gate(spec, args);
+      if (!decision.allow) return fail(decision.reason ?? `${name} 이(가) 거부됐다.`);
+      return dispatch(rpc, spec, args, decision);
     },
   };
 }
@@ -124,8 +141,25 @@ async function dispatch(
   rpc: DaemonRpc,
   spec: ToolSpec,
   args: Record<string, unknown>,
+  decision: ToolGateDecision,
+): Promise<ToolCallResult> {
+  try {
+    return await run(rpc, spec, args, decision);
+  } catch (error) {
+    return fail(
+      `${spec.name} 실행 실패: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function run(
+  rpc: DaemonRpc,
+  spec: ToolSpec,
+  args: Record<string, unknown>,
+  decision: ToolGateDecision,
 ): Promise<ToolCallResult> {
   switch (spec.name) {
+    // ── 조회 (승인 불요) ─────────────────────────────────────────────────────
     case 'session_list': {
       const params =
         args.workspaceId !== undefined ? { workspaceId: args.workspaceId as string } : {};
@@ -172,9 +206,54 @@ async function dispatch(
       return ok({ output: text, truncated: result.truncated === true });
     }
 
-    // write 툴은 승인 채널(7.2.4)이 붙기 전에는 여기까지 오지 않는다.
-    // 온다면 `allowApprovalRequired` 가 켜진 것이고, 그 배선은 7.2.4 의 몫이다.
+    // ── 변경 (승인 대상) ─────────────────────────────────────────────────────
+    case 'session_new': {
+      const params: Record<string, unknown> = { harness: args.harness, cwd: args.cwd };
+      if (args.workspaceId !== undefined) params.workspaceId = args.workspaceId;
+      if (args.modelId !== undefined) params.modelId = args.modelId;
+      // 부모·깊이 라벨은 게이트가 만든다 — 상한을 센 주체가 그 근거도 남긴다
+      if (decision.labels !== undefined) params.labels = decision.labels;
+      const result = await rpc.call('session.create', params);
+      const session = (result.session ?? {}) as Record<string, unknown>;
+      return ok({ session: summarizeSession(session) });
+    }
+
+    case 'session_say': {
+      const result = await rpc.call('session.prompt', {
+        sessionId: args.sessionId,
+        prompt: args.prompt,
+      });
+      // 턴 완료를 기다리지 않는다(카탈로그 계약) — 진행 확인은 session_read 로
+      return ok({ turnId: result.turnId, note: '턴이 시작됐다. 진행은 session_read 로 확인한다.' });
+    }
+
+    case 'session_stop': {
+      await rpc.call('session.interrupt', { sessionId: args.sessionId });
+      return ok({ stopped: true }); // 멱등 — 활성 턴이 없어도 성공이다
+    }
+
+    case 'term_new': {
+      // 크기는 화면 없는 소비자의 기본값이다. 사람이 붙으면 attach 가 자기 크기로 다시 잡는다
+      const result = await rpc.call('terminal.create', {
+        workspaceId: args.workspaceId,
+        cols: 80,
+        rows: 24,
+      });
+      return ok({ terminal: result.terminal });
+    }
+
+    case 'term_send': {
+      await rpc.call('terminal.write', { terminalId: args.terminalId, data: args.data });
+      const data = String(args.data ?? '');
+      return ok({
+        sent: data.length,
+        // 개행 없이 보낸 입력은 셸에 남아만 있다 — 모델이 "실행됐다"고 오해하기 쉬운 지점
+        executed: data.includes('\n'),
+        ...(data.includes('\n') ? {} : { note: '줄바꿈이 없어 아직 실행되지 않았다.' }),
+      });
+    }
+
     default:
-      return fail(`${spec.name} 의 데몬 바인딩이 아직 없다 (WBS 7.2.4)`);
+      return fail(`${spec.name} 의 데몬 바인딩이 없다`);
   }
 }

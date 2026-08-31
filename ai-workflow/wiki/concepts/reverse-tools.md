@@ -1,9 +1,9 @@
 ---
 type: concept
 status: active
-updated: 2026-08-31
-last_ingested_from: packages/protocol/src/tools.ts, docs/design/reverse-tool-catalog.md, docs/reference/harness-mcp-support.md
-related_pages: [attention-state, harness-wrapping, home-isolation]
+updated: 2026-09-01
+last_ingested_from: packages/protocol/src/tools.ts, packages/daemon/src/mcp/gate.ts, docs/design/reverse-tool-catalog.md, docs/reference/harness-mcp-support.md
+related_pages: [attention-state, harness-wrapping, home-isolation, tool-execution-in-daemon]
 ---
 
 # 역방향 툴 (Reverse Tools)
@@ -46,12 +46,22 @@ pi 는 README 가 명시적으로 배제한다 — *"No MCP. Build CLI tools wit
 - `effect: 'write'` 는 **전부** 승인 대상
 - `effect: 'read'` 는 승인 불요 — **조회까지 막으면 위임한 세션을 감시하는 것 자체가 불가능**해진다
 
-파라미터는 `z.object`(엄격). 와이어 스키마의 `looseObject` 관례를 따르지 않는데, 그 관례는 "번들 버전이 다른 양쪽이 서로의 추가 필드를 견딘다"를 위한 것이고 카탈로그와 핸들러는 **같이 배포**된다. 여기 입력을 만드는 쪽은 모델이라 환각 파라미터가 조용히 무시되면 안 된다.
+파라미터는 `z.strictObject`. 와이어 스키마의 `looseObject` 관례를 따르지 않는데, 그 관례는 "번들 버전이 다른 양쪽이 서로의 추가 필드를 견딘다"를 위한 것이고 카탈로그와 핸들러는 **같이 배포**된다. 여기 입력을 만드는 쪽은 모델이라 환각 파라미터가 조용히 무시되면 안 된다.
 
-## 그대로 켜면 안 되는 조건 (7.2.3·7.2.4)
+> **정정 (7.2.3)**: v1 은 `z.object` 를 "엄격"이라 적었으나 틀렸다 — `z.object` 는 미지 키를 *조용히 제거*할 뿐 거부하지 않는다. e2e 가 `ws_list({projectID})` 를 통과시키며 드러냈고 카탈로그 전체를 `z.strictObject` 로 고쳤다.
 
-- **omp 는 기본값에서 MCP 툴을 은닉한다** — `tools.xdev=true` 가 `xd://` 디바이스로 마운트. `tools.xdev=false` 로 내려야 top-level 노출
-- **omp 데몬 경로(`--mode rpc`)는 MCP 를 비동기로 싣는다** — 1턴째 미노출, 2턴째부터. 세션 수립에 **준비 완료 게이트** 필요
+## 그대로 켜면 안 되는 조건 — 전부 처리됨 (7.2.3·7.2.4)
+
+- **omp 는 기본값에서 MCP 툴을 은닉한다** — `tools.xdev=true` 가 `xd://` 디바이스로 마운트. 등록 시 `tools.xdev=false` 를 동반 기입한다
+- **omp 데몬 경로(`--mode rpc`)는 MCP 를 비동기로 싣는다** — 1턴째 미노출은 **구조적**이다(서버 프로세스를 첫 턴에야 띄운다, 7.2.3 실측). 준비 게이트는 2턴째 이후의 경합만 막도록 재정의됐다
 - **grok 은 `search_tool` → `use_tool` 2단 메타 툴 경유** — 규약을 어기면 간헐 실패(재현율 1/3), 지키면 3/3
-- **프로젝트 `.mcp.json` 이 사용자 스코프를 덮는다** — 워크스페이스가 임의 저장소를 여는 구조에서 **저장소가 우리 툴 이름을 선점할 수 있다** → 접두사·선점 탐지가 7.2.4
-- 재귀: `session_new` 로 만든 세션이 또 `session_new` 를 부른다 → opt-in(기본 off) + 깊이·개수 상한
+- **프로젝트 `.mcp.json` 이 사용자 스코프를 덮는다** — 저장소가 우리 툴 이름을 선점할 수 있다. 7.2.4 가 세션 생성 시 **탐지해 경고**한다(막지는 않는다 — 그 파일을 읽는 것은 하네스이고, 저장소가 자기 서버를 두는 것은 정상이다)
+- **재귀** — `session_new` 로 만든 세션이 또 `session_new` 를 부른다. 7.2.4 의 깊이 상한(`tools.maxSessionDepth`, 기본 1)이 막는다. 깊이는 **세션 라벨에 영속**한다(`ch.toolDepth`) — 데몬 메모리에 두면 재시작 횟수만큼 우회된다
+
+## 안전장치 (7.2.4)
+
+노출이 켜지는 순간 이것은 **데몬 제어 권한 상승 통로**가 된다. 그래서 `tools.reverseExposure` 는 **기본 off** 이고([[concepts/home-isolation]] 과 기본값 방향이 반대다 — 그쪽은 *끄는* 것이 위험하다), 실행은 전부 데몬 안의 한 관문을 지난다 → [[decisions/tool-execution-in-daemon]]
+
+승인은 하네스 승인과 **같은 채널**로 나간다(`permission_requested` + `origin: 'reverse_tool'`). 새 채널을 만들면 [[concepts/attention-state]]·사이드바·알림·승인 카드를 전부 두 번 구현하게 된다.
+
+**write 왕복 실측 (2026-09-01)**: omp·grok·pi 3종 모두 PASS — 목 모델이 `session_new` 를 부르고, 데몬이 승인 카드를 올리고, 승인 후 세션이 실제로 생기며 자식에 `ch.toolDepth=1` 이 붙는다.

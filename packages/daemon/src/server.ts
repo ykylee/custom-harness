@@ -6,6 +6,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import {
   ClientMessageSchema,
   PROTOCOL_VERSION,
+  RpcRequestSchema,
   TERMINAL_OPCODE,
   TERMINAL_SLOT_MAX,
   decodeTerminalFrame,
@@ -15,6 +16,10 @@ import {
   type ServerMessage,
 } from '@custom-harness/protocol';
 import { DaemonError, toRpcError } from './errors.js';
+import { approvalSummary, depthFromLabels, invokeReverseTool } from './mcp/gate.js';
+import type { AuditLogger } from './mcp/audit.js';
+import { REVERSE_MCP_SERVER_NAME, detectServerNamePreemption } from './mcp/registration.js';
+import type { ProcessSupervisor } from './processes.js';
 import type { KeyStore } from './gateway/key-store.js';
 import type { GatewayService } from './gateway/service.js';
 import type { SessionManager } from './session-manager.js';
@@ -37,6 +42,16 @@ export interface DaemonServerOptions {
   provisioning?: WorkspaceProvisioning;
   /** terminal.* 도메인 배선 (WBS 6.3) — 미공급 시 unimplemented 응답 */
   terminals?: TerminalManager;
+  /**
+   * tool.* 도메인 배선 (WBS 7.2.4) — 미공급 시 unimplemented 응답.
+   * 셋이 다 있어야 관문이 성립한다: opt-in(설정)·호출자 판정(PID 원장)·감사(로거).
+   */
+  reverseTools?: {
+    audit: AuditLogger;
+    supervisor: ProcessSupervisor;
+    isEnabled(): boolean;
+    maxSessionDepth(): number;
+  };
   onShutdownRequest?: () => void;
 }
 
@@ -351,6 +366,34 @@ export class DaemonServer {
     }
   }
 
+  /**
+   * 데몬 자신의 RPC 를 내부에서 한 번 부른다 (WBS 7.2.4).
+   *
+   * 역방향 툴 바인딩이 쓰는 경로다. 매니저를 직접 부르지 않고 RPC 를 다시 타는 이유:
+   * 워크스페이스 존재 확인·경로 이탈 가드·터미널 소유 확인 같은 방어가 핸들러 안에 있고,
+   * 우회하면 역방향 툴만 그 방어를 통과하지 않는 표면이 된다.
+   *
+   * 요청은 실제 수신 프레임과 같은 스키마로 검증한다 — 형이 아니라 값으로 확인해야
+   * 바인딩이 잘못된 파라미터를 만들었을 때 여기서 걸린다.
+   */
+  private async callSelf(
+    ws: WebSocket,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const parsed = RpcRequestSchema.safeParse({
+      type: `${method}.request`,
+      requestId: `self-${++this.selfRequestSeq}`,
+      params,
+    });
+    if (!parsed.success) {
+      throw new DaemonError('bad_request', `내부 호출 스키마 불일치: ${method}`);
+    }
+    return ((await this.handle(ws, parsed.data)) ?? {}) as Record<string, unknown>;
+  }
+
+  private selfRequestSeq = 0;
+
   private async handle(
     ws: WebSocket,
     message: Exclude<ClientMessage, { type: 'hello' | 'ping' | 'pong' }>,
@@ -373,6 +416,18 @@ export class DaemonServer {
           cwd = workspace.cwd;
         } else if (provisioning) {
           workspaceId = (await provisioning.openProject(cwd)).workspace.id;
+        }
+        // 서버명 선점 탐지 (WBS 7.2.4) — 저장소의 프로젝트 스코프 `.mcp.json` 이 우리 서버
+        // 이름을 차지하면 모델이 부르는 역방향 툴이 그쪽으로 간다. 세션 생성을 막지는
+        // 않는다(저장소가 자기 MCP 서버를 두는 것은 정상이다) — 알리는 것이 조치다.
+        if (this.options.reverseTools?.isEnabled() === true) {
+          const preemption = await detectServerNamePreemption(cwd);
+          if (preemption.preempted) {
+            console.warn(
+              `[daemon] 역방향 툴 서버명 선점 감지: ${preemption.configPath} 가 '${REVERSE_MCP_SERVER_NAME}' 를 정의한다 — ` +
+                '이 세션의 역방향 툴 호출은 우리 서버가 아니라 저장소가 정의한 서버로 갈 수 있다',
+            );
+          }
         }
         return {
           session: await manager.createSession({
@@ -485,10 +540,60 @@ export class DaemonServer {
           truncated: result.truncated,
         };
       }
+      case 'terminal.write.request': {
+        const terminals = this.requireTerminals();
+        // 존재 확인이 필요하다 — TerminalManager.write 는 없는 id 에 조용히 no-op 이라
+        // 그대로 두면 역방향 툴이 "보냈다"는 성공 응답을 받는다
+        if (!terminals.list().some((term) => term.id === message.params.terminalId)) {
+          throw new DaemonError('not_found', `터미널 없음: ${message.params.terminalId}`);
+        }
+        terminals.write(message.params.terminalId, Buffer.from(message.params.data, 'utf8'));
+        return {};
+      }
       case 'terminal.kill.request': {
         const terminals = this.requireTerminals();
         terminals.kill(message.params.terminalId);
         return {};
+      }
+      // 역방향 툴 (WBS 7.2.4) — opt-in·호출자 판정·승인·재귀 상한·감사를 게이트가 통과시킨다
+      case 'tool.invoke.request': {
+        const reverse = this.options.reverseTools;
+        if (!reverse) throw new DaemonError('unimplemented', '역방향 툴이 배선되지 않음');
+        return await invokeReverseTool(
+          {
+            // 툴 바인딩은 데몬 자신의 RPC 를 다시 탄다 — 워크스페이스 검증·경로 가드 같은
+            // 기존 핸들러의 방어를 우회하지 않기 위해서다
+            rpc: { call: (method, params) => this.callSelf(ws, method, params) },
+            audit: reverse.audit,
+            isEnabled: () => reverse.isEnabled(),
+            maxSessionDepth: () => reverse.maxSessionDepth(),
+            resolveCaller: async (callerPid) => {
+              if (callerPid === undefined) return { depth: 0 };
+              const entry = await reverse.supervisor.findByPid(callerPid);
+              if (!entry?.sessionId) return { depth: 0 };
+              const sessions = await manager.listSessions();
+              const session = sessions.find((s) => s.sessionId === entry.sessionId);
+              return {
+                sessionId: entry.sessionId,
+                ...(entry.harness !== undefined ? { harness: entry.harness } : {}),
+                depth: depthFromLabels(session?.labels),
+              };
+            },
+            requestApproval: ({ sessionId, spec, args }) =>
+              manager.requestReverseToolApproval({
+                sessionId,
+                summary: approvalSummary(spec, args),
+                detail: { tool: spec.name, args },
+              }),
+          },
+          {
+            name: message.params.name,
+            args: message.params.args ?? {},
+            ...(message.params.callerPid !== undefined
+              ? { callerPid: message.params.callerPid }
+              : {}),
+          },
+        );
       }
       case 'file.list.request': {
         const workspace = await this.requireWorkspace(message.params.workspaceId);

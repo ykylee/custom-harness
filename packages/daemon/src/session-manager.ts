@@ -32,6 +32,14 @@ interface LiveSession {
   lastTurnOutcome: 'completed' | 'failed' | 'canceled' | undefined;
   /** 사용자가 확인한 뒤 새 사건이 없는가 — 주의 상태 정책 입력 (M7 7.1.1) */
   attentionAcknowledged: boolean;
+  /**
+   * 데몬이 스스로 만든 승인 대기 (M7 7.2.4) — 역방향 툴 write 5종.
+   *
+   * `pending` 과 분리한 이유는 **응답 경로가 다르기** 때문이다: 하네스 요청의 응답은 어댑터로
+   * 되돌아가지만 이건 데몬 안에서 끝난다. 한 맵에 섞으면 응답 때마다 출처를 되짚어야 한다.
+   * 반면 `pending` 에는 양쪽이 다 들어간다 — 조회·주의 상태·UI 는 출처를 구분할 필요가 없다.
+   */
+  daemonPending: Map<string, (granted: boolean) => void>;
   /** 영속화·팬아웃 순서 보장용 직렬 체인 */
   chain: Promise<void>;
   /**
@@ -102,6 +110,7 @@ export class SessionManager {
         nextSeq: (await this.store.lastSeq(meta.sessionId)) + 1,
         activeTurnId: undefined,
         pending: new Map(),
+        daemonPending: new Map(),
         lastTurnOutcome: undefined,
         // 재기동 복원 — 영속된 주의 상태를 그대로 되살린다 (FR-9.1 재접속 조회)
         attentionAcknowledged: meta.requiresAttention !== true,
@@ -134,6 +143,8 @@ export class SessionManager {
     modelId?: string | undefined;
     approvalPolicy?: 'mediate' | 'auto' | undefined;
     mcpServers?: McpServerConfig[] | undefined;
+    /** 생성 시 라벨 (M7 7.2.4) — 지금은 역방향 툴의 부모·깊이 기록만 쓴다 */
+    labels?: Record<string, string> | undefined;
   }): Promise<SessionSummary> {
     const adapter = this.getAdapter(params.harness);
     const activeCount = [...this.sessions.values()].filter((s) => s.runtime).length;
@@ -160,6 +171,7 @@ export class SessionManager {
       cwd: params.cwd,
       ...(params.workspaceId !== undefined ? { workspaceId: params.workspaceId } : {}),
       ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
+      ...(params.labels !== undefined ? { labels: params.labels } : {}),
       status: 'initializing',
       createdAt: now,
       updatedAt: now,
@@ -172,6 +184,7 @@ export class SessionManager {
       nextSeq: 0,
       activeTurnId: undefined,
       pending: new Map(),
+      daemonPending: new Map(),
       lastTurnOutcome: undefined,
       attentionAcknowledged: true,
       chain: Promise.resolve(),
@@ -315,11 +328,80 @@ export class SessionManager {
     outcome: PermissionOutcome,
   ): Promise<void> {
     const live = this.requireSession(sessionId);
-    if (!live.runtime) throw new DaemonError('bad_request', '런타임 없음');
     if (!live.pending.has(requestId)) {
       throw new DaemonError('not_found', `대기 중이 아닌 승인 요청: ${requestId}`);
     }
+    // 데몬이 만든 요청(역방향 툴, M7 7.2.4)은 어댑터로 내려보내지 않는다 — 하네스는 이 요청을
+    // 발행한 적이 없어 requestId 를 모른다. 런타임 유무도 여기서는 따지지 않는다: 세션이 닫혀
+    // 있어도 대기 중이던 툴 호출은 응답을 받아야 영원히 매달리지 않는다.
+    const resolve = live.daemonPending.get(requestId);
+    if (resolve) {
+      live.daemonPending.delete(requestId);
+      resolve('optionId' in outcome && outcome.optionId === 'allow');
+      this.applyEvent(live, { type: 'permission_resolved', requestId, outcome });
+      return;
+    }
+    if (!live.runtime) throw new DaemonError('bad_request', '런타임 없음');
     await live.runtime.respondToPermission(requestId, outcome);
+  }
+
+  /**
+   * 역방향 툴 승인 요청 (M7 7.2.4, FR-9.2) — **데몬이 스스로 사용자에게 묻는다**.
+   *
+   * 하네스 승인과 같은 채널에 태운다: 사이드바 배지·주의 상태·승인 카드·알림이 이미 이
+   * 채널을 소비하므로, 별도 채널을 만들면 그 전부를 두 번 구현하게 된다. 구분은 요청의
+   * `origin` 필드가 한다.
+   *
+   * 타임아웃을 두는 이유: 하네스 쪽 툴 호출은 응답을 기다리며 턴을 붙잡고 있고, 사용자가
+   * 화면을 안 보고 있으면 그 턴이 무한정 멈춘다. 만료는 **거부**다 — 무응답을 승인으로
+   * 해석하면 자리를 비운 사이에 실행된다.
+   */
+  async requestReverseToolApproval(input: {
+    sessionId: string;
+    summary: string;
+    detail?: unknown;
+    timeoutMs?: number;
+  }): Promise<boolean> {
+    const live = this.requireSession(input.sessionId);
+    const requestId = `rt-${randomUUID()}`;
+    const request: PermissionRequest = {
+      requestId,
+      kind: 'mcp',
+      summary: input.summary,
+      ...(input.detail !== undefined ? { detail: input.detail } : {}),
+      options: [
+        { optionId: 'allow', label: '허용', kind: 'allow_once' },
+        { optionId: 'deny', label: '거부', kind: 'reject_once' },
+      ],
+      origin: 'reverse_tool',
+    };
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (granted: boolean): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        live.daemonPending.delete(requestId);
+        live.pending.delete(requestId);
+        resolve(granted);
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        // 만료도 타임라인에 남긴다 — 사용자가 나중에 "왜 안 됐나"를 여기서 본다
+        this.applyEvent(live, {
+          type: 'permission_resolved',
+          requestId,
+          outcome: { cancelled: true },
+        });
+        settle(false);
+      }, input.timeoutMs ?? 120_000);
+      timer.unref?.();
+
+      live.daemonPending.set(requestId, settle);
+      // pending 등록·이벤트 발행·주의 상태 갱신을 하네스 요청과 같은 경로로 통과시킨다
+      this.applyEvent(live, { type: 'permission_requested', request });
+    });
   }
 
   async setModel(sessionId: string, modelId: string): Promise<void> {
@@ -363,11 +445,18 @@ export class SessionManager {
 
   private attachRuntime(live: LiveSession, runtime: AgentSession): void {
     live.runtime = runtime;
-    live.unsubscribe = runtime.subscribe((event) => this.onAdapterEvent(live, event));
+    live.unsubscribe = runtime.subscribe((event) => this.applyEvent(live, event));
     live.meta.handle = runtime.describeHandle();
   }
 
-  private onAdapterEvent(live: LiveSession, event: AgentEvent): void {
+  /**
+   * 이벤트 1건을 세션 상태에 반영하고 팬아웃한다.
+   *
+   * 대부분은 어댑터가 흘려보낸 것이지만 **데몬 자신이 발행하는 것도 여기로 들어온다**
+   * (역방향 툴 승인 요청·해소, M7 7.2.4). 승인 대기 등록·주의 상태 갱신·타임라인 기록이
+   * 한 곳에 있어야 출처에 따라 UI 가 달라지지 않는다.
+   */
+  private applyEvent(live: LiveSession, event: AgentEvent): void {
     switch (event.type) {
       case 'turn_started':
         // 매니저 소유 — 어댑터 유래 중복 발행은 드롭 (adapter-contract §1)
@@ -550,6 +639,9 @@ export class SessionManager {
       ...(live.meta.attentionTimestamp !== undefined
         ? { attentionTimestamp: live.meta.attentionTimestamp }
         : {}),
+      // 역방향 툴이 만든 세션의 부모·깊이가 여기 실린다 (M7 7.2.4) — 재귀 상한이 데몬
+      // 재시작 뒤에도 성립하려면 이 값이 조회 경로에 나와야 한다
+      ...(live.meta.labels !== undefined ? { labels: live.meta.labels } : {}),
     };
   }
 }

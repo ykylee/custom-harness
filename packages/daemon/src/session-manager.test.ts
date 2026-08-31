@@ -41,6 +41,79 @@ describe('SessionManager', () => {
     );
   }
 
+  describe('역방향 툴 승인 채널 (M7 7.2.4)', () => {
+    it('요청이 하네스 승인과 같은 채널로 나가고, 허용하면 true 로 풀린다', async () => {
+      const session = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+      const pending = manager.requestReverseToolApproval({
+        sessionId: session.sessionId,
+        summary: '다른 에이전트가 터미널에 입력하려 한다',
+      });
+      await settled();
+
+      const requested = events.find((event) => event.type === 'permission_requested');
+      expect(requested).toBeDefined();
+      const request = (requested as { request: { requestId: string; origin?: string } }).request;
+      // 출처가 실려야 UI 가 "하네스가 물었다"와 "데몬이 물었다"를 구분할 수 있다
+      expect(request.origin).toBe('reverse_tool');
+
+      // 조회 경로에도 나온다 — 재접속한 클라이언트가 대기 중임을 알아야 한다
+      const listed = (await manager.listSessions()).find((s) => s.sessionId === session.sessionId);
+      expect(listed?.pendingPermissions?.map((p) => p.requestId)).toContain(request.requestId);
+      expect(listed?.requiresAttention).toBe(true);
+
+      await manager.respondPermission(session.sessionId, request.requestId, {
+        optionId: 'allow',
+      });
+      await expect(pending).resolves.toBe(true);
+      await settled();
+    });
+
+    it('거부하면 false 로 풀리고 대기 목록에서 사라진다', async () => {
+      const session = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+      const pending = manager.requestReverseToolApproval({
+        sessionId: session.sessionId,
+        summary: '중단하려 한다',
+      });
+      await settled();
+      const request = (
+        events.find((event) => event.type === 'permission_requested') as {
+          request: { requestId: string };
+        }
+      ).request;
+
+      await manager.respondPermission(session.sessionId, request.requestId, { optionId: 'deny' });
+      await expect(pending).resolves.toBe(false);
+      const listed = (await manager.listSessions()).find((s) => s.sessionId === session.sessionId);
+      expect(listed?.pendingPermissions ?? []).toHaveLength(0);
+      await settled();
+    });
+
+    it('만료는 거부다 — 무응답을 승인으로 해석하지 않는다', async () => {
+      const session = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+      await expect(
+        manager.requestReverseToolApproval({
+          sessionId: session.sessionId,
+          summary: '자리를 비운 사이',
+          timeoutMs: 10,
+        }),
+      ).resolves.toBe(false);
+      // 리스너가 모듈 변수 `events` 를 클로저로 잡으므로, 늦게 도착한 이벤트는 **다음
+      // 테스트의** 배열로 들어간다. 세션을 만든 테스트는 끝나기 전에 흘려보낸다
+      await settled();
+    });
+
+    it('생성 라벨이 조회에 그대로 실린다 — 재귀 깊이의 근거', async () => {
+      const session = await manager.createSession({
+        harness: 'mock',
+        cwd: process.cwd(),
+        labels: { 'ch.toolDepth': '1', 'ch.parentSessionId': 'parent' },
+      });
+      const listed = (await manager.listSessions()).find((s) => s.sessionId === session.sessionId);
+      expect(listed?.labels).toEqual({ 'ch.toolDepth': '1', 'ch.parentSessionId': 'parent' });
+      await settled();
+    });
+  });
+
   it('creates a session: initializing → idle, meta+handle persisted (FR-1.3.5)', async () => {
     const summary = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     expect(summary.status).toBe('idle');

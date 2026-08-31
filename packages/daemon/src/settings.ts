@@ -47,6 +47,15 @@ function parsePositiveInt(max: number) {
   };
 }
 
+/** 0 을 허용하는 정수 파서 — 0 이 "아예 금지"라는 뜻을 갖는 상한에 쓴다 */
+function parseNonNegativeInt(max: number) {
+  return (raw: unknown): number | undefined => {
+    const n = typeof raw === 'string' ? Number(raw) : raw;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > max) return undefined;
+    return n;
+  };
+}
+
 function parseBoolean(raw: unknown): boolean | undefined {
   if (typeof raw === 'boolean') return raw;
   if (raw === 'true' || raw === '1') return true;
@@ -69,6 +78,8 @@ export interface SettingValues {
   workspaceSetupAutoRun: boolean;
   harnessHomeIsolation: boolean;
   harnessHomeLinks: string[];
+  toolsReverseExposure: boolean;
+  toolsMaxSessionDepth: number;
 }
 export type SettingKey = keyof SettingValues;
 
@@ -114,6 +125,37 @@ export const SETTINGS: { [K in SettingKey]: SettingDescriptor<SettingValues[K]> 
     defaultValue: ['.gitconfig', '.ssh'],
     scope: 'live',
     parse: parseStringList,
+  },
+  /**
+   * 역방향 툴 노출 (M7 7.2.4, FR-9.2) — **기본 off**.
+   *
+   * 켜면 하네스가 데몬을 되부를 수 있다: 다른 세션의 타임라인을 읽고, 프롬프트를 보내고,
+   * 터미널에 입력한다. 유용한 만큼 권한 상승 통로이기도 하므로 사용자가 명시적으로 켜야 한다
+   * (홈 격리와 반대 방향의 기본값 — 그쪽은 끄는 것이 위험이고 이쪽은 켜는 것이 위험이다).
+   *
+   * `restart` 스코프인 이유: 등록은 기동 시 하네스 설정 파일에 기입하는 일이라, 값만 바꿔서는
+   * 이미 떠 있는 하네스 프로세스의 툴 표면이 달라지지 않는다.
+   */
+  toolsReverseExposure: {
+    key: 'tools.reverseExposure',
+    env: 'CUSTOM_HARNESS_REVERSE_TOOLS',
+    defaultValue: false,
+    scope: 'restart',
+    parse: parseBoolean,
+  },
+  /**
+   * 역방향 툴이 만든 세션이 다시 세션을 만들 수 있는 깊이 상한 (M7 7.2.4).
+   *
+   * 기본 1 = 사용자가 만든 세션은 자식을 만들 수 있고, 그 자식은 더 못 만든다. 0 이면
+   * `session_new` 자체가 막힌다. 상한이 없으면 한 번의 잘못된 프롬프트가 세션을 지수로
+   * 늘리고, 그 각각이 게이트웨이 토큰을 쓴다.
+   */
+  toolsMaxSessionDepth: {
+    key: 'tools.maxSessionDepth',
+    env: 'CUSTOM_HARNESS_TOOLS_MAX_SESSION_DEPTH',
+    defaultValue: 1,
+    scope: 'live',
+    parse: parseNonNegativeInt(8),
   },
 };
 

@@ -78,6 +78,30 @@ describe('SettingsStore 우선순위 (WBS 5.0.1)', () => {
   });
 });
 
+describe('역방향 툴 설정 (WBS 7.2.4)', () => {
+  it('노출은 기본 off — 켜는 쪽이 위험한 설정이라 기본값이 홈 격리와 반대다', async () => {
+    const { store } = await makeStore();
+    expect(store.resolve('toolsReverseExposure').value).toBe(false);
+    expect(store.resolve('harnessHomeIsolation').value).toBe(true);
+  });
+
+  it('재귀 깊이 상한은 기본 1 이고 0 도 유효한 값이다 (= 세션 생성 금지)', async () => {
+    expect((await makeStore()).store.resolve('toolsMaxSessionDepth').value).toBe(1);
+    const { store } = await makeStore({ tools: { maxSessionDepth: 0 } });
+    expect(store.resolve('toolsMaxSessionDepth')).toMatchObject({ value: 0, source: 'file' });
+  });
+
+  it('음수·비정수 상한은 무시하고 기본값으로 떨어진다', async () => {
+    const { store } = await makeStore({ tools: { maxSessionDepth: -1 } });
+    expect(store.resolve('toolsMaxSessionDepth').value).toBe(1);
+  });
+
+  it('env 로도 켤 수 있다', async () => {
+    const { store } = await makeStore({}, { CUSTOM_HARNESS_REVERSE_TOOLS: 'true' });
+    expect(store.resolve('toolsReverseExposure')).toMatchObject({ value: true, source: 'env' });
+  });
+});
+
 describe('SettingsStore 쓰기', () => {
   it('중첩 키를 파일에 원자적으로 기입한다', async () => {
     const { store, file } = await makeStore();

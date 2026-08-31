@@ -115,9 +115,11 @@ export const TOOL_CATALOG = [
     approval: false,
   },
   {
+    // 작업 디렉토리는 받지 않는다 — 터미널의 cwd 는 워크스페이스가 정한다(6.3). 받아 두고
+    // 무시하면 strictObject 로 막으려던 바로 그 상태(조용히 버려지는 인자)가 된다.
     name: 'term_new',
-    description: '워크스페이스에 터미널을 연다.',
-    params: z.strictObject({ workspaceId: z.string(), cwd: z.string().optional() }),
+    description: '워크스페이스에 터미널을 연다. 작업 디렉토리는 워크스페이스 경로다.',
+    params: z.strictObject({ workspaceId: z.string() }),
     effect: 'write',
     approval: true,
   },
@@ -142,6 +144,15 @@ export const TOOL_CATALOG = [
 ] as const satisfies readonly ToolSpec[];
 
 export type ToolName = (typeof TOOL_CATALOG)[number]['name'];
+
+/**
+ * 역방향 툴이 만든 세션에 붙는 라벨 (WBS 7.2.4).
+ *
+ * 깊이를 데몬 메모리가 아니라 세션 레코드에 적는 이유: 데몬을 재시작해도 상한이 그대로
+ * 성립해야 한다. 재시작으로 깊이가 0 으로 돌아가면 상한이 재시작 횟수만큼 우회된다.
+ */
+export const TOOL_LABEL_PARENT_SESSION = 'ch.parentSessionId';
+export const TOOL_LABEL_DEPTH = 'ch.toolDepth';
 
 /** 이름 규칙 — 두 접두사 방식(`mcp__<s>_<t>` / `<s>__<t>`) 어디에 넣어도 깨지지 않는 형태 */
 export const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{2,23}$/;

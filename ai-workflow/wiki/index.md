@@ -91,6 +91,10 @@ grok build 1.0.13 · Apache 2.0 · ACP · MCP 는 `search_tool`→`use_tool` 메
 
 2026-08-31 — MCP 툴과 내장 파괴적 툴이 동시에 승인 대상인 모드는 `default` 뿐.
 
+### [[decisions/tool-execution-in-daemon]] {#tool-execution-in-daemon}
+
+2026-09-01 — 승인·감사·재귀 상한의 근거가 전부 데몬에 있으니 집행도 데몬에서.
+
 ## Patterns
 
 ### [[patterns/measure-dont-assume]] {#measure-dont-assume}

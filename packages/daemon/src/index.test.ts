@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION } from '@custom-harness/protocol';
+import type { AgentAdapter } from './adapters/contract.js';
+import { FakeAdapter } from './adapters/testing.js';
 import { startDaemon } from './index.js';
 
 describe('startDaemon', () => {
@@ -24,6 +26,53 @@ describe('startDaemon', () => {
     } finally {
       delete process.env.CUSTOM_HARNESS_MAX_SESSIONS;
     }
+  });
+
+  it('역방향 툴 등록은 opt-in 이고, 끄면 이전 등록을 지운다 (WBS 7.2.4)', async () => {
+    // 어댑터 id 로 등록 대상이 정해지므로 omp 로 위장한다 — 실물 omp 없이 배선만 본다
+    const ompAdapter: AgentAdapter = Object.assign(new FakeAdapter(), { id: 'omp' as const });
+    const root = await mkdtemp(join(tmpdir(), 'ch-daemon-'));
+    await mkdir(join(root, 'data'), { recursive: true });
+    const settingsFile = join(root, 'data', 'settings.json');
+    const mcpConfig = join(root, 'data', 'omp-home', 'mcp.json');
+
+    // 기본값(off) — 등록이 생기지 않는다
+    const off = await startDaemon({
+      root,
+      version: '0.1.0',
+      managedBy: 'test',
+      adapters: () => [ompAdapter],
+    });
+    await off.stop();
+    await expect(stat(mcpConfig)).rejects.toThrow();
+
+    // 켜면 등록된다
+    await writeFile(settingsFile, JSON.stringify({ tools: { reverseExposure: true } }));
+    const on = await startDaemon({
+      root,
+      version: '0.1.0',
+      managedBy: 'test',
+      adapters: () => [ompAdapter],
+    });
+    await on.stop();
+    const registered = JSON.parse(await readFile(mcpConfig, 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(registered.mcpServers.ch).toBeDefined();
+
+    // 다시 끄면 남아 있던 등록이 사라진다 — 안 지우면 부를 때마다 거부되는 툴이 계속 보인다
+    await writeFile(settingsFile, JSON.stringify({ tools: { reverseExposure: false } }));
+    const offAgain = await startDaemon({
+      root,
+      version: '0.1.0',
+      managedBy: 'test',
+      adapters: () => [ompAdapter],
+    });
+    await offAgain.stop();
+    const cleaned = JSON.parse(await readFile(mcpConfig, 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(cleaned.mcpServers.ch).toBeUndefined();
   });
 
   it('boots, authenticates via the token file, and cleans up on stop', async () => {

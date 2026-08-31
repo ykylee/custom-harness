@@ -11,9 +11,9 @@ import { appendFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
+import { toolDescriptors } from '@custom-harness/protocol';
 import { connectDaemonRpc } from './client.js';
-import { createLineReader, McpStdioServer } from './server.js';
-import { createToolInvoker } from './tools.js';
+import { createLineReader, McpStdioServer, type ToolCallResult } from './server.js';
 
 const logPath = process.env.CUSTOM_HARNESS_MCP_LOG;
 function log(kind: string, payload: unknown): void {
@@ -28,11 +28,37 @@ function log(kind: string, payload: unknown): void {
 async function main(): Promise<void> {
   // 등록이 항상 넘기지만, 사람이 손으로 띄우는 경우를 위해 폴백은 둔다
   const root = process.env.CUSTOM_HARNESS_HOME ?? join(homedir(), '.custom-harness');
-  const rpc = await connectDaemonRpc({ root });
+  // 승인 대상 툴은 사용자의 응답을 기다린다 — 데몬 쪽 만료(120초)보다 길게 잡아야
+  // "만료로 거부됨" 결과를 모델이 받아볼 수 있다 (짧으면 우리 쪽이 먼저 포기한다)
+  const rpc = await connectDaemonRpc({ root, callTimeoutMs: 180_000 });
   log('connected', { root });
 
   const server = new McpStdioServer({
-    invoker: createToolInvoker({ rpc }),
+    // 이 프로세스는 **판단하지 않는다** (WBS 7.2.4): 목록은 카탈로그를 그대로 내주고, 실행은
+    // `tool.invoke` 로 데몬에 넘긴다. 승인·감사·재귀 상한이 데몬 안에 모여 있어야 노출 경로가
+    // 둘(MCP·pi 확장)이어도 같은 관문을 지난다.
+    //
+    // `callerPid` 는 우리 부모 = 하네스 프로세스다. 데몬이 PID 원장으로 세션을 되짚는다 —
+    // 우리가 세션 ID 를 주장하지 않는 이유는 그 값이 검증 불가한 자기 신고이기 때문이다.
+    invoker: {
+      list: () => toolDescriptors(),
+      call: async (name, args): Promise<ToolCallResult> => {
+        try {
+          const result = await rpc.call('tool.invoke', {
+            name,
+            args: (args ?? {}) as Record<string, unknown>,
+            ...(process.ppid > 0 ? { callerPid: process.ppid } : {}),
+          });
+          return result as unknown as ToolCallResult;
+        } catch (error) {
+          // 전송 실패를 던지면 이 줄의 응답이 아예 안 나가고 하네스가 매달린다 —
+          // 툴 결과로 되돌려 모델이 읽게 한다 (7.2.3 의 "실패는 결과다" 규칙과 같다)
+          const text = `역방향 툴 호출이 데몬에 닿지 못했다: ${error instanceof Error ? error.message : String(error)}`;
+          log('invoke_error', { name, error: String(error) });
+          return { content: [{ type: 'text', text }], isError: true };
+        }
+      },
+    },
     send: (message) => process.stdout.write(`${JSON.stringify(message)}\n`),
     serverName: 'custom-harness',
     serverVersion: '1',

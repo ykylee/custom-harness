@@ -6,7 +6,7 @@
 - Scope: current focus, task status, key changes, next actions, risks
 - Audience: AI agents, maintainers
 - Status: draft
-- Updated: 2026-08-31
+- Updated: 2026-09-01
 - Related docs: [Project Profile](../../docs/PROJECT_PROFILE.md), [Work Backlog](./work_backlog.md)
 
 ## Current Focus
@@ -21,6 +21,7 @@
 
 - (2026-08-30 6차 갱신) **실기기 피드백 반영 + 진행 중 2건 종료**: Windows 실기기 lint·test 통과 확인, 실기기 피드백 4건 반영(번들 GUI 흰 화면=Vite base `'./'`, 세션 생성 cwd 선검증, win32 번들 grok 설정 템플릿 잔여물 제거, 메뉴바 제거+데몬 하네스 경로 manifest 폴백) → TASK-026 done. 렌더러 다크 우선 토큰 디자인 시스템 + 타임라인 시간순 세그먼트 분할 + 대화 뷰 스크롤 경합 수정 → TASK-027 done. 테스트 195건·3 OS 재조립 그린. **진행 중 0건 — 잔여는 전부 사내 협조(C-1 게이트웨이 실측, C-5 linux/win 매트릭스 나머지)**
 
+- (2026-09-01 15차 갱신) **M7 WP 7.2 전 구간 완료 — 역방향 툴의 write 5종이 열렸다.** 7.2.4 안전장치가 붙으면서 "보이지만 절반이 거부되는" 상태가 끝났다. 구조적 결정 하나가 나머지를 정한다: **실행을 데몬 안으로 끌어왔다**(`tool.invoke` RPC). 노출 프로세스(MCP 서버·pi 확장)는 전송만 하고 판단하지 않는다 — 승인 채널은 사용자와 이어진 데몬에만 있고, 감사 JSONL 은 기록자가 하나여야 하며(하네스마다 서버 프로세스가 따로 뜬다), 재귀 상한이 보는 세션 그래프가 데몬에 있기 때문이다. 관문 넷: ① **opt-in** `tools.reverseExposure` 기본 **off**(홈 격리와 기본값 방향이 반대 — 그쪽은 끄는 것이, 이쪽은 켜는 것이 위험하다), 끄고 기동하면 **이전 등록을 지운다** ② **승인**은 하네스 승인과 같은 채널(`origin: 'reverse_tool'`) — UI 소비자를 두 번 구현하지 않으려는 선택, 만료(120초)는 거부, 물을 곳이 없으면(호출자 세션 미상) write 거부·read 통과 ③ **호출자 판정**은 PID 원장 역인덱스, 노출 프로세스의 자기 신고를 믿지 않는다 ④ **재귀 깊이**는 세션 라벨(`ch.parentSessionId`·`ch.toolDepth`)에 영속 — 데몬 메모리에 두면 재시작 횟수만큼 우회된다. 감사는 통과·거부·실패 전부(`logs/reverse-tools.jsonl`), 선점 탐지는 막지 않고 알린다. **실측**: `mcp-probe --real-server --daemon --write-probe` — omp·grok·pi **3종 모두 write 왕복 PASS**(승인 1건·세션 +1·자식 라벨 `ch.toolDepth=1`), foreign=0. 테스트 466건 그린, NFR-1 PASS. → 다음은 **7.3 서브에이전트**(7.2.4 가 남긴 부모·깊이 라벨 위에 세운다).
 - (2026-09-01 14차 갱신) **M7 7.2.3 완결 — 노출 2경로 모두 실물 검증.** 7.2.3b pi 확장 추가로 **3하네스 전부 같은 카탈로그를 본다**. 핵심 설계: 확장은 **카탈로그를 모른다** — 데몬의 MCP 서버를 자식으로 띄우고 `tools/list` 결과를 그대로 `pi.registerTool` 로 옮긴다. 여기에 카탈로그를 다시 적었다면 승인 게이트·파라미터 검증·결과 추림이 pi 에서만 갈라졌을 것이다. 설치는 `$PI_CODING_AGENT_DIR/extensions/ch-reverse-tools.ts`(이 변수가 `~/.pi/agent` 를 대체 — pi 문서), spawn 사양은 **env 로** 넘긴다(파일에 구우면 번들 갱신 시점이 어긋날 때 없는 실행 파일을 가리킨 채 남는다). **실측 2건**: ① `parameters` 에 `toolDescriptor()` 의 **생 JSON Schema 가 그대로 통했다** — TypeBox 변환층 불필요 ② pi 는 접두사를 붙이지 않아 모델이 보는 이름이 `ws_list` 그대로다(omp `mcp__ch_*`, grok `ch__*` 와 다름). **왕복 PASS 3종**: omp `direct:mcp__ch_ws_list` / grok `meta:use_tool` / pi `direct:ws_list` — 전부 invoked·returned, foreign=0. 번들 빌드에 `pi-extension/` 복사 추가(빠뜨리면 pi 만 조용히 툴이 사라진다) + **3 OS 재조립**(darwin 210.0MB / linux 311.2MB / win 266.3MB). 테스트 425건 그린, NFR-1 PASS(감시 폭 12 — MCP 자식 포함). → **7.2.4 착수 가능**(승인 채널에서 write 5종이 열린다).
 - (2026-09-01 13차 갱신) **M7 7.2.3a 완료 — 역방향 툴이 실제 하네스에 노출된다.** 데몬 소유 MCP stdio 서버(`packages/daemon/src/mcp/`)를 하네스가 spawn 하고, 그 프로세스가 데몬 WS 로 되붙어 카탈로그 10종을 처리한다. **토큰은 등록 파일에 적지 않는다** — 재기동마다 회전하고 설정 파일에 평문이 남기 때문에 서버가 데이터 디렉토리에서 직접 읽는다(`CUSTOM_HARNESS_HOME` 만 넘긴다 — 홈이 격리된 하네스의 자식이라 `homedir()` 로는 못 찾는다). 등록은 omp=격리 홈 `mcp.json` + `tools.xdev=false` / grok=`grok mcp add` 위임. `terminal.read` RPC 신설(attach 와 달리 슬롯·구독 없음). **실서버 왕복 PASS** — `mcp-probe --real-server --daemon`: omp `direct:mcp__ch_ws_list`, grok `meta:use_tool`, 둘 다 invoked·returned, foreign=0. **read 5종만 동작하고 write 5종은 명시 거부**(승인 채널은 7.2.4 — 사용자 결정). **실측 2건이 계획을 고쳤다**: ① omp 는 MCP 서버를 **첫 턴에야 띄운다**(세션 생성 후 8초 대기해도 프로세스 없음) → "첫 턴 전 대기" 게이트는 성립 불가, 2턴째 이후 경합 방지로 재정의 ② 7.2.2 의 `z.object` 는 미지 키를 **조용히 제거**할 뿐이라 "엄격" 주장이 거짓이었다 → `z.strictObject` 로 교정(e2e 가 검출). 테스트 422건 그린, NFR-1 PASS. → **7.2.3b(pi 확장) 착수 가능.**
 - (2026-08-31 12차 갱신) **워크플로 지식 계층 신설 — `ai-workflow/wiki/`.** 부트스트랩 시 `--enable-wiki` 를 안 켠 탓에 위키 계층이 처음부터 없었고, `CLAUDE.md:35` 는 없는 `wiki/index.md` 를 "에이전트 질의 시 가장 먼저 로드하라"고 지시하고 있었다(매 세션 진입 규칙의 끊긴 참조). 누적 지식을 소급 정리해 **26 페이지**를 세웠다 — concepts 9 / entities 5 / decisions 5 / patterns 3 / queries 4. **본체는 handoff 에 쌓여 있던 실측 사실의 주제별 재배치**다: 하네스 3종의 버전별 실측(omp `tools.xdev` 은닉·비동기 로딩, grok 권한 모드 행렬·메타 툴 규약, pi 의 MCP 배제와 확장 대체), 결정 5건의 **왜**, 반복 질의 4종의 경로. 원 문서는 복사하지 않고 링크로 넘기며 전 페이지에 `last_ingested_from`(36 경로 실재 확인)을 남겨 스테일 판정이 가능하다. PURPOSE.md 에 `[[슬러그|표시]]` 8곳 연결(표시 문구 불변) → 교차참조 matched 9 / missing 0. `wk session-start`·`doc-sync` 의 상시 경고 소멸. → TASK-007 done.
@@ -34,6 +35,7 @@
 
 - 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
 - M3 잔여 후보(사내 협조 무관 순수 사외분 아님 — 대부분 C-1·C-5 후속) — 3.1 업데이트·롤백, 3.3.2 앱 정보 화면 고지 열람·clean-room 검수, 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
+- TASK-2026-09-01-main-002 M7 7.2.4 역방향 툴 안전장치(opt-in·승인 채널·재귀 상한·감사·선점 탐지): done
 - TASK-2026-09-01-main-001 M7 7.2.3b 역방향 툴 노출 — pi 확장(pi.registerTool): done
 - TASK-2026-08-31-main-008 M7 7.2.3a 역방향 툴 노출 — 데몬 MCP stdio 서버(omp·grok): done
 - TASK-2026-08-31-main-007 워크플로 지식 계층 소급 구축(ai-workflow/wiki 26 페이지): done
@@ -47,6 +49,7 @@
 
 ## Key Changes
 
+- (2026-09-01) **M7 7.2.4 안전장치**: `packages/daemon/src/mcp/{gate,audit}.ts` 신설 + `tool.invoke` RPC(`protocol/rpc.ts`). 실행이 데몬 안으로 옮겨졌다 — `mcp/main.ts` 는 `toolDescriptors()` 로 목록만 내주고 `tools/call` 은 `tool.invoke` 로 위임한다(`callerPid = process.ppid`). `createToolInvoker` 의 `allowApprovalRequired` 플래그를 `gate` 콜백으로 교체 — **게이트를 잊은 경로는 write 가 열리는 것이 아니라 막힌다**. `SessionManager.requestReverseToolApproval()` + `daemonPending` 맵(응답 경로가 어댑터가 아니라 데몬 안에서 끝나므로 `pending` 과 분리, 조회·UI 는 합본을 본다), `respondPermission` 분기, `onAdapterEvent`→`applyEvent` 개명(데몬 자신도 이 경로로 이벤트를 넣는다). 설정 2종(`tools.reverseExposure` restart·`tools.maxSessionDepth` live, `parseNonNegativeInt` 신설 — 0 이 "금지"라는 유효한 값이다). `ProcessSupervisor.findByPid()`. **부수 변경 3건**: `terminal.write` RPC(슬롯 없는 소비자용 — `TerminalManager.write` 는 없는 id 에 조용히 no-op 이라 존재 확인을 핸들러가 한다), `session.create` 에 `labels`, `term_new` 의 `cwd` 제거(터미널 cwd 는 워크스페이스가 정하므로 받아 두고 무시하던 인자였다). `mcp-probe` 에 `--write-probe`(목이 부를 툴을 단계별로 바꾼다) — **주의**: 프로브가 `settings.json` 을 통째로 쓰면 게이트웨이 설정이 날아간다(같은 파일), 병합으로 고쳤다.
 - (2026-09-01) **M7 7.2.3b**: `packages/daemon/pi-extension/reverse-tools.ts` 신설 — **우리 tsc 대상이 아니다**(`include: ["src"]`), pi 가 컴파일하고 node 내장만 의존한다. `registerPiExtension()`(격리 홈 `extensions/` 로 매번 덮어쓰기) + `piExtensionEnv()`(spawn 사양 env) + `startDaemon` buildEnv 의 pi 한정 오버레이. `resolveMcpServerSpec` 이 `CUSTOM_HARNESS_MCP_LOG` 를 물려준다 — MCP 서버는 별도 프로세스라 데몬 로그만으로는 왜 툴이 안 보이는지 알 수 없다. `bundle/build-bundle.mjs` 의 daemon 복사 대상에 `pi-extension` 추가. `mcp-probe --real-server` 가 pi 를 확장 경로로 검증.
 - (2026-09-01) **M7 7.2.3a**: `packages/daemon/src/mcp/{server,tools,client,registration,main}.ts` 신설 — MCP stdio 서버(줄 단위 JSON-RPC, `initialize` 는 클라이언트 요청 버전을 되돌린다: 하네스마다 다르고 우리가 고집하면 서버가 안 뜬다) + 카탈로그→데몬 RPC 바인딩(승인 게이트 포함) + WS 클라이언트 + 등록. `protocol/rpc.ts` 에 `terminal.read`, `TerminalManager.read()`(끝에서 자르기·구독 없음), `omp-injection` 에 `tools.xdev=false`, `OmpSession` 에 MCP 준비 게이트(`get_state.dumpTools` 폴링, 2턴째 이후에만·한도 초과해도 턴은 나간다), `startDaemon` 에 등록 배선(`harnessExecPaths.grok`). `protocol/tools.ts` 는 `z.object`→`z.strictObject` 교정. `scripts/mcp-probe.mjs` 에 `--real-server` 모드(목 서버 대신 우리 서버). **툴 결과 스키마 확정**: 텍스트 콘텐츠 1개 + JSON 본문, 실패는 프로토콜 오류가 아니라 `isError` 결과(오류로 올리면 하네스가 삼켜 모델이 못 본다).
 - (2026-08-31) **워크플로 지식 계층**: `ai-workflow/wiki/` 신설 — `SCHEMA.md`(운영 헌법: 타입 경계·frontmatter 계약·PURPOSE 교차참조 규칙·갱신 규칙) + `index.md`(R4 앵커 26건) + `log.md`(append-only) + 페이지 26종. `PURPOSE.md` 에 위키 링크 8곳(표시 문구 불변). **주의**: 페이지 갱신 규칙은 SCHEMA §5 — 하네스 번들을 갱신하면 `entities/harness-*` 의 실측값과 `updated` 를 같은 커밋에서 고친다. 자동 드리프트 검사는 없다(킷의 `score_wiki_maintainability` 는 킷 저장소 기준이라 이 저장소를 채점하지 않는다).
@@ -78,7 +81,8 @@
 
 - [x] ~~7.2.3a MCP 서버 경로(omp·grok)~~ — 완료 (2026-09-01)
 - [x] ~~7.2.3b pi 확장~~ — 완료 (2026-09-01). **7.2.3 전체 완결**
-- [ ] **M7 다음**: **7.2.4**: 승인 채널(write 5종이 여기서 열린다)·opt-in(기본 off)·`spawnsSession` 재귀 상한·감사 로그·서버명 선점 탐지
+- [x] ~~7.2.4 안전장치~~ — 완료 (2026-09-01). **WP 7.2 전 구간 완결, write 5종 개방**
+- [ ] **M7 다음**: **7.3.1** 부모-자식 세션 관계(라벨 기반) — 7.2.4 가 남긴 `ch.parentSessionId`·`ch.toolDepth` 위에 세운다. 이어서 7.3.2 팬아웃 상한·사용량 합산, 7.3.3 자식 트랙 UI
 - [ ] ~~구 7.2.3 항목~~: **7.2.3 노출 2경로 구현** — ① 데몬 소유 MCP stdio 서버(omp·grok 공용) ② pi 확장(`pi.registerTool`). 등록은 grok=`grok mcp add` 위임 / omp=격리 홈 `mcp.json` + `tools.xdev=false` / pi=확장 주입. **omp rpc 경로의 MCP 준비 완료 게이트** 필수(1턴째 미노출 실측). 툴 결과 스키마도 여기서 확정 → 7.2.4 안전장치(opt-in·재귀 상한·감사 로그·서버명 선점 탐지)
 - [ ] 7.1 잔여(작음): 트레이 배지·자동 승인이 주의 상태를 **직접** 소비하도록 셸 트랙 배선, `attentionTimestamp` 기반 "오래 기다린 순" 정렬 UI
 - [ ] 7.2.2 툴 카탈로그 정본 정의 → 7.2.3 노출 2경로(데몬 MCP 서버 + pi 확장) → 7.2.4 안전장치
@@ -91,7 +95,9 @@
 
 - ~~**[결함·7.2.0a] omp·grok 격리 누수**~~ — **해소 (2026-08-31, TASK-003)**: `HOME`·`USERPROFILE`·XDG 4종을 하네스별 빈 홈으로 덮어 유입을 끊었다(대조 실측 `foreign=40 → 0`). `nfr1-smoke` 도 자손 프로세스 트리까지 감시한다. **잔여**: Windows(`USERPROFILE`·심볼릭 링크 권한)에서 동일 봉쇄가 성립하는지 미검증 — C-5 실기기 항목
 - ~~**[결함·7.2.0b] grok ACP 기본 모드가 MCP 툴 호출을 승인 요청 없이 거절**~~ — **해소 (2026-08-31, TASK-004)**: 원인은 사용자 `$HOME` 의 Claude 설정 import(= 7.2.0a 와 같은 뿌리)였고, `--permission-mode default` 를 명시 고정해 MCP 툴·내장 파괴적 툴 양쪽이 승인 대상이 됐다. **잔여**: 영속 승인(`always-allow`/`allow-edits-session`)의 UI 표기·감사 기록은 FR-1.5 후속. 번들 grok 갱신 시 모드 행렬 재실측 필요(1.0.5→1.0.13 사이 이미 드리프트)
-- 프로젝트 스코프 `.mcp.json` 이 사용자 스코프 서버명을 덮는다(grok·omp 공통) — 워크스페이스가 임의 저장소를 여는 구조에서 **저장소가 우리 역방향 툴 이름을 선점 가능** → 7.2.4 에 접두사·선점 탐지
+- ~~프로젝트 스코프 `.mcp.json` 서버명 선점~~ — **탐지 추가 (2026-09-01, 7.2.4)**: 세션 생성 시 `<cwd>/.mcp.json` 에 `ch` 가 있으면 경고한다. **막지는 않는다** — 그 파일을 읽는 것은 하네스이고, 저장소가 자기 MCP 서버를 두는 것 자체는 정상이다. 잔여: 경고가 데몬 로그에만 남는다(UI 표면 없음)
+- 자동 승인(`autoApprove`)이 켜져 있으면 **역방향 툴 승인도 자동 통과**한다 — 사용자가 "전부 자동 승인"을 고른 결과라 의도와 어긋나지는 않지만, `term_send`(임의 셸) 같은 툴만 따로 두는 정책이 필요한지는 FR-1.5 후속 판단
+- 긴 승인 대기에서 **하네스 자신의 툴 타임아웃**은 미측정 — 프로브의 자동 승인은 즉시 응답이라 대기가 없었다. 우리 만료는 120초, 노출 프로세스의 RPC 대기는 180초
 - 번들 grok darwin 버전 세트 불변성 깨짐 — manifest 1.0.5 vs 실물 1.0.13. `sources.json` 의 `localFile` 경로만 sha256·버전 대조 없이 복사하고 매니페스트에는 고정 버전을 기입한다(체크섬은 복사본 기준이라 `--verify` 통과). TASK-2026-08-31-main-002
 
 - 터미널은 darwin 만 실검증 — Windows 는 conpty 경로라 결과가 그대로 이어지지 않는다. C-5 실기기 항목에 터미널 왕복 추가 필요

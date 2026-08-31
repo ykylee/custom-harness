@@ -153,6 +153,12 @@ export const rpc = {
         modelId: z.string().optional(),
         approvalPolicy: z.enum(['mediate', 'auto']).optional(),
         mcpServers: z.array(McpServerConfigSchema).optional(),
+        /**
+         * 생성 시 붙일 라벨 (WBS 7.2.4). 지금은 역방향 툴이 부모 세션과 재귀 깊이를 적는
+         * 용도로만 쓴다 — 그 값이 세션 레코드에 남아야 데몬을 재시작해도 깊이 상한이 성립한다.
+         * 부모-자식 관계의 온전한 모델은 7.3.1 이 이 위에 세운다.
+         */
+        labels: z.record(z.string(), z.string()).optional(),
       }),
       z.looseObject({ session: SessionSummarySchema }),
     ),
@@ -408,6 +414,18 @@ export const rpc = {
         truncated: z.boolean(),
       }),
     ),
+    /**
+     * 입력 1회 쓰기 (WBS 7.2.4) — 대화형 UI 의 바이너리 프레임 경로와 **병행**한다.
+     *
+     * 프레임 경로는 attach 로 잡은 슬롯 위에서만 성립하는데(6.3), 역방향 툴 `term_send` 는
+     * 화면 없이 한 줄을 보내는 소비자라 슬롯을 잡을 이유가 없다. 반대로 이 RPC 로 대화형
+     * 입력을 흘리면 키 입력마다 JSON 왕복이 생긴다 — 그래서 둘 다 남긴다.
+     */
+    write: rpcPair(
+      'terminal.write',
+      z.looseObject({ terminalId: z.string(), data: z.string() }),
+      z.looseObject({}),
+    ),
     kill: rpcPair('terminal.kill', z.looseObject({ terminalId: z.string() }), z.looseObject({})),
   },
   // 워크스페이스 파일 (WBS 6.4) — 경로는 워크스페이스 상대만 받는다 (workbench-tabs §3)
@@ -469,6 +487,34 @@ export const rpc = {
       z.looseObject({}),
     ),
   },
+  /**
+   * 역방향 툴 (M7 7.2.4, FR-9.2) — 하네스가 spawn 한 MCP 서버 / pi 확장이 부른다.
+   *
+   * 툴 실행을 **데몬 안으로** 끌어온 이유가 셋 있다: ① 승인 채널이 여기에만 있다(사용자와
+   * 이어진 연결은 데몬이 소유한다) ② 감사 로그의 단일 기록자여야 한다(하네스마다 MCP 서버
+   * 프로세스가 따로 뜨므로 JSONL 을 각자 append 하면 섞인다) ③ 재귀 상한이 보는 세션 그래프가
+   * 데몬에 있다. 노출 프로세스는 전송만 하고 판단하지 않는다.
+   */
+  tool: {
+    invoke: rpcPair(
+      'tool.invoke',
+      z.looseObject({
+        name: z.string(),
+        args: z.record(z.string(), z.unknown()).optional(),
+        /**
+         * 호출한 프로세스의 부모 pid = 하네스 프로세스. 데몬이 PID 원장으로 세션을 역인덱싱해
+         * 승인 요청을 그 세션에 붙이고 재귀 깊이를 센다. 모르면 생략 — 그때는 세션 귀속 없이
+         * 처리되고, 세션을 만드는 툴은 깊이를 셀 수 없으므로 거부된다.
+         */
+        callerPid: z.number().int().positive().optional(),
+      }),
+      // MCP `tools/call` 결과 그대로 — 노출 프로세스가 변환 없이 흘려보낸다
+      z.looseObject({
+        content: z.array(z.looseObject({ type: z.literal('text'), text: z.string() })),
+        isError: z.boolean(),
+      }),
+    ),
+  },
   system: {
     version: rpcPair(
       'system.version',
@@ -515,6 +561,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.terminal.detach.request,
   rpc.terminal.resize.request,
   rpc.terminal.read.request,
+  rpc.terminal.write.request,
   rpc.terminal.kill.request,
   rpc.file.list.request,
   rpc.file.read.request,
@@ -522,6 +569,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.diff.subscribe.request,
   rpc.diff.unsubscribe.request,
   rpc.workspace.setupRun.request,
+  rpc.tool.invoke.request,
   rpc.system.version.request,
   rpc.system.shutdown.request,
 ]);
@@ -562,6 +610,7 @@ export const RpcResponseSchema = z.union([
   rpc.terminal.detach.response,
   rpc.terminal.resize.response,
   rpc.terminal.read.response,
+  rpc.terminal.write.response,
   rpc.terminal.kill.response,
   rpc.file.list.response,
   rpc.file.read.response,
@@ -569,6 +618,7 @@ export const RpcResponseSchema = z.union([
   rpc.diff.subscribe.response,
   rpc.diff.unsubscribe.response,
   rpc.workspace.setupRun.response,
+  rpc.tool.invoke.response,
   rpc.system.version.response,
   rpc.system.shutdown.response,
 ]);

@@ -5,8 +5,8 @@
 - 문서 목적: 1차 하네스 3종(pi / omp / grok)이 **MCP 서버를 실제로 띄우고, 툴을 모델에 노출하고, 모델의 호출을 실행해 결과를 대화로 되돌리는지**를 실물 바이너리로 측정하고, M7 역방향 툴 표면(WP 7.2)의 경로를 확정한다.
 - 범위: MCP 지원 여부·등록 경로·노출 방식·호출 왕복·격리 경계. MCP 서버 **구현**(7.2.3)은 범위 밖.
 - 대상 독자: 유지보수자, 설계자, AI agent
-- 상태: approved (v1.2, 2026-08-31 — §3.3 grok 권한 모드를 WBS 7.2.0b 로 확정(원인이 §3.1 누수였음을 실측). v1.1: §3.1 격리 누수 봉쇄. v1.0: 7.2.1 실측)
-- 최종 수정일: 2026-08-31
+- 상태: approved (v1.3, 2026-09-01 — §4.1 write 툴 왕복 실측 추가(7.2.4, 3하네스 PASS). v1.2: §3.3 grok 권한 모드를 WBS 7.2.0b 로 확정(원인이 §3.1 누수였음을 실측). v1.1: §3.1 격리 누수 봉쇄. v1.0: 7.2.1 실측)
+- 최종 수정일: 2026-09-01
 - 측정 도구: [`scripts/mcp-probe.mjs`](../../scripts/mcp-probe.mjs) + [`scripts/mcp-probe/mock-mcp-server.mjs`](../../scripts/mcp-probe/mock-mcp-server.mjs) + [`scripts/grok-permission-probe.mjs`](../../scripts/grok-permission-probe.mjs) (권한 모드 행렬, §3.3)
 - 측정 대상: 번들 실물 (`bundle/out/custom-harness-0.1.0-darwin-arm64/harnesses/`) — pi 0.84.1, omp 17.3.8, grok 1.0.13(§6 참조)
 - 측정 환경: darwin arm64. 목 게이트웨이(OpenAI 호환 SSE) + 목 MCP stdio 서버. 외부 프록시 블랙홀(NFR-1 전제와 동일)
@@ -177,8 +177,24 @@ grok 이 ACP 표준 `kind` 를 그대로 보내므로 어댑터 매핑이 영속
 | 7.2.2 툴 카탈로그 | **하네스 무관 단일 카탈로그**로 정의. 이름은 `<prefix>_<verb>_<object>` 형태로 짧게 — grok 은 `<server>__<tool>`, omp 는 `mcp__<server>_<tool>` 로 다시 접두사를 붙이므로 원본이 길면 모델이 다루기 나빠진다 |
 | 7.2.3 노출 | **경로 2개**: ① MCP stdio 서버 1개(omp·grok 공용, 데몬이 소유) ② pi 확장(`pi.registerTool`) — 같은 카탈로그를 두 표면으로. **"폴백 어댑터"는 pi 전용 확장을 뜻한다**로 WBS 문구 보정 필요 |
 | 7.2.3 등록 | grok 은 `grok mcp add`(하네스 CLI 위임), omp 는 격리 홈 `mcp.json` 직접 기입 + `tools.xdev=false` 동반 설정, pi 는 확장 경로 주입 |
-| 7.2.4 안전장치 | §3.1 HOME 격리 **(7.2.0a 완료)** · §3.3 grok 권한 모드 **(7.2.0b 완료 — `--permission-mode default` 고정)** · §3.5 이름 선점만 남음 |
+| 7.2.4 안전장치 | §3.1 HOME 격리 **(7.2.0a 완료)** · §3.3 grok 권한 모드 **(7.2.0b 완료 — `--permission-mode default` 고정)** · §3.5 이름 선점 탐지 **(7.2.4 완료 — 세션 생성 시 경고)** |
 | 7.5 CLI | 자동화 주 경로 **승격 불필요**. 계획대로 병행 트랙 유지 |
+
+## 4.1 write 툴 왕복 실측 (2026-09-01, 7.2.4)
+
+read 왕복(7.2.3)과 전송은 같지만 **승인 대기**가 끼어든다 — 하네스 자신의 툴 타임아웃이 우리 승인 만료(120초)보다 짧으면 read 경로로는 드러나지 않는다. `mcp-probe --real-server --daemon --write-probe` 로 잰다: 목 모델이 `session_new` 를 부르고, 데몬이 승인 카드를 올리고, 프로브가 자동 승인한 뒤 세션이 실제로 생기는지까지.
+
+| 하네스 | 노출 | write 왕복 | 승인 | 결과 |
+|---|---|---|---|---|
+| omp 17.3.8 | `direct:mcp__ch_ws_list` | PASS | `origin=reverse_tool` 1건 | 세션 +1, 자식 라벨 `ch.toolDepth=1` |
+| grok 1.0.13 | `meta:use_tool` | PASS | `origin=reverse_tool` 1건 | 세션 +1, 자식 라벨 `ch.toolDepth=1` |
+| pi 0.84.1 | `direct:session_new` (접두사 없음) | PASS | `origin=reverse_tool` 1건 | 세션 +1, 자식 라벨 `ch.toolDepth=1` |
+
+부수 확인:
+
+- **3종 모두 승인 대기를 견딘다** — 하네스 쪽에서 툴 호출을 먼저 포기하지 않았다. 다만 프로브의 자동 승인은 즉시 응답이므로 **긴 대기(수십 초)는 여전히 미측정**이다. 실사용에서 사용자가 오래 자리를 비우는 경우는 우리 만료(120초)가 먼저 끊는다.
+- grok 은 자기 툴 승인(`origin=harness`) 2건을 별도로 올렸다 — `origin` 필드가 하네스 요청과 우리 요청을 실제로 갈라 준다는 확인이다.
+- foreign=0 유지 — 역방향 툴을 켜도 홈 격리 경계(NFR-1)는 그대로다.
 
 ## 5. 미해결 (7.2.3 착수 시 확정)
 

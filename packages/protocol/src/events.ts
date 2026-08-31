@@ -59,6 +59,15 @@ export const PermissionRequestSchema = z.looseObject({
   summary: z.string(),
   detail: z.unknown().optional(),
   options: z.array(PermissionOptionSchema),
+  /**
+   * 요청의 출처 (M7 7.2.4, FR-9.2). 생략 = `harness` — 이전 번들이 보내는 요청은 전부 그쪽이다.
+   *
+   * `reverse_tool` 은 **데몬이 스스로 만든** 요청이다: 역방향 툴의 write 5종을 실행하기 전에
+   * 사용자에게 묻는다. 응답 경로가 다르다 — 하네스 요청은 어댑터로 되돌아가지만 이건 데몬
+   * 안에서 끝난다. 같은 채널에 태우는 이유는 UI 다: 사이드바 배지·주의 상태·승인 카드가
+   * 이미 이 채널을 소비하므로, 별도 채널을 만들면 그 전부를 두 번 구현하게 된다.
+   */
+  origin: z.enum(['harness', 'reverse_tool']).optional(),
 });
 export type PermissionRequest = z.infer<typeof PermissionRequestSchema>;
 

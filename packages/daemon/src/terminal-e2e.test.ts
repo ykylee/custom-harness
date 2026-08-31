@@ -172,6 +172,28 @@ describe('터미널 e2e', () => {
     expect(binary).toHaveLength(0);
   });
 
+  it('terminal.write 로도 입력이 들어간다 — 슬롯 없는 소비자(역방향 툴)의 경로 (7.2.4)', async () => {
+    const workspaceId = await openWorkspace();
+    const created = await rpc('terminal.create.request', { workspaceId, cols: 80, rows: 24 });
+    const terminalId = (created.result?.terminal as { id: string }).id;
+
+    // attach 는 출력을 보기 위해서만 쓴다 — 입력은 RPC 로 넣는다
+    const attached = await rpc('terminal.attach.request', { terminalId, cols: 80, rows: 24 });
+    const slot = attached.result?.slot as number;
+
+    const written = await rpc('terminal.write.request', {
+      terminalId,
+      data: 'echo "RPC""_OK"\n',
+    });
+    expect(written.error).toBeUndefined();
+    expect(await awaitOutput(slot, 'RPC_OK')).toContain('RPC_OK');
+  });
+
+  it('없는 터미널에 쓰면 not_found — 조용한 성공은 "보냈다"는 거짓말이 된다', async () => {
+    const written = await rpc('terminal.write.request', { terminalId: 'trm_none', data: 'x' });
+    expect(written.error?.code).toBe('not_found');
+  });
+
   it('없는 워크스페이스·터미널은 not_found 다', async () => {
     const created = await rpc('terminal.create.request', {
       workspaceId: 'wsp_none',

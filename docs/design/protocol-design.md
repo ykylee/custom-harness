@@ -3,8 +3,8 @@
 # 데몬-렌더러 프로토콜 설계 (M0 WBS 0.2)
 
 - 문서 목적: 렌더러(및 CLI)가 데몬과 통신하는 프로토콜의 스키마 구조·진화 규칙·인증을 확정한다. OPEN-4 해소.
-- 상태: approved (v1.3, 2026-08-31 — §2 데몬 소유 이벤트에 `attention_changed` + `session.attention.ack` RPC 추가(M7 7.1.2). v1.2: 2026-08-30 사용자 승인 — 개정: §1 바이너리 프레임 채택(터미널). v1.1: §2 와이어 전용 `user_message` 이벤트 추가)
-- 최종 수정일: 2026-08-31
+- 상태: approved (v1.4, 2026-09-01 — §1 터미널 입력 2경로 명시 + `tool.*` 도메인·`PermissionRequest.origin` 추가(M7 7.2.4). v1.3: §2 데몬 소유 이벤트에 `attention_changed` + `session.attention.ack` RPC 추가(M7 7.1.2). v1.2: 2026-08-30 사용자 승인 — 개정: §1 바이너리 프레임 채택(터미널). v1.1: §2 와이어 전용 `user_message` 이벤트 추가)
+- 최종 수정일: 2026-09-01
 - 입력: [어댑터 설계서](./adapter-contract.md), [FR-1.4](../requirements/fr1-harness-sessions.md), [NFR-3/5](../requirements/nfr.md)
 
 ## 1. 전송·프레이밍
@@ -15,13 +15,14 @@
   - **와이어 버전은 올리지 않는다.** 데몬이 `features.terminalBinaryFrames` 로 광고하고, 플래그가 없으면 클라이언트는 터미널 기능을 **숨긴다**(폴백 경로 금지 — §3 원칙 유지).
   - 미지 opcode 프레임은 조용히 버린다(관대 파싱, NFR-5). 프레임 인코더·디코더는 protocol 패키지의 순수 함수로 두어 데몬·렌더러가 같은 구현을 쓴다.
   - 순수성 게이트(`.transform()/.catch()/.preprocess()` 금지)는 JSON 와이어 스키마에 대한 규칙이다. 바이너리 채널은 zod 검증 대상이 아니며, 검증 실패는 예외가 아니라 `undefined` 반환으로 다룬다(연결을 끊지 않는다).
+  - **입력 경로는 둘이다 (v1.3 추가, M7 7.2.4)**: 대화형 UI 는 슬롯 위의 바이너리 프레임을, 화면 없는 소비자(역방향 툴 `term_send`)는 `terminal.write` RPC 를 쓴다. 프레임 경로는 attach 로 잡은 슬롯이 있어야 성립하는데 역방향 툴은 슬롯을 잡을 이유가 없고, 반대로 RPC 로 대화형 입력을 흘리면 키 입력마다 JSON 왕복이 생긴다. 읽기도 같은 이유로 둘이다(`terminal.attach` 구독 / `terminal.read` 1회).
   - 상세: [작업 캔버스 설계 §2](./workbench-tabs.md)
 - 봉투 2계층: 연결 레벨(`hello`/`ping`/`pong`) 안에 세션 레벨 RPC·이벤트.
 
 ## 2. 스키마 (zod 단일 소스 — protocol 패키지)
 
-- **RPC**: `domain.verb.request` / `.response`, `requestId` 상관. 도메인: `session.*`(create/resume/list/close/prompt/interrupt/permission.respond/model.set/timeline/attention.ack), `config.*`(key.set/key.test/get/set), `harness.*`(list/probe), `system.*`(version/shutdown).
-- **이벤트**: FR-1.4 유니온을 그대로 와이어 스키마로 — `turn_*`, `message_delta`, `reasoning_delta`, `tool_execution_*`, `permission_*`, `usage_updated`, `session_status_changed`, `error`. 여기에 **데몬 소유 이벤트**가 더해진다(어댑터 유니온에는 없다): `user_message`, `attention_changed`(M7 7.1.2 — 주의 상태 전이). 이벤트에는 `sessionId` + 단조 증가 `seq` 를 부여(재연결 시 갭 감지).
+- **RPC**: `domain.verb.request` / `.response`, `requestId` 상관. 도메인: `session.*`(create/resume/list/close/prompt/interrupt/permission.respond/model.set/timeline/attention.ack), `config.*`(key.set/key.test/get/set), `harness.*`(list/probe), `tool.*`(invoke — M7 7.2.4 역방향 툴), `system.*`(version/shutdown). M5·M6 이 더한 `project.*`·`workspace.*`·`terminal.*`·`file.*`·`diff.*` 는 각 설계서가 소유한다.
+- **이벤트**: FR-1.4 유니온을 그대로 와이어 스키마로 — `turn_*`, `message_delta`, `reasoning_delta`, `tool_execution_*`, `permission_*`, `usage_updated`, `session_status_changed`, `error`. 여기에 **데몬 소유 이벤트**가 더해진다(어댑터 유니온에는 없다): `user_message`, `attention_changed`(M7 7.1.2 — 주의 상태 전이). `permission_requested` 는 하네스가 올린 것만이 아니다 — 데몬이 역방향 툴 승인을 위해 직접 발행하기도 하며(M7 7.2.4), 구분은 `PermissionRequest.origin`(`harness` | `reverse_tool`, 생략 시 `harness`)이 한다. 채널을 나누지 않은 이유는 소비자(사이드바·주의 상태·알림·승인 카드)를 두 번 구현하지 않기 위해서다. 이벤트에는 `sessionId` + 단조 증가 `seq` 를 부여(재연결 시 갭 감지).
 - **와이어 전용 이벤트 `user_message`** (v1.1 추가): 사용자 메시지 타임라인 행은 데몬(세션 매니저)이 소유·발행한다(데몬 설계 §4). 어댑터 유니온(AgentEvent)에는 없고 와이어 유니온(SessionEvent)에만 존재하는 additive 확장 — `{ type: "user_message", turnId, text }` + 와이어 봉투.
 - **순수성 규칙**: 와이어 스키마에 `.transform()/.catch()/.preprocess()` 금지 — 검증과 변환 분리 (paseo 검증 전략 채택).
 - 어댑터 이벤트(AgentEvent)와 와이어 이벤트는 **동일 스키마를 공유**한다 — 데몬은 sessionId/seq 부여 외 재가공하지 않는다 (이중 정의 드리프트 방지).

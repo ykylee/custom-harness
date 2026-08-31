@@ -52,6 +52,18 @@ const keep = args.includes('--keep');
 const dumpToolsPath = argValue('--dump-tools');
 const dumpMessagesPath = argValue('--dump-messages');
 const grokPermissionMode = argValue('--grok-permission-mode');
+/**
+ * write 툴 왕복까지 잰다 (WBS 7.2.4). read 툴과 전송은 같지만 **승인 대기**가 추가되고,
+ * 그 대기를 하네스가 견디는지는 read 경로로 알 수 없다 — 하네스 자신의 툴 타임아웃이
+ * 우리 승인 만료보다 짧으면 여기서만 드러난다.
+ */
+const writeProbe = args.includes('--write-probe');
+
+/**
+ * 목 모델이 부를 툴. 단계마다 바뀐다 — read 왕복 뒤 write 왕복을 재려면 같은 세션에서
+ * 다른 툴을 부르게 해야 한다. 목이 프롬프트를 읽지 않으므로(스크립트된 응답) 여기서 지정한다.
+ */
+let targetTool = { name: TOOL_NAME, args: realServer ? {} : { text: 'ping' } };
 // 7.2.0a 대조군 — 홈 격리를 끄면 사용자 홈의 외부 MCP 설정이 그대로 유입된다 (§3.1 재현용)
 if (args.includes('--no-home-isolation')) process.env.CUSTOM_HARNESS_HOME_ISOLATION = 'false';
 
@@ -213,12 +225,12 @@ const mockGateway = createServer((req, res) => {
         if (needsSearchFirst) obs.searchIssued = true;
         else obs.toolCallIssued = true;
       }
-      const callName = needsSearchFirst ? 'search_tool' : (exposure?.callName ?? TOOL_NAME);
-      const toolInput = realServer ? {} : { text: 'ping' };
+      const callName = needsSearchFirst ? 'search_tool' : (exposure?.callName ?? targetTool.name);
+      const toolInput = targetTool.args;
       const callArgs = needsSearchFirst
-        ? { query: `${SERVER_NAME} ${TOOL_NAME}` }
+        ? { query: `${SERVER_NAME} ${targetTool.name}` }
         : exposure?.kind === 'meta'
-          ? { tool_name: `${SERVER_NAME}__${TOOL_NAME}`, tool_input: toolInput }
+          ? { tool_name: `${SERVER_NAME}__${targetTool.name}`, tool_input: toolInput }
           : toolInput;
 
       const wantsStream = body?.stream === true || /"stream"\s*:\s*true/.test(raw);
@@ -357,7 +369,7 @@ async function readMcpLog(logPath) {
 const META_TOOLS = { use_tool: 'grok use_tool' };
 function resolveExposure(observations) {
   for (const n of observations.toolNamesSeen) {
-    if (n === TOOL_NAME || n.endsWith(TOOL_NAME) || n.includes('ch_probe')) {
+    if (n === targetTool.name || n.endsWith(targetTool.name) || n.includes('ch_probe')) {
       return { kind: 'direct', callName: n };
     }
   }
@@ -571,6 +583,22 @@ async function probeViaDaemon() {
   // pi 확장의 MCP 서버 로그 — 데몬이 spawn 사양에 물려주므로 기동 전에 심어야 한다.
   // omp·grok 은 아래 루프에서 각자 로그 경로로 **재등록**하므로 이 값에 영향받지 않는다.
   if (realServer) process.env.CUSTOM_HARNESS_MCP_LOG = join(home, 'mcp-daemon-pi.jsonl');
+  // 역방향 툴은 기본 off (WBS 7.2.4) — 실측은 켠 상태를 잰다. 재귀 상한은 넉넉히 둔다
+  // (여기서 재는 것은 노출·왕복이지 상한이 아니다 — 상한은 단위 테스트가 고정한다).
+  //
+  // **덮어쓰지 말고 병합한다** — 같은 파일에 게이트웨이 설정이 이미 들어 있다
+  // (GatewayService.setConfig). 통째로 쓰면 baseUrl·모델이 날아가 하네스가 인증에서 죽는다.
+  const settingsPath = paths.settingsFile;
+  const current = JSON.parse(await readFile(settingsPath, 'utf8').catch(() => '{}'));
+  await mkdir(dirname(settingsPath), { recursive: true });
+  await writeFile(
+    settingsPath,
+    JSON.stringify(
+      { ...current, tools: { reverseExposure: true, maxSessionDepth: 2 } },
+      null,
+      2,
+    ),
+  );
   const { startDaemon, PiAdapter, OmpAdapter, GrokAdapter } = await import(
     join(repoRoot, 'packages/daemon/dist/index.js')
   );
@@ -625,6 +653,8 @@ async function probeViaDaemon() {
       permissions.push({
         sessionId: e.sessionId,
         kind: e.request?.kind,
+        // 역방향 툴 승인은 데몬이 만든 요청이다 (7.2.4) — 하네스 요청과 구분해 센다
+        origin: e.request?.origin ?? 'harness',
         summary: e.request?.summary,
         options: (e.request?.options ?? []).map((o) => o.optionId ?? o.id),
       });
@@ -665,6 +695,7 @@ async function probeViaDaemon() {
     let error = null;
     let turn1Exposure = null;
     let sessionIdForReport = null;
+    let writeResult = null;
     try {
       const session = await daemon.manager.createSession({
         harness,
@@ -695,6 +726,54 @@ async function probeViaDaemon() {
         }
         if (turn === 1) turn1Exposure = resolveExposure(o);
       }
+      // write 툴 왕복 (7.2.4) — 승인 대기를 낀 경로. 자동 승인은 위 리스너가 한다
+      if (writeProbe && !error) {
+        const before = (await daemon.manager.listSessions()).length;
+        // 목이 부를 툴을 write 로 바꾸고 "이미 한 번 불렀다" 표시를 되돌린다
+        targetTool = { name: 'session_new', args: { harness, cwd: workDir } };
+        o.toolCallIssued = false;
+        o.searchIssued = false;
+        o.toolResultSeen = null;
+        const { turnId } = await daemon.manager.prompt(
+          session.sessionId,
+          `Use the session_new tool with harness="${harness}" and cwd="${workDir}". ` +
+            `You must call the tool. After the tool returns, reply with DONE and nothing else.`,
+        );
+        const deadline = Date.now() + 150_000;
+        for (;;) {
+          const terminal = events.find(
+            (e) =>
+              e.sessionId === session.sessionId &&
+              (e.type === 'turn_completed' || e.type === 'turn_failed') &&
+              e.turnId === turnId,
+          );
+          if (terminal) {
+            if (terminal.type === 'turn_failed') {
+              writeResult = { error: terminal.error?.message ?? 'turn_failed' };
+            }
+            break;
+          }
+          if (Date.now() > deadline) {
+            writeResult = { error: 'timeout' };
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        const after = await daemon.manager.listSessions();
+        writeResult = {
+          ...(writeResult ?? {}),
+          approvals: permissions.filter(
+            (x) => x.sessionId === session.sessionId && x.origin === 'reverse_tool',
+          ).length,
+          sessionsCreated: after.length - before,
+          // 라벨이 붙어야 재귀 상한이 다음 세대에도 성립한다
+          childLabels:
+            after.find((s) => s.labels?.['ch.parentSessionId'] === session.sessionId)?.labels ??
+            null,
+          toolResult: o.toolResultSeen?.content?.slice(0, 200) ?? null,
+        };
+        targetTool = { name: TOOL_NAME, args: realServer ? {} : { text: 'ping' } };
+      }
       await daemon.manager.closeSession(session.sessionId).catch(() => {});
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -709,6 +788,7 @@ async function probeViaDaemon() {
       requests: o.requests,
       toolsSeen: [...o.toolNamesSeen],
       toolResult: o.toolResultSeen?.content?.slice(0, 200) ?? null,
+      ...(writeProbe ? { writeTool: writeResult } : {}),
     });
   }
   await daemon.stop?.();
@@ -764,6 +844,10 @@ for (const r of results) {
   console.log(
     `  ${r.harness}: initialized=${v.initialized} registered=${v.registered} ` +
       `exposure=${v.exposure} invoked=${v.invoked} returned=${v.returned} ` +
-      `foreign=${r.foreignMcpTools?.length ?? 0}`,
+      `foreign=${r.foreignMcpTools?.length ?? 0}` +
+      (r.writeTool
+        ? ` write(승인 ${r.writeTool.approvals ?? 0}건, 세션 +${r.writeTool.sessionsCreated ?? 0}` +
+          `${r.writeTool.error ? `, error=${r.writeTool.error}` : ''})`
+        : ''),
   );
 }

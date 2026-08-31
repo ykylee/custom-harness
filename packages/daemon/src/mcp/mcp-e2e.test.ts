@@ -4,7 +4,7 @@
 // JSON-RPC 로 몰아본다. 여기까지 통과하면 남은 미지수는 "하네스가 이 서버를 띄우는가" 하나이고,
 // 그건 7.2.1 이 같은 등록 형식으로 이미 실증했다.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { access, mkdtemp } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -37,6 +37,14 @@ describe('MCP 서버 e2e', () => {
 
   beforeEach(async () => {
     const root = await mkdtemp(join(tmpdir(), 'ch-mcpe2e-'));
+    // 역방향 툴은 기본 off (WBS 7.2.4) — e2e 는 켠 상태를 본다.
+    // env 가 아니라 settings.json 으로 켜는 이유: env 는 이 vitest 프로세스 전역이라
+    // 같은 워커의 다른 스위트까지 켜 버린다.
+    await mkdir(join(root, 'data'), { recursive: true });
+    await writeFile(
+      join(root, 'data', 'settings.json'),
+      JSON.stringify({ tools: { reverseExposure: true } }),
+    );
     daemon = await startDaemon({ root, version: '0.1.0', adapters: () => [new FakeAdapter()] });
 
     child = spawn(process.execPath, [mcpEntry], {
@@ -124,7 +132,7 @@ describe('MCP 서버 e2e', () => {
     expect(found).toHaveProperty('status');
   });
 
-  it('승인 대상 write 툴은 거부된다 — 승인 채널은 7.2.4', async () => {
+  it('승인 대상 write 툴은 호출자 세션을 못 찾으면 거부된다 — 물을 화면이 없다', async () => {
     await request('initialize', {});
     const called = await request('tools/call', {
       name: 'session_say',

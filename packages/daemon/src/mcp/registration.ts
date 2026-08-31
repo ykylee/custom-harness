@@ -6,7 +6,7 @@
 //          우리가 추측하지 않는다 — 하네스 자신의 CLI 가 쓰게 한다
 //   pi   — MCP 를 설계상 배제. 확장(`pi.registerTool`)으로 따로 간다 (후속)
 import { execFile } from 'node:child_process';
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -124,6 +124,62 @@ export async function registerOmpMcpServer(
   };
 }
 
+/**
+ * omp 격리 홈의 `mcp.json` 에서 우리 항목만 지운다 (WBS 7.2.4 opt-in off).
+ *
+ * 등록을 끄면 **실제로 사라져야 한다**. 항목을 남겨 두면 하네스가 서버를 계속 spawn 하고,
+ * 그 서버는 매번 "역방향 툴이 꺼져 있다"만 답한다 — 모델에게는 있으나 마나 한 툴이 10개
+ * 보이는 상태이고, 사용자에게는 설정이 안 먹은 것처럼 보인다.
+ */
+export async function unregisterOmpMcpServer(
+  ompHomeDir: string,
+  name: string = REVERSE_MCP_SERVER_NAME,
+): Promise<{ status: 'removed' | 'absent'; configPath: string }> {
+  const configPath = join(ompHomeDir, 'mcp.json');
+  let existing: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(await readFile(configPath, 'utf8'));
+    if (typeof parsed !== 'object' || parsed === null) return { status: 'absent', configPath };
+    existing = parsed as Record<string, unknown>;
+  } catch {
+    return { status: 'absent', configPath };
+  }
+  if (typeof existing.mcpServers !== 'object' || existing.mcpServers === null) {
+    return { status: 'absent', configPath };
+  }
+  const servers = { ...(existing.mcpServers as Record<string, unknown>) };
+  if (servers[name] === undefined) return { status: 'absent', configPath };
+  delete servers[name];
+  await writeFile(configPath, `${JSON.stringify({ ...existing, mcpServers: servers }, null, 2)}\n`);
+  return { status: 'removed', configPath };
+}
+
+/** grok 등록 해제 — 등록과 같이 하네스 CLI 에 위임한다 (없던 이름이면 실패가 정상) */
+export async function unregisterGrokMcpServer(options: {
+  execPath: string;
+  grokHome: string;
+  name?: string;
+  env?: NodeJS.ProcessEnv;
+  run?: CommandRunner;
+  timeoutMs?: number;
+}): Promise<{ status: 'removed' | 'absent' }> {
+  const run: CommandRunner =
+    options.run ?? ((file, args, opts) => execFileAsync(file, args, { ...opts, encoding: 'utf8' }));
+  try {
+    await run(
+      options.execPath,
+      ['mcp', 'remove', options.name ?? REVERSE_MCP_SERVER_NAME, '--scope', 'user'],
+      {
+        env: { ...(options.env ?? {}), GROK_HOME: options.grokHome },
+        timeout: options.timeoutMs ?? 15_000,
+      },
+    );
+    return { status: 'removed' };
+  } catch {
+    return { status: 'absent' };
+  }
+}
+
 export interface GrokMcpRegistrationResult {
   status: 'registered';
   /** `grok mcp add` 표준 출력 — 진단용 */
@@ -213,6 +269,49 @@ export async function registerPiExtension(
   const target = join(extensionsDir, PI_EXTENSION_FILENAME);
   await copyFile(options.sourcePath ?? resolvePiExtensionSource(), target);
   return { status: 'installed', path: target };
+}
+
+/** pi 확장 제거 — 파일이 없어도 성공이다 (opt-in off 는 멱등해야 한다) */
+export async function unregisterPiExtension(
+  piHomeDir: string,
+): Promise<{ status: 'removed' | 'absent'; path: string }> {
+  const target = join(piHomeDir, 'extensions', PI_EXTENSION_FILENAME);
+  try {
+    await rm(target);
+    return { status: 'removed', path: target };
+  } catch {
+    return { status: 'absent', path: target };
+  }
+}
+
+/**
+ * 서버명 선점 탐지 (WBS 7.2.4).
+ *
+ * omp·grok 둘 다 **프로젝트 스코프 `.mcp.json` 이 사용자 스코프를 덮는다**(7.2.1 §3.5).
+ * 워크스페이스가 임의 저장소를 여는 구조라, 저장소가 `ch` 라는 이름을 미리 차지해 두면
+ * 모델이 부르는 `ch__session_list` 가 우리 서버가 아니라 그 저장소의 서버로 간다.
+ *
+ * 막을 수는 없다 — 그 파일을 읽는 것은 하네스이고 우리는 그 결정에 개입하지 않는다.
+ * 그래서 **탐지해서 알린다**. 조용히 바꿔치기되는 것과 알고 쓰는 것은 다르다.
+ */
+export async function detectServerNamePreemption(
+  cwd: string,
+  name: string = REVERSE_MCP_SERVER_NAME,
+): Promise<{ preempted: boolean; configPath: string }> {
+  const configPath = join(cwd, '.mcp.json');
+  try {
+    const parsed: unknown = JSON.parse(await readFile(configPath, 'utf8'));
+    if (typeof parsed !== 'object' || parsed === null) return { preempted: false, configPath };
+    const servers = (parsed as Record<string, unknown>).mcpServers;
+    if (typeof servers !== 'object' || servers === null) return { preempted: false, configPath };
+    return {
+      preempted: Object.prototype.hasOwnProperty.call(servers, name),
+      configPath,
+    };
+  } catch {
+    // 없거나 못 읽는 파일은 선점이 아니다 — 여기서 기동·세션 생성을 막지 않는다
+    return { preempted: false, configPath };
+  }
 }
 
 /**
