@@ -160,6 +160,109 @@ describe('SessionManager', () => {
     });
   });
 
+  describe('위임 비용 합산 (M7 7.3.2)', () => {
+    /** 세션 하나를 만들고 턴 1회로 사용량을 심는다 */
+    async function spend(totalTokens: number, labels?: Record<string, string>): Promise<string> {
+      const summary = await manager.createSession({
+        harness: 'mock',
+        cwd: process.cwd(),
+        ...(labels !== undefined ? { labels } : {}),
+      });
+      const session = adapter.sessions.at(-1)!;
+      await manager.prompt(summary.sessionId, '작업');
+      session.emit({
+        type: 'turn_completed',
+        turnId: session.lastTurnId!,
+        usage: { totalTokens, inputTokens: totalTokens },
+      });
+      await settled();
+      return summary.sessionId;
+    }
+
+    const child = (parent: string, depth = 1): Record<string, string> => ({
+      'ch.parentSessionId': parent,
+      'ch.toolDepth': String(depth),
+    });
+
+    it('자손까지 합산하고 자기 사용량과 나눠 준다', async () => {
+      const parent = await spend(10);
+      const childA = await spend(20, child(parent));
+      await spend(5, child(childA, 2)); // 손자 — 부모의 subtree 에 들어와야 한다
+
+      const usage = await manager.usageTree(parent);
+      expect(usage.own.totalTokens).toBe(10);
+      expect(usage.subtree.totalTokens).toBe(35); // 10 + 20 + 5
+      expect(usage.childCount).toBe(1);
+      // 자식별 내역은 그 자식의 자손까지 포함한다 — 어느 가지가 비싼지 보여야 한다
+      expect(usage.children[0]).toMatchObject({ sessionId: childA });
+      expect(usage.children[0]!.subtree.totalTokens).toBe(25);
+      expect(usage.children[0]!.usage?.totalTokens).toBe(20);
+    });
+
+    it('닫힌 자식은 활성 수에서 빠지되 합산에는 남는다 — 쓴 토큰은 사라지지 않는다', async () => {
+      const parent = await spend(10);
+      const alive = await spend(1, child(parent));
+      const closed = await spend(7, child(parent));
+      await manager.closeSession(closed);
+      await settled();
+
+      const usage = await manager.usageTree(parent);
+      expect(usage.childCount).toBe(2);
+      expect(usage.activeChildCount).toBe(1); // 팬아웃 상한이 세는 값
+      expect(usage.subtree.totalTokens).toBe(18); // 10 + 1 + 7
+      expect(usage.children.map((c) => c.sessionId).sort()).toEqual([alive, closed].sort());
+    });
+
+    it('자식이 없으면 subtree 는 own 과 같다', async () => {
+      const lone = await spend(3);
+      const usage = await manager.usageTree(lone);
+      expect(usage.subtree).toEqual(usage.own);
+      expect(usage).toMatchObject({ childCount: 0, activeChildCount: 0 });
+    });
+
+    it('라벨이 순환해도 멎는다 — 손으로 고친 meta 하나가 데몬을 세우면 안 된다', async () => {
+      // 순환은 정상 경로로 만들 수 없다(자식은 부모보다 늦게 생긴다). meta 를 직접 써서
+      // "누군가 손으로 고쳤다"를 재현한 뒤 복원한다 — 방어의 대상이 그 상황이다.
+      const now = new Date().toISOString();
+      const base = { harness: 'mock' as const, cwd: process.cwd(), createdAt: now, updatedAt: now };
+      await store.writeMeta({
+        ...base,
+        sessionId: 'cyc-a',
+        status: 'idle',
+        labels: child('cyc-b', 2),
+        usageTotals: { totalTokens: 4 },
+      });
+      await store.writeMeta({
+        ...base,
+        sessionId: 'cyc-b',
+        status: 'idle',
+        labels: child('cyc-a'),
+        usageTotals: { totalTokens: 6 },
+      });
+      const restored = new SessionManager({ store, adapters: [adapter] });
+      await restored.init();
+
+      const usage = await restored.usageTree('cyc-a');
+      expect(usage.subtree.totalTokens).toBe(10); // 각 노드를 한 번씩만 센다
+    });
+
+    it('보고되지 않은 항목은 0 으로 채우지 않는다 — "안 씀"과 "모름"이 섞이면 안 된다', async () => {
+      const parent = await spend(10);
+      // 사용량을 한 번도 보고하지 않은 자식
+      const quiet = await manager.createSession({
+        harness: 'mock',
+        cwd: process.cwd(),
+        labels: child(parent),
+      });
+      expect(quiet).toBeDefined();
+      const usage = await manager.usageTree(parent);
+      expect(usage.children[0]!.usage).toBeUndefined();
+      expect(usage.subtree.outputTokens).toBeUndefined(); // 아무도 보고한 적 없다
+      expect(usage.subtree.totalTokens).toBe(10);
+      await settled();
+    });
+  });
+
   describe('역방향 툴 승인 채널 (M7 7.2.4)', () => {
     it('요청이 하네스 승인과 같은 채널로 나가고, 허용하면 true 로 풀린다', async () => {
       const session = await manager.createSession({ harness: 'mock', cwd: process.cwd() });

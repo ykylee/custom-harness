@@ -27,3 +27,10 @@
 - 원천: `packages/daemon/src/session-manager.ts`(waitForTurn·lastTurnResult), `docs/design/reverse-tool-catalog.md` §8, `docs/reference/harness-mcp-support.md` §4.1.
 - 태스크: TASK-2026-09-01-main-003
 
+## 2026-09-01 (3) — M7 7.3.2 반영
+
+- 계기: 팬아웃 상한 + 사용량 합산. 카탈로그 12종 → 13종(`session_usage`).
+- 갱신: `concepts/reverse-tools` — "상한은 둘로 나뉜다" 절 추가(높이 vs 너비 / 세는 대상은 닫히지 않은 자식 / 게이트와 모델이 같은 함수로 센다 / 거부문이 다음 수단을 알려 준다 / 미보고 항목을 0 으로 채우지 않는다).
+- 원천: `packages/daemon/src/session-manager.ts`(usageTree), `packages/daemon/src/mcp/gate.ts`, `docs/design/reverse-tool-catalog.md` §8.5.
+- 태스크: TASK-2026-09-01-main-004
+

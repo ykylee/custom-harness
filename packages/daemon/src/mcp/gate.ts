@@ -34,6 +34,13 @@ export interface ReverseToolRuntime {
   isEnabled(): boolean;
   /** `tools.maxSessionDepth` */
   maxSessionDepth(): number;
+  /** `tools.maxFanout` — 한 부모가 동시에 거느릴 수 있는 살아 있는 자식 수 */
+  maxFanout(): number;
+  /**
+   * 이 세션의 **닫히지 않은** 직계 자식 수. 판정 기준은 `session_usage` 가 모델에게 보여
+   * 주는 값과 같아야 한다 — 다르면 모델은 여유가 있다고 보는데 게이트가 막는 상태가 된다.
+   */
+  activeChildCount(sessionId: string): Promise<number>;
   /** pid → 세션 (PID 원장). 노출 프로세스의 부모가 하네스 프로세스다 */
   resolveCaller(callerPid: number | undefined): Promise<CallerInfo>;
   /**
@@ -127,6 +134,21 @@ export async function invokeReverseTool(
             reason:
               `${toolSpec.name} 이(가) 재귀 깊이 상한에 걸렸다 (깊이 ${childDepth}, 상한 ${limit}). ` +
               `직접 처리하거나 사용자에게 요청하라.`,
+          };
+        }
+
+        // 팬아웃 상한 (M7 7.3.2, NFR-7) — 깊이가 트리의 높이를 막는다면 이쪽은 너비를 막는다.
+        // 깊이 1 에서도 자식 20개를 동시에 돌리면 토큰은 그대로 20배다.
+        const fanoutLimit = runtime.maxFanout();
+        const active = await runtime.activeChildCount(caller.sessionId);
+        if (active >= fanoutLimit) {
+          blockedReason = `팬아웃 상한 초과 (활성 자식 ${active} ≥ 상한 ${fanoutLimit})`;
+          return {
+            allow: false,
+            reason:
+              `${toolSpec.name} 이(가) 팬아웃 상한에 걸렸다 (살아 있는 자식 ${active}개, 상한 ${fanoutLimit}개). ` +
+              `session_usage 로 자식들의 진행과 비용을 확인하고, 끝난 자식을 session_stop 후 정리하거나 ` +
+              `기존 자식에게 session_say 로 이어서 시켜라.`,
           };
         }
       }

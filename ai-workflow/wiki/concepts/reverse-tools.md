@@ -28,14 +28,14 @@ pi 는 README 가 명시적으로 배제한다 — *"No MCP. Build CLI tools wit
 
 경로가 둘인데 각자 툴을 정의하면 **하네스마다 다른 툴 표면**이 생긴다. 모델이 보는 툴은 하네스와 무관하게 같아야 하고, 그러려면 정의가 양쪽보다 위층에 있어야 한다 → `packages/protocol/src/tools.ts`. → [[decisions/tool-catalog-in-protocol]]
 
-## 카탈로그 12종
+## 카탈로그 13종
 
 | 이름 | 효과 | 승인 |
 |---|---|---|
-| `session_list` (주의 상태 동봉) · `session_read` · `session_wait` · `session_result` · `ws_list` · `term_list` · `term_read` | read | — |
+| `session_list` (주의 상태 동봉) · `session_read` · `session_wait` · `session_result` · `session_usage` · `ws_list` · `term_list` · `term_read` | read | — |
 | `session_new` (재귀 위험) · `session_say` · `session_stop` · `term_new` · `term_send` (임의 셸) | write | ✅ |
 
-`session_wait`·`session_result` 는 7.3.1 이 위임을 위해 더했다 — 아래 "위임" 절.
+`session_wait`·`session_result` 는 7.3.1 이 위임을 위해, `session_usage` 는 7.3.2 가 비용 인지를 위해 더했다 — 아래 "위임" 절.
 
 **이름은 짧아야 한다.** 하네스가 다시 접두사를 붙이기 때문이다 — omp `mcp__ch_session_list`, grok `ch__session_list`. 규칙: 소문자·숫자·`_`, **3~24자**(`TOOL_NAME_PATTERN`).
 
@@ -75,6 +75,18 @@ FR-9.3 의 "자식으로 생성하고, 완료를 기다리거나 결과를 회�
 - **회수는 마지막 턴만.** `session_result` 는 assistant 본문·성패·사용량만 준다. `session_read` 로도 읽히지만 그쪽은 타임라인 전체라, 위임으로 아끼려던 컨텍스트를 되돌려 놓는다.
 
 데몬은 활성 턴이 사라지는 **모든** 경로에서 대기를 푼다 — 정상 종료·실패·중단·비정상 종료·세션 닫힘. 하나만 빠뜨려도 그 경로에서 대기가 상한까지 매달린다.
+
+### 상한은 둘로 나뉜다 (7.3.2)
+
+깊이(`tools.maxSessionDepth`)가 트리의 **높이**를, 팬아웃(`tools.maxFanout`, 기본 1)이 **너비**를 막는다 — 깊이 1 에서도 자식 20개를 동시에 돌리면 토큰은 그대로 20배다. 세는 대상은 **닫히지 않은** 자식이다: 닫힌 세션은 프롬프트를 못 받아 예산을 쓰지 않고, 그것까지 세면 상한이 "누적 생성 수"가 되어 자식 재사용을 막는다.
+
+게이트와 모델이 **같은 함수로 센다**(`usageTree()`). `session_usage` 가 보여 주는 `activeChildCount` 와 게이트가 검사하는 값이 갈라지면, 모델은 여유가 있다고 보는데 게이트는 막는 상태가 된다.
+
+거부문은 다음 수단을 적는다(`session_usage` 로 확인 / `session_say` 로 기존 자식에게 이어서) — 막고 끝내면 모델이 갈 곳을 잃고 위임이 멎는다.
+
+합산은 `own` 과 `subtree` 를 나눠 준다. 보고되지 않은 항목은 0 으로 채우지 않는다 — "안 씀"과 "모름"이 섞이면 합계가 거짓이 된다.
+
+**팬아웃 실측 (2026-09-01)**: 3종 모두 자식 1개 상태에서 둘째 `session_new` 차단, 승인 요청도 새로 뜨지 않음(상한이 승인보다 앞선다).
 
 **위임 루프 실측 (2026-09-01)**: omp·grok·pi 3종 모두 생성 → 전송 → 대기(done) → 회수 PASS. 자식의 응답 본문과 누적 사용량이 부모 쪽에서 잡힌다.
 

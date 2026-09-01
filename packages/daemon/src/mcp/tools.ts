@@ -234,6 +234,11 @@ async function run(
       });
     }
 
+    case 'session_usage': {
+      const result = await rpc.call('session.usage', { sessionId: args.sessionId });
+      return ok(result);
+    }
+
     case 'session_result': {
       const result = await rpc.call('session.result', { sessionId: args.sessionId });
       return ok(result);

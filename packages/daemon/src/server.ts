@@ -51,6 +51,7 @@ export interface DaemonServerOptions {
     supervisor: ProcessSupervisor;
     isEnabled(): boolean;
     maxSessionDepth(): number;
+    maxFanout(): number;
   };
   onShutdownRequest?: () => void;
 }
@@ -474,6 +475,8 @@ export class DaemonServer {
         // 멱등 (M7 7.1.2) — 승인 대기는 이 호출로 사라지지 않는다
         manager.acknowledgeAttention(message.params.sessionId);
         return {};
+      case 'session.usage.request':
+        return await manager.usageTree(message.params.sessionId);
       case 'session.result.request':
         return await manager.lastTurnResult(message.params.sessionId);
       case 'session.timeline.request':
@@ -574,6 +577,10 @@ export class DaemonServer {
             audit: reverse.audit,
             isEnabled: () => reverse.isEnabled(),
             maxSessionDepth: () => reverse.maxSessionDepth(),
+            maxFanout: () => reverse.maxFanout(),
+            // 게이트와 `session_usage` 가 **같은 함수**로 센다 — 기준이 갈라지면 모델은
+            // 여유가 있다고 보는데 게이트는 막는 상태가 된다
+            activeChildCount: async (id) => (await manager.usageTree(id)).activeChildCount,
             resolveCaller: async (callerPid) => {
               if (callerPid === undefined) return { depth: 0 };
               const entry = await reverse.supervisor.findByPid(callerPid);

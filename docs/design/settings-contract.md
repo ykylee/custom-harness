@@ -3,7 +3,7 @@
 # 설정 계약 (M5 WBS 5.0.1)
 
 - 문서 목적: 데몬 설정의 **우선순위·선언 방식·재적용 범위**를 확정한다. 워크스페이스 모델(M5) 이후 설정 키가 급격히 늘기 전에 규칙을 고정하는 것이 목적이다.
-- 상태: approved (v1.2, 2026-09-01 — M7 7.2.4 역방향 툴 키 2종 추가. v1.1: 7.2.0a 하네스 홈 격리 키 2종. v1: 2026-08-30 M5 WP5.0)
+- 상태: approved (v1.3, 2026-09-01 — M7 7.3.2 `tools.maxFanout` 추가. v1.2: M7 7.2.4 역방향 툴 키 2종 추가. v1.1: 7.2.0a 하네스 홈 격리 키 2종. v1: 2026-08-30 M5 WP5.0)
 - 최종 수정일: 2026-09-01
 - 입력: [워크스페이스 모델 설계](./workspace-model.md), [데몬 상세 설계](./daemon-design.md)
 - 구현: `packages/daemon/src/settings.ts`
@@ -43,12 +43,13 @@
 | `harness.homeLinks` | `CUSTOM_HARNESS_HOME_LINKS` | `.gitconfig`, `.ssh` | live |
 | `tools.reverseExposure` | `CUSTOM_HARNESS_REVERSE_TOOLS` | false | restart |
 | `tools.maxSessionDepth` | `CUSTOM_HARNESS_TOOLS_MAX_SESSION_DEPTH` | 1 | live |
+| `tools.maxFanout` | `CUSTOM_HARNESS_TOOLS_MAX_FANOUT` | 1 | live |
 
 `harness.homeIsolation` 은 보안 스위치다(M7 7.2.0a, NFR-1) — 하네스가 사용자 실제 `$HOME` 의 외부 MCP 설정을 읽어 게이트웨이 경계 밖 서버를 띄우는 것을 막는다. 끄면 데몬이 기동 경고를 남긴다. `harness.homeLinks` 는 **거부 기본값 위의 allowlist** 로, 격리 홈에 반입할 실제 홈 항목을 지정한다(홈 직속 이름만 — 경로 표기 거부). 쉼표 구분 문자열도 받는다.
 
 `tools.reverseExposure` 는 역방향 툴 노출의 opt-in 스위치다(M7 7.2.4, FR-9.2) — **기본 off**. `harness.homeIsolation` 과 기본값 방향이 반대인데, 그쪽은 *끄는* 것이 위험이고 이쪽은 *켜는* 것이 위험하기 때문이다(켜면 하네스가 다른 세션을 읽고 프롬프트를 보내고 터미널에 입력한다). `scope: 'restart'` 인 이유는 등록이 기동 시 하네스 설정 파일에 기입하는 일이라, 값만 바꿔서는 이미 떠 있는 하네스의 툴 표면이 달라지지 않기 때문이다 — 다만 **실행 게이트는 호출 시점에 값을 다시 읽는다**(껐는데 이미 뜬 서버가 계속 통과하면 안 된다). 끄고 기동하면 이전에 남긴 등록을 지운다.
 
-`tools.maxSessionDepth` 는 역방향 툴이 만든 세션이 다시 세션을 만들 수 있는 깊이 상한이다. 0 이 유효한 값이며 "`session_new` 자체를 금지"를 뜻한다 — 그래서 이 키만 `parseNonNegativeInt` 를 쓴다(다른 정수 키는 1 이상만 받는다).
+`tools.maxSessionDepth` 는 역방향 툴이 만든 세션이 다시 세션을 만들 수 있는 깊이 상한이고, `tools.maxFanout`(M7 7.3.2, NFR-7)은 한 부모가 **동시에** 거느릴 수 있는 살아 있는 자식 수 상한이다 — 앞은 트리의 높이를, 뒤는 너비를 막는다(깊이 1 에서도 자식 20개를 동시에 돌리면 토큰은 20배다). 둘 다 0 이 유효한 값이며 "그 방향으로는 아예 금지"를 뜻한다 — 그래서 이 둘만 `parseNonNegativeInt` 를 쓴다(다른 정수 키는 1 이상만 받는다).
 
 ## 3. 재적용(핫 리로드)
 

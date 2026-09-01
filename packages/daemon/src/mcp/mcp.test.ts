@@ -344,8 +344,25 @@ describe('createToolInvoker — 위임 툴 바인딩 (M7 7.3.1)', () => {
     expect(JSON.parse(textOf(result))).toMatchObject({ text: '답', outcome: 'completed' });
   });
 
-  it('대기·회수는 승인 대상이 아니다 — 조회를 막으면 위임을 감시할 수 없다', () => {
-    for (const name of ['session_wait', 'session_result']) {
+  it('session_usage 는 자기 사용량과 자손 합을 나눠 준다 (7.3.2)', async () => {
+    const rpc = fakeRpc({
+      'session.usage': {
+        own: { totalTokens: 10 },
+        subtree: { totalTokens: 35 },
+        childCount: 1,
+        activeChildCount: 1,
+        children: [{ sessionId: 'c1', status: 'idle', harness: 'mock', subtree: {} }],
+      },
+    });
+    const result = await createToolInvoker({ rpc }).call('session_usage', { sessionId: 'p1' });
+    const payload = JSON.parse(textOf(result)) as Record<string, unknown>;
+    expect(payload).toMatchObject({ activeChildCount: 1 });
+    expect((payload.own as { totalTokens: number }).totalTokens).toBe(10);
+    expect((payload.subtree as { totalTokens: number }).totalTokens).toBe(35);
+  });
+
+  it('대기·회수·비용 조회는 승인 대상이 아니다 — 조회를 막으면 위임을 감시할 수 없다', () => {
+    for (const name of ['session_wait', 'session_result', 'session_usage']) {
       const spec = TOOL_CATALOG.find((tool) => tool.name === name);
       expect(spec?.effect, name).toBe('read');
       expect(spec?.approval, name).toBe(false);

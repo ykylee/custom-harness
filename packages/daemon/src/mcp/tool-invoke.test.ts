@@ -36,6 +36,7 @@ describe('tool.invoke 배선', () => {
   let ledgerPath: string;
   let enabled: boolean;
   let maxDepth: number;
+  let maxFanout: number;
   let nextId = 0;
 
   beforeEach(async () => {
@@ -44,6 +45,7 @@ describe('tool.invoke 배선', () => {
     audited = [];
     enabled = true;
     maxDepth = 1;
+    maxFanout = 8;
 
     const manager = new SessionManager({
       store: new SessionStore(join(dir, 'sessions')),
@@ -63,6 +65,7 @@ describe('tool.invoke 배선', () => {
         supervisor: new ProcessSupervisor({ ledgerPath }),
         isEnabled: () => enabled,
         maxSessionDepth: () => maxDepth,
+        maxFanout: () => maxFanout,
       },
     });
     const { port } = await server.start();
@@ -231,6 +234,58 @@ describe('tool.invoke 배선', () => {
     });
     expect(isError(invoked)).toBe(true);
     expect(frames.some((f) => f.type === 'permission_requested')).toBe(false);
+  });
+
+  it('팬아웃 상한이 실제 자식 수를 세어 막는다 (7.3.2)', async () => {
+    const sessionId = await createSession();
+    await ledger(sessionId);
+    maxFanout = 1;
+
+    // 첫 자식은 통과 — 승인 카드에 응답해 준다
+    const first = `r${++nextId}`;
+    ws.send(
+      JSON.stringify({
+        type: 'tool.invoke.request',
+        requestId: first,
+        params: {
+          name: 'session_new',
+          args: { harness: 'mock', cwd: process.cwd() },
+          callerPid: process.pid,
+        },
+      }),
+    );
+    await waitFor(() => frames.some((f) => f.type === 'permission_requested'));
+    const request = frames.find((f) => f.type === 'permission_requested')!.request!;
+    await rpc('session.permission.respond.request', {
+      sessionId,
+      requestId: request.requestId,
+      outcome: { optionId: 'allow' },
+    });
+    await waitFor(() => frames.some((f) => f.requestId === first && f.ok !== undefined));
+    expect(isError(frames.find((f) => f.requestId === first && f.ok !== undefined)!)).toBe(false);
+
+    // 둘째는 상한에 걸린다 — 승인 요청도 새로 나오지 않는다
+    const before = frames.filter((f) => f.type === 'permission_requested').length;
+    const second = await rpc('tool.invoke.request', {
+      name: 'session_new',
+      args: { harness: 'mock', cwd: process.cwd() },
+      callerPid: process.pid,
+    });
+    expect(isError(second)).toBe(true);
+    expect(frames.filter((f) => f.type === 'permission_requested')).toHaveLength(before);
+    expect(audited.at(-1)?.reason).toContain('팬아웃');
+  });
+
+  it('session_usage 가 게이트와 같은 기준으로 자식을 센다', async () => {
+    const sessionId = await createSession();
+    await ledger(sessionId);
+    const invoked = await rpc('tool.invoke.request', {
+      name: 'session_usage',
+      args: { sessionId },
+      callerPid: process.pid,
+    });
+    expect(invoked.ok).toBe(true);
+    expect(payloadOf(invoked)).toMatchObject({ childCount: 0, activeChildCount: 0 });
   });
 
   it('배선이 없으면 unimplemented 다 — 조용히 성공하지 않는다', async () => {

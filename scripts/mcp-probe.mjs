@@ -811,11 +811,20 @@ async function probeViaDaemon() {
             }
           };
           const childText = payloadOf(collected)?.text ?? null;
+          // 팬아웃 상한(7.3.2) — 자식이 1개 살아 있는 상태에서 하나 더 만들려 한다.
+          // 상한이 실제 하네스 경로에서 도는지는 단위 테스트로 알 수 없다.
+          const overflow = await toolTurn('session_new', { harness, cwd: workDir });
+          const overflowText = payloadOf(overflow)?.raw ?? overflow.result ?? '';
+          const usage = await toolTurn('session_usage', { sessionId: session.sessionId });
+
           writeResult.delegation = {
             say: said.error ?? 'ok',
             wait: waited.error ?? (payloadOf(waited)?.done === true ? 'done' : 'not-done'),
             result: collected.error ?? 'ok',
             childText: typeof childText === 'string' ? childText.trim().slice(0, 80) : null,
+            fanoutBlocked: String(overflowText).includes('팬아웃'),
+            subtreeUsage: payloadOf(usage)?.subtree ?? null,
+            activeChildCount: payloadOf(usage)?.activeChildCount ?? null,
             // 자식 세션의 누적 사용량 — 7.3.2 합산 표시의 입력이 실제로 잡히는지
             childUsage:
               (await daemon.manager.listSessions()).find(
@@ -901,7 +910,9 @@ for (const r of results) {
           `${r.writeTool.error ? `, error=${r.writeTool.error}` : ''})` +
           (r.writeTool.delegation
             ? ` 위임(say=${r.writeTool.delegation.say} wait=${r.writeTool.delegation.wait}` +
-              ` result=${r.writeTool.delegation.result} 회수=${r.writeTool.delegation.childText ? '있음' : '없음'})`
+              ` result=${r.writeTool.delegation.result} 회수=${r.writeTool.delegation.childText ? '있음' : '없음'}` +
+              ` 팬아웃차단=${r.writeTool.delegation.fanoutBlocked ? 'yes' : 'no'}` +
+              ` 자손합=${r.writeTool.delegation.subtreeUsage?.totalTokens ?? '?'})`
             : '')
         : ''),
   );

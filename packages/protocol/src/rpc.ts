@@ -230,6 +230,38 @@ export const rpc = {
       z.looseObject({}),
     ),
     /**
+     * 위임 비용 합산 (M7 7.3.2, FR-9.3 · NFR-7).
+     *
+     * 자기 사용량과 **자손 전체**의 합을 함께 준다. 둘을 나눠 주는 이유: 부모의 대화가
+     * 싸도 위임이 비쌀 수 있고, 그 구분이 없으면 "왜 예산이 줄었나"를 판단할 수 없다.
+     * 트리는 세션 레코드의 부모 라벨을 따라 걷는다 — 별도 인덱스를 두지 않는다(7.3.1 §8.1).
+     */
+    usage: rpcPair(
+      'session.usage',
+      z.looseObject({ sessionId: z.string() }),
+      z.looseObject({
+        /** 이 세션 자신의 누적 사용량 */
+        own: UsageSchema,
+        /** 자신 + 자손 전체 */
+        subtree: UsageSchema,
+        /** 직계 자식 수 (닫힌 것 포함) */
+        childCount: z.number().int().nonnegative(),
+        /** 그중 아직 살아 있는 수 — 팬아웃 상한이 세는 대상 */
+        activeChildCount: z.number().int().nonnegative(),
+        /** 직계 자식 요약 — 어느 자식이 비싼지 */
+        children: z.array(
+          z.looseObject({
+            sessionId: z.string(),
+            status: SessionStatusSchema,
+            harness: HarnessIdSchema,
+            usage: UsageSchema.optional(),
+            /** 이 자식이 거느린 자손까지 포함한 합 */
+            subtree: UsageSchema,
+          }),
+        ),
+      }),
+    ),
+    /**
      * 마지막 턴의 결과만 (M7 7.3.1, FR-9.3) — 위임한 작업의 "회수"에 해당한다.
      *
      * `timeline` 과 나눈 이유는 양이다. 부모가 자식의 답만 필요할 때 타임라인 전체를 받으면
@@ -580,6 +612,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.session.permissionRespond.request,
   rpc.session.modelSet.request,
   rpc.session.attentionAck.request,
+  rpc.session.usage.request,
   rpc.session.result.request,
   rpc.session.timeline.request,
   rpc.config.keySet.request,
@@ -631,6 +664,7 @@ export const RpcResponseSchema = z.union([
   rpc.session.permissionRespond.response,
   rpc.session.modelSet.response,
   rpc.session.attentionAck.response,
+  rpc.session.usage.response,
   rpc.session.result.response,
   rpc.session.timeline.response,
   rpc.config.keySet.response,

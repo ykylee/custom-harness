@@ -138,6 +138,21 @@ export const TOOL_CATALOG = [
     approval: true,
   },
 
+  {
+    /**
+     * 위임 비용 조회 (M7 7.3.2, NFR-7).
+     *
+     * 모델에게도 예산을 보여 준다 — 상한이 막아 주기 전에 스스로 멈출 근거가 있어야 한다.
+     * 사용자 UI 만 알고 모델은 모르면, 모델은 상한에 부딪힐 때까지 자식을 만든다.
+     */
+    name: 'session_usage',
+    description:
+      '세션의 토큰 사용량을 조회한다. 자기 사용량과 위임한 자손 전체의 합, 자식별 내역, 현재 살아 있는 자식 수를 함께 준다.',
+    params: z.strictObject({ sessionId }),
+    effect: 'read',
+    approval: false,
+  },
+
   // ── 워크스페이스 ─────────────────────────────────────────────────────────
   {
     name: 'ws_list',

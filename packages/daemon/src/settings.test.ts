@@ -96,6 +96,13 @@ describe('역방향 툴 설정 (WBS 7.2.4)', () => {
     expect(store.resolve('toolsMaxSessionDepth').value).toBe(1);
   });
 
+  it('팬아웃 상한은 기본 1 — 위임은 되지만 병렬은 사용자가 연다', async () => {
+    const { store } = await makeStore();
+    expect(store.resolve('toolsMaxFanout').value).toBe(1);
+    const opened = await makeStore({ tools: { maxFanout: 4 } });
+    expect(opened.store.resolve('toolsMaxFanout')).toMatchObject({ value: 4, source: 'file' });
+  });
+
   it('env 로도 켤 수 있다', async () => {
     const { store } = await makeStore({}, { CUSTOM_HARNESS_REVERSE_TOOLS: 'true' });
     expect(store.resolve('toolsReverseExposure')).toMatchObject({ value: true, source: 'env' });

@@ -6,19 +6,34 @@ import { isAbsolute } from 'node:path';
 import type {
   AgentEvent,
   HarnessId,
+  Usage,
   McpServerConfig,
   PermissionOutcome,
   PermissionRequest,
   SessionEvent,
   SessionSummary,
 } from '@custom-harness/protocol';
-import { hasCapability } from '@custom-harness/protocol';
+import { hasCapability, TOOL_LABEL_PARENT_SESSION } from '@custom-harness/protocol';
 import type { ProbeResult } from '@custom-harness/protocol';
 import type { AgentAdapter, AgentSession, Unsubscribe } from './adapters/contract.js';
 import { DaemonError } from './errors.js';
 import { attentionChanged, computeAttention, type AttentionState } from './attention.js';
 import { verifyProbeAgainstManifest, type BundleManifest } from './manifest.js';
 import type { SessionMeta, SessionStore } from './store.js';
+
+/** 토큰 합 — 어느 쪽에 없는 항목은 없는 채로 둔다(0 으로 채우면 "보고 안 함"과 "0" 이 섞인다) */
+function addUsage(a: Usage, b: Usage): Usage {
+  const sum = (x: number | undefined, y: number | undefined): number | undefined =>
+    x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0);
+  const out: Usage = {};
+  const input = sum(a.inputTokens, b.inputTokens);
+  const output = sum(a.outputTokens, b.outputTokens);
+  const total = sum(a.totalTokens, b.totalTokens);
+  if (input !== undefined) out.inputTokens = input;
+  if (output !== undefined) out.outputTokens = output;
+  if (total !== undefined) out.totalTokens = total;
+  return out;
+}
 
 interface LiveSession {
   meta: SessionMeta;
@@ -431,6 +446,69 @@ export class SessionManager {
       ...(error !== undefined ? { error } : {}),
       ...(usage !== undefined ? { usage } : {}),
       pending: outcome === undefined,
+    };
+  }
+
+  /**
+   * 위임 비용 합산 (M7 7.3.2, FR-9.3 · NFR-7).
+   *
+   * 부모 라벨을 따라 자손을 걷는다 — 관계의 정본이 세션 레코드이므로 별도 인덱스를 두지
+   * 않는다(7.3.1 결정). 방문 집합을 들고 도는 이유는 성능이 아니라 **정지 보장**이다:
+   * meta 를 손으로 고쳐 순환이 생기면 무한 재귀가 되고, 그건 조회 한 번으로 데몬이 멎는다.
+   */
+  async usageTree(sessionId: string): Promise<{
+    own: Usage;
+    subtree: Usage;
+    childCount: number;
+    activeChildCount: number;
+    children: {
+      sessionId: string;
+      status: SessionMeta['status'];
+      harness: HarnessId;
+      usage?: Usage;
+      subtree: Usage;
+    }[];
+  }> {
+    this.requireSession(sessionId);
+    const byParent = new Map<string, LiveSession[]>();
+    for (const live of this.sessions.values()) {
+      const parent = live.meta.labels?.[TOOL_LABEL_PARENT_SESSION];
+      if (parent === undefined) continue;
+      const bucket = byParent.get(parent);
+      if (bucket) bucket.push(live);
+      else byParent.set(parent, [live]);
+    }
+
+    /**
+     * 한 노드의 자손 합. 방문 집합은 **호출마다 새로** 만든다 — 여러 노드의 합을 한 집합으로
+     * 재사용하면 앞 호출이 표시한 노드가 뒤 호출에서 통째로 빠진다(중복 제거가 아니라 누락이다).
+     * 집합의 목적은 순환에서의 정지 보장뿐이다.
+     */
+    const subtreeOf = (id: string, visited = new Set<string>()): Usage => {
+      if (visited.has(id)) return {};
+      visited.add(id);
+      let total = this.sessions.get(id)?.meta.usageTotals ?? {};
+      for (const child of byParent.get(id) ?? []) {
+        total = addUsage(total, subtreeOf(child.meta.sessionId, visited));
+      }
+      return total;
+    };
+
+    const children = (byParent.get(sessionId) ?? []).map((child) => ({
+      sessionId: child.meta.sessionId,
+      status: child.meta.status,
+      harness: child.meta.harness,
+      ...(child.meta.usageTotals !== undefined ? { usage: child.meta.usageTotals } : {}),
+      subtree: subtreeOf(child.meta.sessionId),
+    }));
+    const own = this.sessions.get(sessionId)?.meta.usageTotals ?? {};
+    return {
+      own,
+      subtree: subtreeOf(sessionId),
+      childCount: children.length,
+      // 닫힌 자식은 더 이상 프롬프트를 받지 못하므로 예산을 쓰지 않는다 (팬아웃 상한과 같은 기준)
+      activeChildCount: children.filter((child) => child.status !== 'closed').length,
+      children,
     };
   }
 

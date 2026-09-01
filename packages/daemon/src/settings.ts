@@ -80,6 +80,7 @@ export interface SettingValues {
   harnessHomeLinks: string[];
   toolsReverseExposure: boolean;
   toolsMaxSessionDepth: number;
+  toolsMaxFanout: number;
 }
 export type SettingKey = keyof SettingValues;
 
@@ -156,6 +157,23 @@ export const SETTINGS: { [K in SettingKey]: SettingDescriptor<SettingValues[K]> 
     defaultValue: 1,
     scope: 'live',
     parse: parseNonNegativeInt(8),
+  },
+  /**
+   * 한 부모가 **동시에** 거느릴 수 있는 살아 있는 자식 세션 수 (M7 7.3.2, FR-9.3·NFR-7).
+   *
+   * 기본 1 — 위임은 되지만 병렬 팬아웃은 사용자가 명시적으로 열어야 한다. 깊이 상한
+   * (`maxSessionDepth`)이 트리의 *높이*를 막는다면 이쪽은 *너비*를 막는다: 깊이 1 에서도
+   * 자식 20개를 동시에 돌리면 토큰은 그대로 20배다.
+   *
+   * 세는 대상은 **닫히지 않은** 자식이다. 닫힌 세션은 더 이상 프롬프트를 받지 못하므로
+   * 예산을 쓰지 않는다 — 그것까지 세면 상한이 "누적 생성 수"가 되어 재사용을 막는다.
+   */
+  toolsMaxFanout: {
+    key: 'tools.maxFanout',
+    env: 'CUSTOM_HARNESS_TOOLS_MAX_FANOUT',
+    defaultValue: 1,
+    scope: 'live',
+    parse: parseNonNegativeInt(32),
   },
 };
 

@@ -58,6 +58,8 @@ function harness(
     },
     isEnabled: () => true,
     maxSessionDepth: () => 1,
+    maxFanout: () => 1,
+    activeChildCount: async () => 0,
     resolveCaller: async () => ({ sessionId: 'parent', harness: 'mock', depth: 0 }),
     requestApproval: async ({ sessionId, spec }) => {
       approvals.push({ sessionId, summary: spec.name });
@@ -193,6 +195,72 @@ describe('재귀 상한', () => {
     expect(depthFromLabels({ 'ch.toolDepth': '2' })).toBe(2);
     expect(depthFromLabels({ 'ch.toolDepth': 'deep' })).toBe(0);
     expect(depthFromLabels({ 'ch.toolDepth': '-1' })).toBe(0);
+  });
+});
+
+describe('팬아웃 상한 (M7 7.3.2)', () => {
+  it('살아 있는 자식이 상한에 닿으면 새 세션을 거부한다', async () => {
+    const h = harness({ maxFanout: () => 1, activeChildCount: async () => 1 });
+    const result = await invokeReverseTool(h.runtime, {
+      name: 'session_new',
+      args: { harness: 'mock', cwd: '/tmp' },
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('팬아웃');
+    // 승인보다 앞선다 — 어차피 못 할 일로 사용자를 깨우지 않는다
+    expect(h.approvals).toHaveLength(0);
+    expect(h.audited[0]).toMatchObject({ outcome: 'blocked' });
+  });
+
+  it('거부 사유가 다음 수단을 알려 준다 — 막고 끝내면 위임이 멎는다', async () => {
+    const h = harness({ maxFanout: () => 2, activeChildCount: async () => 2 });
+    const result = await invokeReverseTool(h.runtime, {
+      name: 'session_new',
+      args: { harness: 'mock', cwd: '/tmp' },
+    });
+    const text = textOf(result);
+    expect(text).toContain('session_usage');
+    expect(text).toContain('session_say');
+  });
+
+  it('여유가 있으면 통과한다', async () => {
+    const h = harness({
+      maxFanout: () => 2,
+      activeChildCount: async () => 1,
+      replies: { 'session.create': { session: { sessionId: 'c1' } } },
+    });
+    const result = await invokeReverseTool(h.runtime, {
+      name: 'session_new',
+      args: { harness: 'mock', cwd: '/tmp' },
+    });
+    expect(result.isError).toBe(false);
+  });
+
+  it('상한 0 이면 자식을 아예 못 만든다', async () => {
+    const h = harness({ maxFanout: () => 0, activeChildCount: async () => 0 });
+    const result = await invokeReverseTool(h.runtime, {
+      name: 'session_new',
+      args: { harness: 'mock', cwd: '/tmp' },
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  it('세션을 만들지 않는 툴은 팬아웃을 세지 않는다', async () => {
+    let counted = 0;
+    const h = harness({
+      maxFanout: () => 0,
+      activeChildCount: async () => {
+        counted += 1;
+        return 0;
+      },
+      replies: { 'session.interrupt': {} },
+    });
+    const result = await invokeReverseTool(h.runtime, {
+      name: 'session_stop',
+      args: { sessionId: 's1' },
+    });
+    expect(result.isError).toBe(false);
+    expect(counted).toBe(0);
   });
 });
 
