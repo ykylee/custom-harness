@@ -153,6 +153,17 @@ const attentionChanged = z.looseObject({
   attentionTimestamp: z.string().optional(),
 });
 
+/**
+ * 세션 제목 확정 (M7 7.6.1, FR-9.5) — 데몬 소유.
+ *
+ * 별도 이벤트를 둔 이유는 **도착 시점**이다. 휴리스틱 제목은 첫 프롬프트와 함께 정해지지만
+ * LLM 제목은 임의의 시점에 온다. 세션 목록 갱신에 얹으면 그때까지 낡은 이름이 남는다.
+ */
+const titleChanged = z.looseObject({
+  type: z.literal('session_title_changed'),
+  title: z.string(),
+});
+
 /** 어댑터가 올리는 이벤트 — sessionId/seq 없음 (세션 스코프는 데몬이 부여) */
 export const AgentEventSchema = z.discriminatedUnion('type', [
   turnStarted,
@@ -205,5 +216,6 @@ export const SessionEventSchema = z.discriminatedUnion('type', [
   errorEvent.extend(wireEnvelope),
   // 데몬 소유 — 어댑터 유니온(AgentEvent)에는 없다 (user_message 와 같은 층)
   attentionChanged.extend(wireEnvelope),
+  titleChanged.extend(wireEnvelope),
 ]);
 export type SessionEvent = z.infer<typeof SessionEventSchema>;

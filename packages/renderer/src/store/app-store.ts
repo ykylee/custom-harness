@@ -257,6 +257,17 @@ export class AppController {
       // 알림은 **데몬의 주의 상태 전이**만 소비한다 (M7 7.1.3, FR-9.1) — 턴 종료·승인
       // 요청을 각자 해석하던 로컬 규칙을 제거했다. 버킷·배지와 같은 하나의 답을 쓴다.
       if (event.type === 'attention_changed') this.onAttentionChanged(event);
+      // 제목은 목록을 다시 읽지 않고 그 세션만 갱신한다 (M7 7.6.1) — LLM 모드는 임의
+      // 시점에 도착하므로, 목록 갱신을 기다리면 그때까지 낡은 이름이 탭에 남는다
+      if (event.type === 'session_title_changed') {
+        const { sessionId, title } = event;
+        this.store.set((prev) => ({
+          ...prev,
+          sessions: prev.sessions.map((session) =>
+            session.sessionId === sessionId ? { ...session, title } : session,
+          ),
+        }));
+      }
     });
     client.onReconnected(() => void this.resync());
   }

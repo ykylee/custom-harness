@@ -44,6 +44,8 @@
 | `tools.reverseExposure` | `CUSTOM_HARNESS_REVERSE_TOOLS` | false | restart |
 | `tools.maxSessionDepth` | `CUSTOM_HARNESS_TOOLS_MAX_SESSION_DEPTH` | 1 | live |
 | `tools.maxFanout` | `CUSTOM_HARNESS_TOOLS_MAX_FANOUT` | 1 | live |
+| `session.titleMode` | `CUSTOM_HARNESS_SESSION_TITLE_MODE` | `heuristic` | live |
+| `session.titleModel` | `CUSTOM_HARNESS_SESSION_TITLE_MODEL` | (빈 값 = 게이트웨이 기본 모델) | live |
 
 `harness.homeIsolation` 은 보안 스위치다(M7 7.2.0a, NFR-1) — 하네스가 사용자 실제 `$HOME` 의 외부 MCP 설정을 읽어 게이트웨이 경계 밖 서버를 띄우는 것을 막는다. 끄면 데몬이 기동 경고를 남긴다. `harness.homeLinks` 는 **거부 기본값 위의 allowlist** 로, 격리 홈에 반입할 실제 홈 항목을 지정한다(홈 직속 이름만 — 경로 표기 거부). 쉼표 구분 문자열도 받는다.
 
@@ -68,3 +70,11 @@
 
 - `GatewayService` 의 `maxSessions` 는 이 스토어를 통해서만 읽고 쓴다(중복 정본 금지).
 - 데몬 조립(`startDaemon`)이 인스턴스를 하나 만들어 게이트웨이 서비스와 공유하고, 종료 시 감시를 닫는다.
+
+## 세션 제목 (M7 7.6.1, FR-9.5)
+
+`session.titleMode` 의 기본값이 `llm` 이 아닌 이유는 비용이다. 제목 한 줄에 모델 호출을 붙이면
+**세션을 만들 때마다** 토큰이 나가고, 그건 폐쇄망의 제한된 예산에서 가장 값싸게 아낄 수 있는
+지출이다. `heuristic`(기본)은 첫 산문 줄을 다듬어 쓰고 모델을 부르지 않는다 — 실측으로 호출
+0회를 확인한다. `llm` 은 켜는 쪽이 선택이며, 켜더라도 **실패하면 휴리스틱으로 떨어진다**.
+`off` 는 제목을 아예 만들지 않고 UI 는 cwd 를 보여 준다.

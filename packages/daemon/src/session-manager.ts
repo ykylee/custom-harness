@@ -93,6 +93,13 @@ export interface SessionManagerOptions {
   buildEnv?: (harness: HarnessId) => Record<string, string> | Promise<Record<string, string>>;
   /** 번들 manifest — probe 버전 대조 (WBS 2.3.3, FR-1.8). 미공급 시 검증 생략 */
   manifest?: BundleManifest;
+  /**
+   * 첫 프롬프트로 세션 제목 만들기 (M7 7.6.1, FR-9.5). 미공급이면 제목을 만들지 않는다.
+   *
+   * 주입으로 받는 이유는 `buildEnv` 와 같다 — 매니저가 게이트웨이·설정을 알 필요가 없다.
+   * 느릴 수 있고(LLM 모드) 실패할 수 있어서 **턴을 막지 않는다**.
+   */
+  generateTitle?: (prompt: string) => Promise<string | undefined>;
 }
 
 export class SessionManager {
@@ -100,6 +107,7 @@ export class SessionManager {
   private readonly adapters: Map<HarnessId, AgentAdapter>;
   private maxSessions: number;
   private readonly manifest: BundleManifest | undefined;
+  private readonly generateTitle: ((prompt: string) => Promise<string | undefined>) | undefined;
   private readonly buildEnv: (
     harness: HarnessId,
   ) => Record<string, string> | Promise<Record<string, string>>;
@@ -112,6 +120,7 @@ export class SessionManager {
     this.maxSessions = options.maxSessions ?? 8;
     this.manifest = options.manifest;
     this.buildEnv = options.buildEnv ?? (() => ({}));
+    this.generateTitle = options.generateTitle;
   }
 
   /** 동시 세션 상한 런타임 갱신 (WBS 2.3.1) — 초과 활성 세션은 종료하지 않고 신규만 거부 */
@@ -364,6 +373,9 @@ export class SessionManager {
     const held = live.eventHold ?? [];
     live.eventHold = undefined;
     for (const event of held) this.applyEvent(live, event);
+    // 제목은 **첫 프롬프트에서만** 만든다 (FR-9.5). 턴을 막지 않는다 — LLM 모드는
+    // 왕복이 붙고, 제목 때문에 응답이 늦어지는 것은 교환으로 성립하지 않는다.
+    void this.ensureTitle(live, text);
     return { turnId };
   }
 
@@ -771,7 +783,9 @@ export class SessionManager {
           requiresAttention: boolean;
           attentionReason?: AttentionState['attentionReason'];
           attentionTimestamp?: string;
-        },
+        }
+      // 세션 제목 확정 (M7 7.6.1) — 역시 데몬 소유
+      | { type: 'session_title_changed'; title: string },
   ): void {
     const event = {
       ...body,
@@ -840,6 +854,29 @@ export class SessionManager {
    * 사용자가 세션을 확인했다 (7.1.2). 멱등. 승인 대기는 지워지지 않는다 —
    * 화면을 본 것이 승인 응답은 아니다(정책 모듈이 그렇게 계산한다).
    */
+  /**
+   * 첫 프롬프트로 제목을 붙인다 (M7 7.6.1, FR-9.5).
+   *
+   * 이미 제목이 있으면 손대지 않는다 — 사용자가 바꿨을 수도 있고, 두 번째 프롬프트가
+   * 세션의 주제를 다시 정의하지도 않는다.
+   */
+  private async ensureTitle(live: LiveSession, prompt: string): Promise<void> {
+    if (this.generateTitle === undefined || live.meta.title !== undefined) return;
+    let title: string | undefined;
+    try {
+      title = await this.generateTitle(prompt);
+    } catch (error) {
+      console.warn(`[daemon] 세션 제목 생성 실패 (${live.meta.sessionId}):`, error);
+      return;
+    }
+    // 생성 중에 다른 경로가 제목을 붙였을 수 있다 — 덮어쓰지 않는다
+    if (title === undefined || live.meta.title !== undefined) return;
+    live.meta.title = title;
+    await this.persistMeta(live);
+    // 도착 시점이 임의라(LLM 모드) 별도 이벤트로 알린다 — 목록 갱신에 얹으면 그때까지 낡는다
+    this.emit(live, { type: 'session_title_changed', title });
+  }
+
   acknowledgeAttention(sessionId: string): void {
     const live = this.requireSession(sessionId);
     live.attentionAcknowledged = true;
@@ -883,6 +920,8 @@ export class SessionManager {
       // 역방향 툴이 만든 세션의 부모·깊이가 여기 실린다 (M7 7.2.4) — 재귀 상한이 데몬
       // 재시작 뒤에도 성립하려면 이 값이 조회 경로에 나와야 한다
       ...(live.meta.labels !== undefined ? { labels: live.meta.labels } : {}),
+      // 자동 생성 제목 (M7 7.6.1) — 스키마에는 5.0.2 부터 있었지만 채우는 쪽이 없었다
+      ...(live.meta.title !== undefined ? { title: live.meta.title } : {}),
     };
   }
 }

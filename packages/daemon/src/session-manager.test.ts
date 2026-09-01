@@ -638,3 +638,133 @@ describe('빠른 어댑터의 턴 개시 경합 (M7 7.5.1 실측 결함)', () =>
     await manager.shutdown();
   });
 });
+
+describe('세션 제목 자동 생성 배선 (M7 7.6.1, FR-9.5)', () => {
+  const setup = async (
+    generateTitle?: (prompt: string) => Promise<string | undefined>,
+  ): Promise<{ manager: SessionManager; sessionId: string; events: SessionEvent[] }> => {
+    const store = new SessionStore(await mkdtemp(join(tmpdir(), 'ch-title-')));
+    const manager = new SessionManager({
+      store,
+      adapters: [new MockAdapter()],
+      ...(generateTitle !== undefined ? { generateTitle } : {}),
+    });
+    await manager.init();
+    const events: SessionEvent[] = [];
+    manager.onEvent((event) => events.push(event));
+    const session = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    return { manager, sessionId: session.sessionId, events };
+  };
+
+  const titleOf = async (manager: SessionManager, sessionId: string): Promise<string | undefined> =>
+    (await manager.listSessions()).find((s) => s.sessionId === sessionId)?.title;
+
+  it('첫 프롬프트에 제목을 붙이고 이벤트로 알린다', async () => {
+    const { manager, sessionId, events } = await setup(async (prompt) => `제목: ${prompt}`);
+    await manager.prompt(sessionId, '로그인 고쳐줘');
+    await vi.waitFor(async () => {
+      expect(await titleOf(manager, sessionId)).toBe('제목: 로그인 고쳐줘');
+      // 도착 시점이 임의라(LLM 모드) 목록 갱신에 얹지 않고 별도 이벤트를 낸다.
+      // 발행은 세션 체인을 타므로 제목 필드보다 늦게 도착한다.
+      expect(events.some((e) => e.type === 'session_title_changed')).toBe(true);
+    });
+    await manager.shutdown();
+  });
+
+  it('두 번째 프롬프트는 제목을 바꾸지 않는다', async () => {
+    // 두 번째 요청이 세션의 주제를 다시 정의하지 않는다
+    const seen: string[] = [];
+    const { manager, sessionId } = await setup(async (prompt) => {
+      seen.push(prompt);
+      return `제목: ${prompt}`;
+    });
+    await manager.prompt(sessionId, '첫 번째');
+    await vi.waitFor(async () => {
+      expect(await titleOf(manager, sessionId)).toBe('제목: 첫 번째');
+    });
+    await vi.waitFor(async () => {
+      expect((await manager.listSessions())[0]?.status).toBe('idle');
+    });
+    await manager.prompt(sessionId, '두 번째');
+    await vi.waitFor(async () => {
+      expect((await manager.listSessions())[0]?.status).toBe('idle');
+    });
+    expect(await titleOf(manager, sessionId)).toBe('제목: 첫 번째');
+    expect(seen).toEqual(['첫 번째']);
+    await manager.shutdown();
+  });
+
+  it('제목 생성이 느려도 턴을 막지 않는다', async () => {
+    let release: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { manager, sessionId } = await setup(async () => {
+      await blocked;
+      return '늦게 온 제목';
+    });
+    // 제목 때문에 응답이 늦어지는 것은 교환으로 성립하지 않는다
+    await manager.prompt(sessionId, '무엇이든');
+    expect(await titleOf(manager, sessionId)).toBeUndefined();
+    release?.();
+    await vi.waitFor(async () => {
+      expect(await titleOf(manager, sessionId)).toBe('늦게 온 제목');
+    });
+    await manager.shutdown();
+  });
+
+  it('생성기가 실패해도 턴은 정상이다', async () => {
+    const { manager, sessionId, events } = await setup(async () => {
+      throw new Error('생성 실패');
+    });
+    await expect(manager.prompt(sessionId, '무엇이든')).resolves.toBeDefined();
+    await vi.waitFor(() => {
+      expect(events.some((e) => e.type === 'turn_completed')).toBe(true);
+    });
+    expect(await titleOf(manager, sessionId)).toBeUndefined();
+    await manager.shutdown();
+  });
+
+  it('생성기가 undefined 를 주면 제목을 붙이지 않는다', async () => {
+    const { manager, sessionId, events } = await setup(async () => undefined);
+    await manager.prompt(sessionId, '무엇이든');
+    await vi.waitFor(() => {
+      expect(events.some((e) => e.type === 'turn_completed')).toBe(true);
+    });
+    expect(await titleOf(manager, sessionId)).toBeUndefined();
+    expect(events.some((e) => e.type === 'session_title_changed')).toBe(false);
+    await manager.shutdown();
+  });
+
+  it('생성기가 없으면 아무 일도 일어나지 않는다', async () => {
+    const { manager, sessionId, events } = await setup();
+    await manager.prompt(sessionId, '무엇이든');
+    await vi.waitFor(() => {
+      expect(events.some((e) => e.type === 'turn_completed')).toBe(true);
+    });
+    expect(events.some((e) => e.type === 'session_title_changed')).toBe(false);
+    await manager.shutdown();
+  });
+
+  it('제목은 재기동 후에도 남는다', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ch-title-persist-'));
+    const store = new SessionStore(dir);
+    const first = new SessionManager({
+      store,
+      adapters: [new MockAdapter()],
+      generateTitle: async () => '영속 확인',
+    });
+    await first.init();
+    const session = await first.createSession({ harness: 'mock', cwd: process.cwd() });
+    await first.prompt(session.sessionId, '무엇이든');
+    await vi.waitFor(async () => {
+      expect((await first.listSessions())[0]?.title).toBe('영속 확인');
+    });
+    await first.shutdown();
+
+    const second = new SessionManager({ store, adapters: [new MockAdapter()] });
+    await second.init();
+    expect((await second.listSessions())[0]?.title).toBe('영속 확인');
+    await second.shutdown();
+  });
+});

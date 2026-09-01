@@ -341,3 +341,43 @@ describe('AppController 3계층 (WBS 5.6)', () => {
     expect(controller.store.get().activeWorkspaceId).toBeNull();
   });
 });
+
+describe('AppController 세션 제목 (M7 7.6.1)', () => {
+  beforeEach(() => installMemoryStorage());
+
+  it('제목 이벤트가 목록을 다시 읽지 않고 그 세션만 갱신한다', async () => {
+    const { transport, calls, pushEvent } = makeFakeTransport();
+    const controller = new AppController(transport);
+    await controller.bootstrap();
+    const before = calls.filter((c) => c.type === 'session.list').length;
+
+    pushEvent({
+      type: 'session_title_changed',
+      sessionId: 's-1',
+      seq: 99,
+      title: '로그인 버그 수정',
+    } as SessionEvent);
+
+    expect(controller.store.get().sessions.find((s) => s.sessionId === 's-1')?.title).toBe(
+      '로그인 버그 수정',
+    );
+    // LLM 모드는 임의 시점에 도착한다 — 목록 갱신을 기다리면 그때까지 낡은 이름이 남는다
+    expect(calls.filter((c) => c.type === 'session.list').length).toBe(before);
+  });
+
+  it('다른 세션의 제목은 건드리지 않는다', () => {
+    const { transport, pushEvent } = makeFakeTransport();
+    const controller = new AppController(transport);
+    return controller.bootstrap().then(() => {
+      pushEvent({
+        type: 'session_title_changed',
+        sessionId: 's-1',
+        seq: 99,
+        title: '첫 세션',
+      } as SessionEvent);
+      expect(
+        controller.store.get().sessions.find((s) => s.sessionId === 's-2')?.title,
+      ).toBeUndefined();
+    });
+  });
+});

@@ -20,6 +20,7 @@ import { resolvePaths, type DaemonPaths } from './paths.js';
 import { ProcessSupervisor } from './processes.js';
 import { DaemonServer } from './server.js';
 import { SessionManager } from './session-manager.js';
+import { createTitleGenerator } from './session-title.js';
 import { SettingsStore } from './settings.js';
 import { TerminalManager } from './terminals.js';
 import { WorkspaceProvisioning } from './workspaces/registry.js';
@@ -55,6 +56,7 @@ export * from './search/indexer.js';
 export * from './search/segments.js';
 export * from './server.js';
 export * from './session-manager.js';
+export * from './session-title.js';
 export * from './store.js';
 export * from './token.js';
 
@@ -166,6 +168,13 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
         ? { ...env, ...piReverseToolsEnv }
         : env;
     },
+    // 제목 생성 (WBS 7.6.1, FR-9.5) — 모드·모델은 **호출 시점에** 읽는다(설정 핫 리로드)
+    generateTitle: createTitleGenerator({
+      mode: () => settings.resolve('sessionTitleMode').value,
+      model: () => settings.resolve('sessionTitleModel').value,
+      gateway,
+      apiKey: () => keyStore.get(),
+    }),
     // 우선순위: 명시 옵션 > settings.json (WBS 2.3.1)
     maxSessions: options.maxSessions ?? (await gateway.getMaxSessions()),
     ...(manifest !== undefined ? { manifest } : {}),

@@ -60,7 +60,7 @@
 
 | ID | 작업 | 산출물 | 선행 | 관련 FR | 규모 |
 |---|---|---|---|---|---|
-| 7.6.1 | 세션 제목 자동 생성 (비 LLM 기본, LLM opt-in) | 데몬 | M5 | FR-9.5 | S |
+| 7.6.1 | **세션 제목 자동 생성** — 기본 휴리스틱(첫 문장·코드 펜스 건너뜀·마크다운 장식 제거), `session.titleMode=llm` opt-in + `session.titleModel`. LLM 실패는 휴리스틱 폴백. 도착 시점이 임의라 `session_title_changed` 이벤트 additive 추가. `summarize()` 가 `title` 을 안 싣던 것도 함께 채움 — **done (2026-09-01, 3모드 실측: 기본 모델 호출 0회)** | 데몬·프로토콜·렌더러 | M5 | FR-9.5 | S |
 
 ## 리스크
 

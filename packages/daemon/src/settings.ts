@@ -81,6 +81,8 @@ export interface SettingValues {
   toolsReverseExposure: boolean;
   toolsMaxSessionDepth: number;
   toolsMaxFanout: number;
+  sessionTitleMode: 'off' | 'heuristic' | 'llm';
+  sessionTitleModel: string;
 }
 export type SettingKey = keyof SettingValues;
 
@@ -174,6 +176,28 @@ export const SETTINGS: { [K in SettingKey]: SettingDescriptor<SettingValues[K]> 
     defaultValue: 1,
     scope: 'live',
     parse: parseNonNegativeInt(32),
+  },
+  /**
+   * 세션 제목 생성 방식 (M7 7.6.1, FR-9.5) — 기본은 **비 LLM**.
+   *
+   * 제목 한 줄에 모델 호출을 붙이면 세션을 만들 때마다 토큰이 나간다. 폐쇄망의 제한된
+   * 예산에서 가장 값싸게 아낄 수 있는 지출이라 기본값을 휴리스틱으로 둔다 — LLM 은
+   * 켜는 쪽이 선택이다. `off` 는 제목을 아예 만들지 않는다(UI 는 cwd 를 보여 준다).
+   */
+  sessionTitleMode: {
+    key: 'session.titleMode',
+    env: 'CUSTOM_HARNESS_SESSION_TITLE_MODE',
+    defaultValue: 'heuristic',
+    scope: 'live',
+    parse: (raw) => (raw === 'off' || raw === 'heuristic' || raw === 'llm' ? raw : undefined),
+  },
+  /** 제목 생성에 쓸 모델. 빈 값이면 게이트웨이 기본 모델 (FR-9.5 "사용 모델을 지정한다") */
+  sessionTitleModel: {
+    key: 'session.titleModel',
+    env: 'CUSTOM_HARNESS_SESSION_TITLE_MODEL',
+    defaultValue: '',
+    scope: 'live',
+    parse: (raw) => (typeof raw === 'string' ? raw : undefined),
   },
 };
 
