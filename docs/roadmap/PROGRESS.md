@@ -4,7 +4,7 @@
 
 - 문서 목적: 로드맵 WBS 기준 진척 현황의 단일 보드. 모든 작업은 여기 등재된 WBS ID 로 추적한다.
 - 갱신 규칙: 작업 상태 변화 시마다 갱신 (planned / in_progress / blocked / done). 계획 변경 발생 시 원 문서(ROADMAP·roadmap/·REQUIREMENTS 등) 동기화 후 여기 비고에 링크.
-- 최종 수정일: 2026-09-01 (**M7 완료 선언** — WBS 전 항목 done + 완료 기준 3개 수용 검증 PASS(`npm run smoke:m7`). 수용 검증이 찾아낸 결함 2건(종료가 주의 상태를 지움 / `wait` 직후 `result` 경합)은 선언 전 수정)
+- 최종 수정일: 2026-09-01 (**M3 3.1.1 업데이트 흐름 done** — 설치기 `current` 전환 결함 수정 포함. 직전: **M7 완료 선언** — WBS 전 항목 done + 완료 기준 3개 수용 검증 PASS(`npm run smoke:m7`). 수용 검증이 찾아낸 결함 2건(종료가 주의 상태를 지움 / `wait` 직후 `result` 경합)은 선언 전 수정)
 
 ## 신설 마일스톤: M5~M7 — paseo 서비스 도입 웨이브 (2026-08-30 승인)
 
@@ -72,6 +72,7 @@
 
 | WBS | 작업 | 상태 | 비고 |
 |---|---|---|---|
+| 3.1.1 | 업데이트 흐름 (상태 판정·실행 중 보호·원자 전환·버전 보존) | done | 2026-09-01 — 업데이트 = 설치기 재수행(FR-4.4.1)이라 판단을 설치기에 얹었다. 규칙은 `bundle/tools/versions-tool.mjs` 한 곳(sh·ps1 공용): `plan`(신규/업그레이드/동일/다운그레이드, 형식 비교 불가 시 방향 추측 안 함) · `guard`(데몬 실행 중이면 종료 코드 3, 비대화형 동의는 `--force`, 죽은 pid 는 통과) · `switch`(아래) · `prune`(current·방금 설치분 보호, `--keep` > env > `settings.json` > 기본 3). **설치기 결함 1건 발견·수정**: `current` 가 디렉토리 심링크일 때 `mv -f` 가 목적지를 따라가 새 링크를 그 안으로 옮기고 **성공을 반환** — 모든 업데이트에서 전환이 조용히 실패하고 옛 버전 안에 `current.new` 가 남았다. 첫 설치만 검증하던 2.5.2 가 놓친 구간. → `rename(2)`(링크 자체 원자 교체). 검증 `npm run smoke:update`(도구 로직 16 + 설치기 배선 10, 실제 번들 격리 루트 설치) |
 | 3.3.1 | NOTICE + 라이선스 원문 수집·동봉 자동화 | done | 2026-08-25 — build-bundle 파이프라인 편입: 번들 `licenses/` 에 NOTICE.md(동봉물·버전·라이선스·원문 경로 표, 타깃별 실동봉분만 고지) + 원문 전체 동봉 — 하네스 3종(pi·omp MIT, grok Apache-2.0 — upstream NOTICE 파일 부재 확인, §4(d) 승계 대상 없음), Electron(MIT + **LICENSES.chromium.html 20MB** Chromium/Node 서드파티 고지), 런타임 의존 4종(zod·ws·yaml·smol-toml — package.json 라이선스명 자동 수집). 원문 반입 출처·해시는 bundle/licenses-src/PROVENANCE.md (pi 는 npm 패키지에 LICENSE 미동봉이라 저장소 원문 반입). 3 OS 재조립·manifest 검증 통과. 잔여: 앱 정보 화면 열람·clean-room 검수는 3.3.2 |
 | 3.5.2 | 제거 스크립트 (uninstall) | done (sh 실검증·ps1 실기기 C-5) | 2026-08-25 — uninstall.sh/ps1 번들 동봉(FR-4.3.4): 데몬 정지(best-effort)→프로그램 제거(versions/·current·bin)→사용자 데이터는 **기본 보존**, `--purge`(-Purge) 시 대화식 확인 후 삭제(비대화는 `--yes` 필수 — non-tty 안전 중단 exit 2). 주입 설정 블록은 전부 data/ 격리 홈이라 외부 파일 무접촉. **격리 루트 실설치 스모크 통과**: 데몬 실행 중 제거(정지 확인)→데이터 보존→purge 전체 삭제(루트까지). INSTALL.md 에 제거·라이선스 절 추가 |
 
