@@ -141,6 +141,53 @@ console.log('── A. 도구 로직 (합성 루트) ──');
   await rm(root3, { recursive: true, force: true });
 }
 
+// list · rollback — FR-4.4.2
+{
+  const names = ['custom-harness-0.1.0-x', 'custom-harness-0.2.0-x', 'custom-harness-0.3.0-x'];
+  const root = await makeRoot(names, names[2]);
+  let r = await tools(['list', root, '--json']);
+  const listed = JSON.parse(r.out);
+  check('list 가 현재 버전을 표시한다', listed.current === names[2]);
+  check('list 가 최근 설치순이다', listed.versions[0].name === names[2]);
+
+  // 지정이 없으면 직전 버전 — 번호가 아니라 **설치 시각**으로 고른다
+  r = await tools(['rollback', root]);
+  check('기본은 직전 버전으로 되돌린다', r.code === 0 && (await readlink(join(root, 'current'))).endsWith(names[1]));
+
+  r = await tools(['rollback', root, names[0]]);
+  check('버전을 지정할 수 있다', r.code === 0 && (await readlink(join(root, 'current'))).endsWith(names[0]));
+
+  r = await tools(['rollback', root, names[0]]);
+  check('같은 버전이면 변경 없이 성공', r.code === 0 && r.out.includes('변경 없음'));
+
+  r = await tools(['rollback', root, 'custom-harness-9.9.9-x']);
+  check('없는 버전은 오류로 알린다', r.code === 1 && r.err.includes('그런 버전이 없습니다'));
+
+  await rm(root, { recursive: true, force: true });
+}
+
+// rollback 도 실행 중이면 막는다 (설치와 같은 규칙)
+{
+  const names = ['custom-harness-0.1.0-x', 'custom-harness-0.2.0-x'];
+  const root = await makeRoot(names, names[1]);
+  await mkdir(join(root, 'data'), { recursive: true });
+  await writeFile(join(root, 'data', 'daemon.pid'), JSON.stringify({ pid: process.pid, port: 1 }));
+  let r = await tools(['rollback', root]);
+  check('실행 중이면 롤백도 막는다', r.code === 3, `code=${r.code}`);
+  check('current 는 그대로다', (await readlink(join(root, 'current'))).endsWith(names[1]));
+  r = await tools(['rollback', root, '--force']);
+  check('--force 로는 되돌린다', r.code === 0 && (await readlink(join(root, 'current'))).endsWith(names[0]));
+  await rm(root, { recursive: true, force: true });
+}
+
+// 되돌아갈 곳이 없으면 그렇게 말한다
+{
+  const root = await makeRoot(['custom-harness-0.1.0-x'], 'custom-harness-0.1.0-x');
+  const r = await tools(['rollback', root]);
+  check('이전 버전이 없으면 오류로 알린다', r.code === 1 && r.err.includes('되돌아갈 이전 버전이 없습니다'));
+  await rm(root, { recursive: true, force: true });
+}
+
 // ── B. 설치기 배선 (실제 번들) ─────────────────────────────────────────────
 console.log('\n── B. 설치기 배선 (실제 번들) ──');
 const bundleArg = process.argv.indexOf('--bundle');
@@ -211,6 +258,48 @@ if (source === undefined) {
   r = await install(v1, ['--force']);
   check('--force 로는 진행된다', r.code === 0);
   await rm(join(root, 'data', 'daemon.pid'), { force: true });
+
+  // ── 롤백 (FR-4.4.2) ────────────────────────────────────────────────────
+  await install(v2); // 다시 최신으로 올려 두고 되돌린다
+  const rollbackBin = join(root, 'bin', 'custom-harness-rollback');
+  check('설치기가 롤백 진입점을 깐다', existsSync(rollbackBin));
+
+  // 세션 데이터는 버전 디렉토리 **밖**이라 롤백에 영향받지 않아야 한다
+  const sessionDir = join(root, 'data', 'sessions', 'sess-1');
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(join(sessionDir, 'timeline.jsonl'), '{"seq":0}\n');
+
+  const rollback = (args = []) =>
+    new Promise((resolve) => {
+      const child = spawn('sh', [rollbackBin, ...args], {
+        env: { ...process.env, CUSTOM_HARNESS_ROOT: root },
+      });
+      let out = '';
+      child.stdout.on('data', (d) => (out += d));
+      child.stderr.on('data', (d) => (out += d));
+      child.on('close', (code) => resolve({ code, out }));
+    });
+
+  r = await rollback(['--list']);
+  check('롤백 진입점이 버전 목록을 낸다', r.code === 0 && r.out.includes('0.1.0-test'), r.out.trim().split('\n')[0]);
+
+  r = await rollback();
+  check('단일 조작으로 되돌아간다', r.code === 0, r.out.slice(-160));
+  check('current 가 이전 버전을 가리킨다', (await readlink(join(root, 'current'))).endsWith('0.1.0-test'));
+  check(
+    '세션 데이터는 영향받지 않는다 (FR-4.4.2)',
+    existsSync(join(sessionDir, 'timeline.jsonl')),
+  );
+
+  // 롤백의 존재 이유 — current 가 깨져도 되돌릴 수 있어야 한다
+  await install(v2);
+  await rm(join(root, 'versions', 'custom-harness-0.2.0-test', 'app'), {
+    recursive: true,
+    force: true,
+  });
+  r = await rollback();
+  check('current 가 깨져 있어도 롤백된다', r.code === 0, r.out.slice(-160));
+  check('되돌린 뒤 정상 버전을 가리킨다', (await readlink(join(root, 'current'))).endsWith('0.1.0-test'));
 
   await rm(root, { recursive: true, force: true, maxRetries: 5 });
   await rm(stage, { recursive: true, force: true });

@@ -86,6 +86,28 @@ New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
     'call "%~dp0..\current\bin\custom-harness.cmd" %*'
 ) | Set-Content -Path (Join-Path $BinDir 'custom-harness.cmd') -Encoding ascii
 
+# 롤백 진입점 (FR-4.4.2) — current 를 거치지 않는다. 롤백은 current 가 깨졌을 때 쓰는
+# 것이라, 그 junction 을 타고 실행되는 도구로는 정작 필요할 때 못 쓴다.
+@(
+    '@echo off',
+    'setlocal',
+    'if "%CUSTOM_HARNESS_ROOT%"=="" (set "CH_ROOT=%USERPROFILE%\.custom-harness") else (set "CH_ROOT=%CUSTOM_HARNESS_ROOT%")',
+    'set "CH_NODE="',
+    'for /d %%v in ("%CH_ROOT%\versions\*") do (',
+    '  if exist "%%v\tools\versions-tool.mjs" if exist "%%v\app\electron\electron.exe" (',
+    '    if not defined CH_NODE (',
+    '      set "CH_NODE=%%v\app\electron\electron.exe"',
+    '      set "CH_TOOL=%%v\tools\versions-tool.mjs"',
+    '    )',
+    '  )',
+    ')',
+    'if not defined CH_NODE (echo [rollback] 쓸 수 있는 설치본을 찾지 못했습니다: %CH_ROOT%\versions 1>&2 & exit /b 1)',
+    'set ELECTRON_RUN_AS_NODE=1',
+    'if "%~1"=="--list" (shift & "%CH_NODE%" "%CH_TOOL%" list "%CH_ROOT%" %* & exit /b %ERRORLEVEL%)',
+    '"%CH_NODE%" "%CH_TOOL%" rollback "%CH_ROOT%" %*',
+    'exit /b %ERRORLEVEL%'
+) | Set-Content -Path (Join-Path $BinDir 'custom-harness-rollback.cmd') -Encoding ascii
+
 # 이전 버전은 롤백 대상이라 보존한다 (FR-4.4.1) — 정리는 current 전환 뒤에만.
 # 실패해도 설치는 이미 성립했으므로 경고로 끝낸다.
 $PruneArgs = @((Join-Path $Target 'tools\versions-tool.mjs'), 'prune', $Root, $BundleName)
@@ -97,4 +119,5 @@ try {
 }
 
 Write-Host "[install] 완료 — 실행: $BinDir\custom-harness.cmd (GUI) / custom-harness.cmd daemon status (CLI)"
+Write-Host "[install] 되돌리기: $BinDir\custom-harness-rollback.cmd --list / custom-harness-rollback.cmd [버전]"
 Write-Host '[install] 최초 실행 시 앱 온보딩에서 게이트웨이 주소·API 키를 입력하면 zero-config 완료'

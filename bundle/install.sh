@@ -90,10 +90,49 @@ exec "$ROOT/current/bin/custom-harness" "\$@"
 SHIM
 chmod 0755 "$ROOT/bin/custom-harness"
 
+# 롤백 진입점 (FR-4.4.2) — **current 를 거치지 않는다.** 롤백은 current 가 깨졌을 때
+# 쓰는 것이라, 그 링크를 타고 실행되는 도구로는 정작 필요할 때 못 쓴다. 그래서 설치된
+# 버전들을 훑어 쓸 수 있는 번들 Node 를 직접 찾는다.
+cat > "$ROOT/bin/custom-harness-rollback" <<'ROLLBACK'
+#!/bin/sh
+# custom-harness 롤백 — current 를 이전 버전으로 되돌린다 (WBS 3.1.2, FR-4.4.2)
+# 사용: custom-harness-rollback [버전]        되돌리기 (미지정 = 직전 버전)
+#       custom-harness-rollback --list        설치된 버전 목록
+# 세션 데이터(data/)는 버전 디렉토리 밖이라 영향받지 않는다.
+set -eu
+ROOT="${CUSTOM_HARNESS_ROOT:-$HOME/.custom-harness}"
+NODE_BIN=""
+TOOL=""
+for v in "$ROOT"/versions/*; do
+  [ -d "$v" ] || continue
+  [ -f "$v/tools/versions-tool.mjs" ] || continue
+  if [ -x "$v/app/Electron.app/Contents/MacOS/Electron" ]; then
+    NODE_BIN="$v/app/Electron.app/Contents/MacOS/Electron"
+  elif [ -x "$v/app/electron/electron" ]; then
+    NODE_BIN="$v/app/electron/electron"
+  else
+    continue
+  fi
+  TOOL="$v/tools/versions-tool.mjs"
+  break
+done
+if [ -z "$NODE_BIN" ]; then
+  echo "[rollback] 쓸 수 있는 설치본을 찾지 못했습니다: $ROOT/versions" >&2
+  exit 1
+fi
+if [ "${1:-}" = "--list" ]; then
+  shift
+  ELECTRON_RUN_AS_NODE=1 exec "$NODE_BIN" "$TOOL" list "$ROOT" "$@"
+fi
+ELECTRON_RUN_AS_NODE=1 exec "$NODE_BIN" "$TOOL" rollback "$ROOT" "$@"
+ROLLBACK
+chmod 0755 "$ROOT/bin/custom-harness-rollback"
+
 # 이전 버전은 롤백 대상이라 보존한다 (FR-4.4.1) — 정리는 current 전환 **뒤**에만.
 # 여기서 실패해도 설치는 이미 성립했으므로 경고로 끝낸다.
 run_node "$TARGET/tools/versions-tool.mjs" prune "$ROOT" "$BUNDLE_NAME" $KEEP_ARGS ||
   echo "[install] 경고: 이전 버전 정리 실패 — 설치 자체는 완료됨" >&2
 
 echo "[install] 완료 — 실행: $ROOT/bin/custom-harness (GUI) / $ROOT/bin/custom-harness daemon status (CLI)"
+echo "[install] 되돌리기: $ROOT/bin/custom-harness-rollback --list / custom-harness-rollback [버전]"
 echo "[install] 최초 실행 시 앱 온보딩에서 게이트웨이 주소·API 키를 입력하면 zero-config 완료"
