@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionEvent } from '@custom-harness/protocol';
 import { FakeAdapter, type FakeSession } from './adapters/testing.js';
+import { MockAdapter } from './adapters/mock.js';
 import { SessionManager } from './session-manager.js';
 import { SessionStore } from './store.js';
 
@@ -581,5 +582,59 @@ describe('SessionManager', () => {
     expect(summary?.status).toBe('closed');
     await expect(manager.prompt(sessionId, 'x')).rejects.toMatchObject({ code: 'bad_request' });
     expect((await manager.timeline(sessionId)).length).toBeGreaterThan(0);
+  });
+});
+
+describe('빠른 어댑터의 턴 개시 경합 (M7 7.5.1 실측 결함)', () => {
+  // mock 은 startTurn 이 돌려준 직후(마이크로태스크 1회) 턴을 통째로 끝낸다. 실제 하네스는
+  // 그만큼 빠르지 않아 오래 드러나지 않았고, 프롬프트를 연달아 보내는 CLI 경로에서 잡혔다.
+  const setup = async (): Promise<{
+    manager: SessionManager;
+    sessionId: string;
+    events: SessionEvent[];
+  }> => {
+    const store = new SessionStore(await mkdtemp(join(tmpdir(), 'ch-fast-turn-')));
+    const manager = new SessionManager({ store, adapters: [new MockAdapter()] });
+    await manager.init();
+    const events: SessionEvent[] = [];
+    manager.onEvent((event) => events.push(event));
+    const session = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    return { manager, sessionId: session.sessionId, events };
+  };
+
+  it('타임라인이 뒤집히지 않는다 — user_message 가 turn_completed 보다 앞선다', async () => {
+    const { manager, sessionId, events } = await setup();
+    await manager.prompt(sessionId, '안녕');
+    await vi.waitFor(() => {
+      expect(events.some((e) => e.type === 'turn_completed')).toBe(true);
+    });
+    const seqOf = (type: string): number => events.find((e) => e.type === type)!.seq;
+    expect(seqOf('user_message')).toBeLessThan(seqOf('turn_started'));
+    expect(seqOf('turn_started')).toBeLessThan(seqOf('turn_completed'));
+    await manager.shutdown();
+  });
+
+  it('끝난 턴이 activeTurnId 에 남아 세션을 잠그지 않는다', async () => {
+    const { manager, sessionId, events } = await setup();
+    await manager.prompt(sessionId, '첫 번째');
+    await vi.waitFor(() => {
+      expect(events.some((e) => e.type === 'turn_completed')).toBe(true);
+    });
+    // 잠겨 있으면 여기서 busy 로 거부된다 — 스크립트가 연달아 못 부린다는 뜻이다
+    await expect(manager.prompt(sessionId, '두 번째')).resolves.toBeDefined();
+    await manager.shutdown();
+  });
+
+  it('턴이 끝나면 상태가 idle 로 정착한다', async () => {
+    const { manager, sessionId, events } = await setup();
+    await manager.prompt(sessionId, '안녕');
+    await vi.waitFor(() => {
+      expect(events.some((e) => e.type === 'turn_completed')).toBe(true);
+    });
+    await vi.waitFor(async () => {
+      const [summary] = await manager.listSessions();
+      expect(summary?.status).toBe('idle');
+    });
+    await manager.shutdown();
   });
 });

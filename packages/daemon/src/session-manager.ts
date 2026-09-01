@@ -61,6 +61,20 @@ interface LiveSession {
    * 하나라도 빠뜨리면 그 경로에서 대기가 타임아웃까지 매달린다.
    */
   turnWaiters: Set<() => void>;
+  /**
+   * 프롬프트 개시 구간에서 어댑터 이벤트를 잡아 두는 버퍼 (M7 7.5.1 실측 결함).
+   *
+   * `startTurn()` 은 turnId 를 돌려준 뒤에야 매니저가 `activeTurnId` 를 세우고 자기 소유
+   * 행(`user_message`·`turn_started`)을 발행할 수 있다. 그런데 어댑터가 그 사이에 —
+   * `await` 한 번 만에 — 턴을 통째로 끝내면 두 가지가 깨진다: ① 타임라인이 뒤집힌다
+   * (`turn_completed` 가 `user_message` 보다 앞선 seq 를 받는다) ② 이미 끝난 턴 id 가
+   * `activeTurnId` 에 얹혀 **세션이 영구히 busy** 가 된다(다음 프롬프트가 전부 거부된다).
+   *
+   * 실제 하네스는 그만큼 빠르지 않아 드러나지 않았고, mock 하네스로 프롬프트를 연달아
+   * 보내는 CLI 경로(FR-9.6)에서 재현됐다. 잡아 둔 이벤트는 매니저 행을 낸 뒤 순서대로
+   * 흘린다.
+   */
+  eventHold: AgentEvent[] | undefined;
   /** 영속화·팬아웃 순서 보장용 직렬 체인 */
   chain: Promise<void>;
   /**
@@ -133,6 +147,7 @@ export class SessionManager {
         pending: new Map(),
         daemonPending: new Map(),
         turnWaiters: new Set(),
+        eventHold: undefined,
         lastTurnOutcome: undefined,
         // 재기동 복원 — 영속된 주의 상태를 그대로 되살린다 (FR-9.1 재접속 조회)
         attentionAcknowledged: meta.requiresAttention !== true,
@@ -208,6 +223,7 @@ export class SessionManager {
       pending: new Map(),
       daemonPending: new Map(),
       turnWaiters: new Set(),
+      eventHold: undefined,
       lastTurnOutcome: undefined,
       attentionAcknowledged: true,
       chain: Promise.resolve(),
@@ -325,7 +341,17 @@ export class SessionManager {
       throw new DaemonError('bad_request', `프롬프트 불가 상태: ${live.meta.status}`);
     }
 
-    const { turnId } = await live.runtime.startTurn(text);
+    // 개시 구간 동안 어댑터 이벤트를 잡아 둔다 (§eventHold). 어댑터가 `startTurn` 직후
+    // 턴을 끝내 버리면 매니저가 자기 행을 내기도 전에 종료 이벤트가 들어와, 타임라인이
+    // 뒤집히고 이미 끝난 턴이 activeTurnId 에 얹혀 세션이 영구히 busy 가 된다.
+    live.eventHold = [];
+    let turnId: string;
+    try {
+      ({ turnId } = await live.runtime.startTurn(text));
+    } catch (error) {
+      live.eventHold = undefined;
+      throw error;
+    }
     live.activeTurnId = turnId;
     // 새 프롬프트 = 사용자가 이 세션에 붙어 있다 (7.1.1)
     live.attentionAcknowledged = true;
@@ -333,10 +359,11 @@ export class SessionManager {
     // 매니저 소유 타임라인 행 — user_message + turn_started 는 즉시 발행 (FR-1.4)
     this.emit(live, { type: 'user_message', turnId, text });
     this.emit(live, { type: 'turn_started', turnId });
-    // 매우 빠른 하네스는 이 시점에 이미 턴을 끝냈을 수 있다 — running 역전 방지 (WBS 2.3.1)
-    if (live.activeTurnId === turnId) {
-      await this.transition(live, 'running');
-    }
+    await this.transition(live, 'running');
+    // 잡아 둔 것을 이제 순서대로 흘린다 — 여기서부터는 평소 경로와 같다
+    const held = live.eventHold ?? [];
+    live.eventHold = undefined;
+    for (const event of held) this.applyEvent(live, event);
     return { turnId };
   }
 
@@ -630,6 +657,10 @@ export class SessionManager {
       }
       await this.closeSession(live.meta.sessionId);
     }
+    // 타임라인 쓰기는 세션별 체인에 실려 있다 (§emit) — 기다리지 않으면 "종료 완료"를
+    // 알린 뒤에도 파일이 써진다. timeline.jsonl 이 SSOT 이고 검색 색인이 그걸 다시
+    // 읽는 만큼(7.4.1), 종료가 쓰기를 앞지르면 안 된다.
+    await Promise.allSettled([...this.sessions.values()].map((live) => live.chain));
   }
 
   // ── 내부 ─────────────────────────────────────────────────────────────────
@@ -660,6 +691,11 @@ export class SessionManager {
    * 한 곳에 있어야 출처에 따라 UI 가 달라지지 않는다.
    */
   private applyEvent(live: LiveSession, event: AgentEvent): void {
+    // 프롬프트 개시 구간 — 매니저가 자기 행을 낼 때까지 잡아 둔다 (§eventHold)
+    if (live.eventHold !== undefined) {
+      live.eventHold.push(event);
+      return;
+    }
     switch (event.type) {
       case 'turn_started':
         // 매니저 소유 — 어댑터 유래 중복 발행은 드롭 (adapter-contract §1)

@@ -106,15 +106,20 @@ describe('session.search (e2e)', () => {
 
     // 어시스턴트 발화 — 목 어댑터가 '작업을 ' + '시작합니다' 두 델타로 흘린다.
     // 원본 줄에는 이 문자열이 통째로 존재하지 않는다.
-    const { hits } = await client.call<{ hits: SearchHit[] }>('session.search', {
-      query: '작업을 시작합니다',
-      kinds: ['assistant'],
+    //
+    // 사용자 발화와 따로 기다리는 이유: `user_message` 는 턴의 **첫** 행이라 그것이
+    // 잡혔다는 것이 어시스턴트 세그먼트까지 색인됐다는 뜻은 아니다.
+    await vi.waitFor(async () => {
+      const { hits } = await client.call<{ hits: SearchHit[] }>('session.search', {
+        query: '작업을 시작합니다',
+        kinds: ['assistant'],
+      });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toMatchObject({ sessionId: session.sessionId, kind: 'assistant' });
+      expect(hits[0]?.snippet).toContain('작업을 시작합니다');
+      // 결과를 눌렀을 때 찾아갈 자리
+      expect(hits[0]?.seq).toBeGreaterThanOrEqual(0);
     });
-    expect(hits).toHaveLength(1);
-    expect(hits[0]).toMatchObject({ sessionId: session.sessionId, kind: 'assistant' });
-    expect(hits[0]?.snippet).toContain('작업을 시작합니다');
-    // 결과를 눌렀을 때 찾아갈 자리
-    expect(hits[0]?.seq).toBeGreaterThanOrEqual(0);
   });
 
   it('파일 검색이 같은 연결에서 왕복한다 — 팔레트가 두 RPC 를 함께 쓴다', async () => {

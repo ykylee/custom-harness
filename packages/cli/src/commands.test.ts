@@ -14,12 +14,22 @@ const fixtureEntry = fileURLToPath(
 interface CapturedIo extends CliIo {
   lines: string[];
   errors: string[];
+  /** 줄바꿈 없는 스트리밍 출력 — 델타를 이어 붙인 원문 (M7 7.5.1) */
+  chunks: string[];
 }
 
 function captureIo(): CapturedIo {
   const lines: string[] = [];
   const errors: string[] = [];
-  return { lines, errors, out: (l) => lines.push(l), err: (l) => errors.push(l) };
+  const chunks: string[] = [];
+  return {
+    lines,
+    errors,
+    chunks,
+    out: (l) => lines.push(l),
+    write: (c) => chunks.push(c),
+    err: (l) => errors.push(l),
+  };
 }
 
 describe('CLI (WBS 1.6.3, FR-5.1)', () => {

@@ -47,6 +47,24 @@ data/sessions/<sessionId>/
 - **종료 단계화**: graceful(프로토콜 종료/ SIGTERM) → 5초 → SIGKILL. grok 은 SIGTERM 세션 저장 보장이 잔여 실측 — 결과에 따라 종료 전 `session/cancel` 선행 여부 결정.
 - **데몬 수명**: 셸이 detached spawn(FR-1.1.5), `daemon.pid` 의 `managedBy` 로 소유 구분(FR-5.2). 데몬 셧다운 시: 실행 중 턴 interrupt → 하네스 정리 → 원장 비우기 → 토큰 파일 삭제.
 
+### 4.1 턴 개시 구간의 이벤트 보류 (M7 7.5.1)
+
+`prompt()` 는 `startTurn()` 이 turnId 를 돌려준 **뒤에야** `activeTurnId` 를 세우고 매니저 소유
+행(`user_message`·`turn_started`)을 발행할 수 있다. 어댑터가 그 사이에 — `await` 한 번 만에 —
+턴을 끝내면 둘이 깨진다:
+
+1. **타임라인이 뒤집힌다.** `turn_completed` 가 `user_message` 보다 낮은 seq 를 받는다.
+2. **세션이 영구히 busy 가 된다.** 이미 끝난 턴 id 가 `activeTurnId` 에 얹히고 아무도 지우지
+   않는다 → 이후 모든 프롬프트가 `busy` 로 거부되고 상태가 `running` 에 머문다.
+
+그래서 개시 구간 동안 어댑터 이벤트를 `eventHold` 에 잡아 두고, 매니저 행을 낸 뒤 순서대로
+흘린다. 실제 하네스는 그만큼 빠르지 않아 오래 드러나지 않았고, mock 하네스로 프롬프트를
+연달아 보내는 CLI 경로(FR-9.6)에서 재현됐다.
+
+**종료 시 쓰기 대기**: `shutdown()` 은 세션별 emit 체인을 기다린다. 기다리지 않으면 "종료
+완료"를 알린 뒤에도 `timeline.jsonl` 이 써진다 — 그 파일이 SSOT 이고 검색 색인이 다시 읽는
+대상(§5)이므로 종료가 쓰기를 앞지르면 안 된다.
+
 ## 5. 타임라인 검색 색인 (M7 7.4.1, FR-9.4)
 
 `data/search-index.db` — SQLite FTS5. **파생물이다**: SSOT 는 §2 의 `timeline.jsonl` 이고,
