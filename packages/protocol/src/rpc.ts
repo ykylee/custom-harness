@@ -178,6 +178,28 @@ export const rpc = {
       z.looseObject({ sessionId: z.string(), prompt: z.string() }),
       z.looseObject({ turnId: z.string() }),
     ),
+    /**
+     * 활성 턴 완료 대기 (M7 7.3.1, FR-9.3) — 서브에이전트 위임의 "기다린다"에 해당한다.
+     *
+     * **상한 있는 대기**다. 무한 대기를 두지 않는 이유는 전송에 있다: 이 호출은 하네스가
+     * spawn 한 MCP 서버의 RPC 를 통해 오고 그쪽 대기도 유한하다. 시간 안에 안 끝나면
+     * `timedOut: true` 로 돌려주고 호출자가 다시 건다 — 끊긴 대기보다 다시 거는 편이 낫다.
+     */
+    wait: rpcPair(
+      'session.wait',
+      z.looseObject({
+        sessionId: z.string(),
+        timeoutMs: z.number().int().positive().max(120_000).optional(),
+      }),
+      z.looseObject({
+        status: SessionStatusSchema,
+        /** 아직 턴이 돌고 있는가 — `timedOut` 이 true 면 이 값도 true 다 */
+        activeTurn: z.boolean(),
+        /** 마지막으로 끝난 턴의 결말. 한 번도 돈 적이 없으면 생략 */
+        lastTurnOutcome: z.enum(['completed', 'failed', 'canceled']).optional(),
+        timedOut: z.boolean(),
+      }),
+    ),
     /** 멱등 — 이미 중단됐거나 실행 중이 아니어도 성공 응답 (FR-1.6) */
     interrupt: rpcPair(
       'session.interrupt',
@@ -206,6 +228,26 @@ export const rpc = {
       'session.attention.ack',
       z.looseObject({ sessionId: z.string() }),
       z.looseObject({}),
+    ),
+    /**
+     * 마지막 턴의 결과만 (M7 7.3.1, FR-9.3) — 위임한 작업의 "회수"에 해당한다.
+     *
+     * `timeline` 과 나눈 이유는 양이다. 부모가 자식의 답만 필요할 때 타임라인 전체를 받으면
+     * 자식의 툴 실행 기록까지 부모 컨텍스트에 실린다 — 위임으로 아끼려던 것을 되돌려 놓는다.
+     */
+    result: rpcPair(
+      'session.result',
+      z.looseObject({ sessionId: z.string() }),
+      z.looseObject({
+        status: SessionStatusSchema,
+        outcome: z.enum(['completed', 'failed', 'canceled']).optional(),
+        /** assistant 응답 본문 — 진행 중이면 지금까지 온 부분 */
+        text: z.string(),
+        error: z.string().optional(),
+        usage: UsageSchema.optional(),
+        /** 턴이 아직 안 끝났다 */
+        pending: z.boolean(),
+      }),
     ),
     /** 재연결 갭 발생 시 타임라인 재동기화 (protocol-design §5) */
     timeline: rpcPair(
@@ -533,10 +575,12 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.session.list.request,
   rpc.session.close.request,
   rpc.session.prompt.request,
+  rpc.session.wait.request,
   rpc.session.interrupt.request,
   rpc.session.permissionRespond.request,
   rpc.session.modelSet.request,
   rpc.session.attentionAck.request,
+  rpc.session.result.request,
   rpc.session.timeline.request,
   rpc.config.keySet.request,
   rpc.config.keyTest.request,
@@ -582,10 +626,12 @@ export const RpcResponseSchema = z.union([
   rpc.session.list.response,
   rpc.session.close.response,
   rpc.session.prompt.response,
+  rpc.session.wait.response,
   rpc.session.interrupt.response,
   rpc.session.permissionRespond.response,
   rpc.session.modelSet.response,
   rpc.session.attentionAck.response,
+  rpc.session.result.response,
   rpc.session.timeline.response,
   rpc.config.keySet.response,
   rpc.config.keyTest.response,

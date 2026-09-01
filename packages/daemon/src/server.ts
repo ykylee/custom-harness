@@ -452,6 +452,11 @@ export class DaemonServer {
         return {};
       case 'session.prompt.request':
         return await manager.prompt(message.params.sessionId, message.params.prompt);
+      case 'session.wait.request':
+        return await manager.waitForTurn(
+          message.params.sessionId,
+          message.params.timeoutMs === undefined ? {} : { timeoutMs: message.params.timeoutMs },
+        );
       case 'session.interrupt.request':
         await manager.interrupt(message.params.sessionId);
         return {};
@@ -469,6 +474,8 @@ export class DaemonServer {
         // 멱등 (M7 7.1.2) — 승인 대기는 이 호출로 사라지지 않는다
         manager.acknowledgeAttention(message.params.sessionId);
         return {};
+      case 'session.result.request':
+        return await manager.lastTurnResult(message.params.sessionId);
       case 'session.timeline.request':
         return {
           events: await manager.timeline(message.params.sessionId, message.params.fromSeq),

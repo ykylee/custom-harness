@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionEvent } from '@custom-harness/protocol';
-import { FakeAdapter } from './adapters/testing.js';
+import { FakeAdapter, type FakeSession } from './adapters/testing.js';
 import { SessionManager } from './session-manager.js';
 import { SessionStore } from './store.js';
 
@@ -40,6 +40,125 @@ describe('SessionManager', () => {
       { timeout: 5000, interval: 15 },
     );
   }
+
+  describe('서브에이전트 위임 — 대기·회수 (M7 7.3.1)', () => {
+    /** 턴을 띄운 세션 하나 */
+    async function running(): Promise<{ sessionId: string; session: FakeSession }> {
+      const summary = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+      await manager.prompt(summary.sessionId, '작업해라');
+      return { sessionId: summary.sessionId, session: adapter.sessions.at(-1)! };
+    }
+
+    it('활성 턴이 없으면 즉시 돌아온다 — 보내기 전에 물어도 같은 답', async () => {
+      const summary = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+      const waited = await manager.waitForTurn(summary.sessionId, { timeoutMs: 5000 });
+      expect(waited).toMatchObject({ activeTurn: false, timedOut: false, status: 'idle' });
+      expect(waited.lastTurnOutcome).toBeUndefined(); // 한 번도 돈 적이 없다
+      await settled();
+    });
+
+    it('턴이 끝나면 대기가 풀린다', async () => {
+      const { sessionId, session } = await running();
+      const pending = manager.waitForTurn(sessionId, { timeoutMs: 5000 });
+      session.emit({ type: 'turn_completed', turnId: session.lastTurnId! });
+      const waited = await pending;
+      expect(waited).toMatchObject({
+        activeTurn: false,
+        timedOut: false,
+        lastTurnOutcome: 'completed',
+      });
+      await settled();
+    });
+
+    it('상한을 넘으면 timedOut 으로 돌아온다 — 끊지 않는다', async () => {
+      const { sessionId } = await running();
+      const waited = await manager.waitForTurn(sessionId, { timeoutMs: 20 });
+      expect(waited).toMatchObject({ activeTurn: true, timedOut: true });
+      await settled();
+    });
+
+    it('턴 실패·중단도 대기를 푼다', async () => {
+      const failed = await running();
+      const pendingFail = manager.waitForTurn(failed.sessionId, { timeoutMs: 5000 });
+      failed.session.emit({
+        type: 'turn_failed',
+        turnId: failed.session.lastTurnId!,
+        error: { kind: 'protocol', message: '깨짐' },
+      });
+      expect((await pendingFail).lastTurnOutcome).toBe('failed');
+
+      const canceled = await running();
+      const pendingCancel = manager.waitForTurn(canceled.sessionId, { timeoutMs: 5000 });
+      await manager.interrupt(canceled.sessionId);
+      expect((await pendingCancel).lastTurnOutcome).toBe('canceled');
+      await settled();
+    });
+
+    it('세션이 닫히거나 오류로 죽어도 대기가 풀린다 — 매달리는 경로를 남기지 않는다', async () => {
+      const closing = await running();
+      const pendingClose = manager.waitForTurn(closing.sessionId, { timeoutMs: 5000 });
+      await manager.closeSession(closing.sessionId);
+      expect((await pendingClose).timedOut).toBe(false);
+
+      const dying = await running();
+      const pendingDeath = manager.waitForTurn(dying.sessionId, { timeoutMs: 5000 });
+      dying.session.emit({ type: 'session_status_changed', status: 'error' });
+      expect((await pendingDeath).timedOut).toBe(false);
+      await settled();
+    });
+
+    it('결과 회수는 마지막 턴의 본문만 잇는다', async () => {
+      const { sessionId, session } = await running();
+      session.emit({ type: 'message_delta', delta: '앞' });
+      session.emit({ type: 'message_delta', delta: '뒤' });
+      session.emit({
+        type: 'turn_completed',
+        turnId: session.lastTurnId!,
+        usage: { totalTokens: 42 },
+      });
+      await settled();
+
+      // 두 번째 턴 — 첫 턴 본문이 섞이면 안 된다
+      await manager.prompt(sessionId, '또');
+      session.emit({ type: 'message_delta', delta: '둘째' });
+      session.emit({ type: 'turn_completed', turnId: session.lastTurnId! });
+      await settled();
+
+      const result = await manager.lastTurnResult(sessionId);
+      expect(result.text).toBe('둘째');
+      expect(result).toMatchObject({ outcome: 'completed', pending: false });
+    });
+
+    it('진행 중이면 pending 이고 지금까지 온 본문을 준다', async () => {
+      const { sessionId, session } = await running();
+      session.emit({ type: 'message_delta', delta: '쓰는 중' });
+      await settled();
+      const result = await manager.lastTurnResult(sessionId);
+      expect(result).toMatchObject({ pending: true, text: '쓰는 중' });
+      expect(result.outcome).toBeUndefined();
+    });
+
+    it('실패한 턴은 사유를 싣는다', async () => {
+      const { sessionId, session } = await running();
+      session.emit({
+        type: 'turn_failed',
+        turnId: session.lastTurnId!,
+        error: { kind: 'protocol', message: '게이트웨이 거절' },
+      });
+      await settled();
+      const result = await manager.lastTurnResult(sessionId);
+      expect(result).toMatchObject({ outcome: 'failed', error: '게이트웨이 거절' });
+    });
+
+    it('턴이 한 번도 없던 세션은 빈 결과다', async () => {
+      const summary = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+      expect(await manager.lastTurnResult(summary.sessionId)).toMatchObject({
+        text: '',
+        pending: false,
+      });
+      await settled();
+    });
+  });
 
   describe('역방향 툴 승인 채널 (M7 7.2.4)', () => {
     it('요청이 하네스 승인과 같은 채널로 나가고, 허용하면 true 로 풀린다', async () => {

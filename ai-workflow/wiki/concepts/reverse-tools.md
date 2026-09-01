@@ -2,7 +2,7 @@
 type: concept
 status: active
 updated: 2026-09-01
-last_ingested_from: packages/protocol/src/tools.ts, packages/daemon/src/mcp/gate.ts, docs/design/reverse-tool-catalog.md, docs/reference/harness-mcp-support.md
+last_ingested_from: packages/protocol/src/tools.ts, packages/daemon/src/mcp/gate.ts, packages/daemon/src/session-manager.ts, docs/design/reverse-tool-catalog.md, docs/reference/harness-mcp-support.md
 related_pages: [attention-state, harness-wrapping, home-isolation, tool-execution-in-daemon]
 ---
 
@@ -28,12 +28,14 @@ pi 는 README 가 명시적으로 배제한다 — *"No MCP. Build CLI tools wit
 
 경로가 둘인데 각자 툴을 정의하면 **하네스마다 다른 툴 표면**이 생긴다. 모델이 보는 툴은 하네스와 무관하게 같아야 하고, 그러려면 정의가 양쪽보다 위층에 있어야 한다 → `packages/protocol/src/tools.ts`. → [[decisions/tool-catalog-in-protocol]]
 
-## 카탈로그 10종
+## 카탈로그 12종
 
 | 이름 | 효과 | 승인 |
 |---|---|---|
-| `session_list` (주의 상태 동봉) · `session_read` · `ws_list` · `term_list` · `term_read` | read | — |
+| `session_list` (주의 상태 동봉) · `session_read` · `session_wait` · `session_result` · `ws_list` · `term_list` · `term_read` | read | — |
 | `session_new` (재귀 위험) · `session_say` · `session_stop` · `term_new` · `term_send` (임의 셸) | write | ✅ |
+
+`session_wait`·`session_result` 는 7.3.1 이 위임을 위해 더했다 — 아래 "위임" 절.
 
 **이름은 짧아야 한다.** 하네스가 다시 접두사를 붙이기 때문이다 — omp `mcp__ch_session_list`, grok `ch__session_list`. 규칙: 소문자·숫자·`_`, **3~24자**(`TOOL_NAME_PATTERN`).
 
@@ -63,5 +65,17 @@ pi 는 README 가 명시적으로 배제한다 — *"No MCP. Build CLI tools wit
 노출이 켜지는 순간 이것은 **데몬 제어 권한 상승 통로**가 된다. 그래서 `tools.reverseExposure` 는 **기본 off** 이고([[concepts/home-isolation]] 과 기본값 방향이 반대다 — 그쪽은 *끄는* 것이 위험하다), 실행은 전부 데몬 안의 한 관문을 지난다 → [[decisions/tool-execution-in-daemon]]
 
 승인은 하네스 승인과 **같은 채널**로 나간다(`permission_requested` + `origin: 'reverse_tool'`). 새 채널을 만들면 [[concepts/attention-state]]·사이드바·알림·승인 카드를 전부 두 번 구현하게 된다.
+
+## 위임 (7.3.1)
+
+FR-9.3 의 "자식으로 생성하고, 완료를 기다리거나 결과를 회수한다"가 여기서 닫힌다.
+
+- **관계는 라벨뿐이다.** 자식 목록은 `session_list({parentSessionId})` 로 얻고 필터는 라벨을 거를 뿐이다 — 데몬에 부모→자식 인덱스를 따로 두면 그것과 라벨이 어긋날 자리가 생긴다.
+- **대기는 상한이 있다.** `session_wait` 는 최대 120초. 무한 대기를 두지 않는 이유는 전송이다 — 하네스가 spawn 한 MCP 서버의 RPC 를 타고 오고 그쪽 대기도 유한하다. 안 끝나면 `done:false` 로 돌려주고 **"다시 호출하라"를 명시**한다(모델이 실패로 읽고 포기하면 위임이 끊긴다).
+- **회수는 마지막 턴만.** `session_result` 는 assistant 본문·성패·사용량만 준다. `session_read` 로도 읽히지만 그쪽은 타임라인 전체라, 위임으로 아끼려던 컨텍스트를 되돌려 놓는다.
+
+데몬은 활성 턴이 사라지는 **모든** 경로에서 대기를 푼다 — 정상 종료·실패·중단·비정상 종료·세션 닫힘. 하나만 빠뜨려도 그 경로에서 대기가 상한까지 매달린다.
+
+**위임 루프 실측 (2026-09-01)**: omp·grok·pi 3종 모두 생성 → 전송 → 대기(done) → 회수 PASS. 자식의 응답 본문과 누적 사용량이 부모 쪽에서 잡힌다.
 
 **write 왕복 실측 (2026-09-01)**: omp·grok·pi 3종 모두 PASS — 목 모델이 `session_new` 를 부르고, 데몬이 승인 카드를 올리고, 승인 후 세션이 실제로 생기며 자식에 `ch.toolDepth=1` 이 붙는다.

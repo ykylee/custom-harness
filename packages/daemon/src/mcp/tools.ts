@@ -9,6 +9,7 @@
 // 기록자·세션 그래프)가 데몬에만 있기 때문이다.
 import {
   TOOL_CATALOG,
+  TOOL_LABEL_PARENT_SESSION,
   findTool,
   toolDescriptors,
   type ToolDescriptor,
@@ -79,6 +80,8 @@ function summarizeSession(session: Record<string, unknown>): Record<string, unkn
     'attentionReason',
     'attentionTimestamp',
     'updatedAt',
+    // 부모-자식 관계는 라벨로만 표현된다 (FR-9.3) — 빼면 모델이 위임 구조를 못 본다
+    'labels',
   ] as const;
   const out: Record<string, unknown> = {};
   for (const key of keep) {
@@ -169,6 +172,16 @@ async function run(
       if (args.requiresAttention === true) {
         sessions = sessions.filter((s) => s.requiresAttention === true);
       }
+      // 부모 필터도 거르기만 한다 — 관계의 정본은 세션 레코드의 라벨이고,
+      // 데몬에 별도 인덱스를 두면 그것과 라벨이 어긋날 자리가 생긴다 (M7 7.3.1)
+      if (typeof args.parentSessionId === 'string') {
+        const parent = args.parentSessionId;
+        sessions = sessions.filter(
+          (s) =>
+            (s.labels as Record<string, string> | undefined)?.[TOOL_LABEL_PARENT_SESSION] ===
+            parent,
+        );
+      }
       return ok({ sessions: sessions.map(summarizeSession) });
     }
 
@@ -204,6 +217,26 @@ async function run(
       // 모델에게는 base64 가 아니라 텍스트를 준다 — 그대로 읽을 수 있어야 쓸모가 있다
       const text = Buffer.from(String(result.scrollback ?? ''), 'base64').toString('utf8');
       return ok({ output: text, truncated: result.truncated === true });
+    }
+
+    case 'session_wait': {
+      const params: Record<string, unknown> = { sessionId: args.sessionId };
+      if (args.timeoutMs !== undefined) params.timeoutMs = args.timeoutMs;
+      const result = await rpc.call('session.wait', params);
+      const timedOut = result.timedOut === true;
+      return ok({
+        done: !timedOut && result.activeTurn !== true,
+        status: result.status,
+        ...(result.lastTurnOutcome !== undefined ? { outcome: result.lastTurnOutcome } : {}),
+        timedOut,
+        // 다시 부르라고 명시한다 — 모델이 timedOut 을 실패로 읽고 포기하면 위임이 끊긴다
+        ...(timedOut ? { note: '아직 진행 중이다. 다시 호출하면 이어서 기다린다.' } : {}),
+      });
+    }
+
+    case 'session_result': {
+      const result = await rpc.call('session.result', { sessionId: args.sessionId });
+      return ok(result);
     }
 
     // ── 변경 (승인 대상) ─────────────────────────────────────────────────────

@@ -36,6 +36,7 @@
       "TASK-2026-08-31-main-002"
     ],
     "recent_done_items": [
+      "TASK-2026-09-01-main-003 — M7 7.3.1 서브에이전트 위임 — 부모-자식 관계·대기·회수",
       "TASK-2026-09-01-main-002 — M7 7.2.4 역방향 툴 안전장치 — opt-in·승인 채널·재귀 상한·감사·선점 탐지",
       "TASK-2026-09-01-main-001 — M7 7.2.3b 역방향 툴 노출 — pi 확장 (pi.registerTool)",
       "TASK-2026-08-31-main-008 — M7 7.2.3 역방향 툴 노출 — 데몬 MCP stdio 서버 (omp·grok)",
@@ -44,20 +45,20 @@
       "TASK-2026-08-31-main-005 — M7 WP 7.1 주의 상태 1급화 (FR-9.1)",
       "TASK-2026-08-31-main-004 — M7 7.2.0b grok 권한 모드 확정 (FR-1.5)",
       "TASK-2026-08-31-main-003 — M7 7.2.0a 하네스 홈 격리 누수 봉쇄 (NFR-1)",
-      "TASK-2026-08-31-main-001 — M7 7.2.1 하네스 MCP 지원 실측 (선행 게이트)",
-      "TASK-2026-08-30-main-008 — M6 6.4~6.7 파일·diff·스크립트·부하 (M6 완료)"
+      "TASK-2026-08-31-main-001 — M7 7.2.1 하네스 MCP 지원 실측 (선행 게이트)"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-01.md",
-    "task_count": 2,
+    "task_count": 3,
     "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
       "TASK-2026-09-01-main-001 — M7 7.2.3b 역방향 툴 노출 — pi 확장 (pi.registerTool)",
-      "TASK-2026-09-01-main-002 — M7 7.2.4 역방향 툴 안전장치 — opt-in·승인 채널·재귀 상한·감사·선점 탐지"
+      "TASK-2026-09-01-main-002 — M7 7.2.4 역방향 툴 안전장치 — opt-in·승인 채널·재귀 상한·감사·선점 탐지",
+      "TASK-2026-09-01-main-003 — M7 7.3.1 서브에이전트 위임 — 부모-자식 관계·대기·회수"
     ]
   },
   "next_documents": [

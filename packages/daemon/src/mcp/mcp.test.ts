@@ -278,6 +278,81 @@ describe('createToolInvoker — read 툴 바인딩', () => {
   });
 });
 
+describe('createToolInvoker — 위임 툴 바인딩 (M7 7.3.1)', () => {
+  const parentLabels = (parent: string): Record<string, string> => ({
+    'ch.parentSessionId': parent,
+    'ch.toolDepth': '1',
+  });
+
+  it('session_list 가 부모로 자식만 거른다 — 관계의 정본은 라벨이다', async () => {
+    const rpc = fakeRpc({
+      'session.list': {
+        sessions: [
+          { sessionId: 'child', labels: parentLabels('p1'), status: 'running' },
+          { sessionId: 'other', labels: parentLabels('p2'), status: 'idle' },
+          { sessionId: 'orphan', status: 'idle' },
+        ],
+      },
+    });
+    const result = await createToolInvoker({ rpc }).call('session_list', {
+      parentSessionId: 'p1',
+    });
+    const payload = JSON.parse(textOf(result)) as { sessions: Record<string, unknown>[] };
+    expect(payload.sessions.map((s) => s.sessionId)).toEqual(['child']);
+    // 라벨이 결과에 남아야 모델이 위임 구조를 읽는다
+    expect(payload.sessions[0]!.labels).toEqual(parentLabels('p1'));
+  });
+
+  it('session_wait 는 미완료를 실패가 아니라 done=false 로 알린다', async () => {
+    const rpc = fakeRpc({
+      'session.wait': { status: 'running', activeTurn: true, timedOut: true },
+    });
+    const result = await createToolInvoker({ rpc }).call('session_wait', {
+      sessionId: 's1',
+      timeoutMs: 1000,
+    });
+    expect(result.isError).toBe(false);
+    const payload = JSON.parse(textOf(result)) as Record<string, unknown>;
+    expect(payload).toMatchObject({ done: false, timedOut: true });
+    // 다시 부르라는 안내가 없으면 모델이 포기하고 위임이 끊긴다
+    expect(String(payload.note)).toContain('다시 호출');
+  });
+
+  it('session_wait 는 완료를 done=true + 결말로 준다', async () => {
+    const rpc = fakeRpc({
+      'session.wait': {
+        status: 'idle',
+        activeTurn: false,
+        timedOut: false,
+        lastTurnOutcome: 'completed',
+      },
+    });
+    const result = await createToolInvoker({ rpc }).call('session_wait', { sessionId: 's1' });
+    const payload = JSON.parse(textOf(result)) as Record<string, unknown>;
+    expect(payload).toMatchObject({ done: true, outcome: 'completed' });
+    expect(payload.note).toBeUndefined();
+    // 상한을 안 넘기면 데몬 기본값을 쓰게 둔다
+    expect(rpc.calls[0]!.params).toEqual({ sessionId: 's1' });
+  });
+
+  it('session_result 는 타임라인이 아니라 마지막 턴만 가져온다', async () => {
+    const rpc = fakeRpc({
+      'session.result': { status: 'idle', outcome: 'completed', text: '답', pending: false },
+    });
+    const result = await createToolInvoker({ rpc }).call('session_result', { sessionId: 's1' });
+    expect(rpc.calls[0]!.method).toBe('session.result'); // session.timeline 이 아니다
+    expect(JSON.parse(textOf(result))).toMatchObject({ text: '답', outcome: 'completed' });
+  });
+
+  it('대기·회수는 승인 대상이 아니다 — 조회를 막으면 위임을 감시할 수 없다', () => {
+    for (const name of ['session_wait', 'session_result']) {
+      const spec = TOOL_CATALOG.find((tool) => tool.name === name);
+      expect(spec?.effect, name).toBe('read');
+      expect(spec?.approval, name).toBe(false);
+    }
+  });
+});
+
 describe('등록 — omp mcp.json', () => {
   it('없으면 만들고, 두 번째는 unchanged 다', async () => {
     const home = await mkdtemp(join(tmpdir(), 'ch-omp-'));

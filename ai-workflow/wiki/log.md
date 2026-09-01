@@ -20,3 +20,10 @@
 - 원천: `packages/daemon/src/mcp/{gate,audit,main}.ts`, `docs/design/reverse-tool-catalog.md` §8, `docs/reference/harness-mcp-support.md` §4.1.
 - 태스크: TASK-2026-09-01-main-002
 
+## 2026-09-01 (2) — M7 7.3.1 반영
+
+- 계기: 서브에이전트 위임 루프 완성(생성·대기·회수). 카탈로그가 10종 → 12종이 됐다.
+- 갱신: `concepts/reverse-tools` — 카탈로그 표 12종, "위임" 절 추가(관계는 라벨뿐 / 대기 상한 / 회수는 마지막 턴만 / 대기 해제 경로 5곳).
+- 원천: `packages/daemon/src/session-manager.ts`(waitForTurn·lastTurnResult), `docs/design/reverse-tool-catalog.md` §8, `docs/reference/harness-mcp-support.md` §4.1.
+- 태스크: TASK-2026-09-01-main-003
+

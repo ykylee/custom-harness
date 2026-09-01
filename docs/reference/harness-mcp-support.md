@@ -5,7 +5,7 @@
 - 문서 목적: 1차 하네스 3종(pi / omp / grok)이 **MCP 서버를 실제로 띄우고, 툴을 모델에 노출하고, 모델의 호출을 실행해 결과를 대화로 되돌리는지**를 실물 바이너리로 측정하고, M7 역방향 툴 표면(WP 7.2)의 경로를 확정한다.
 - 범위: MCP 지원 여부·등록 경로·노출 방식·호출 왕복·격리 경계. MCP 서버 **구현**(7.2.3)은 범위 밖.
 - 대상 독자: 유지보수자, 설계자, AI agent
-- 상태: approved (v1.3, 2026-09-01 — §4.1 write 툴 왕복 실측 추가(7.2.4, 3하네스 PASS). v1.2: §3.3 grok 권한 모드를 WBS 7.2.0b 로 확정(원인이 §3.1 누수였음을 실측). v1.1: §3.1 격리 누수 봉쇄. v1.0: 7.2.1 실측)
+- 상태: approved (v1.4, 2026-09-01 — §4.1 에 위임 루프 실측 추가(7.3.1, 3하네스 PASS). v1.3: §4.1 write 툴 왕복 실측 추가(7.2.4, 3하네스 PASS). v1.2: §3.3 grok 권한 모드를 WBS 7.2.0b 로 확정(원인이 §3.1 누수였음을 실측). v1.1: §3.1 격리 누수 봉쇄. v1.0: 7.2.1 실측)
 - 최종 수정일: 2026-09-01
 - 측정 도구: [`scripts/mcp-probe.mjs`](../../scripts/mcp-probe.mjs) + [`scripts/mcp-probe/mock-mcp-server.mjs`](../../scripts/mcp-probe/mock-mcp-server.mjs) + [`scripts/grok-permission-probe.mjs`](../../scripts/grok-permission-probe.mjs) (권한 모드 행렬, §3.3)
 - 측정 대상: 번들 실물 (`bundle/out/custom-harness-0.1.0-darwin-arm64/harnesses/`) — pi 0.84.1, omp 17.3.8, grok 1.0.13(§6 참조)
@@ -189,6 +189,20 @@ read 왕복(7.2.3)과 전송은 같지만 **승인 대기**가 끼어든다 — 
 | omp 17.3.8 | `direct:mcp__ch_ws_list` | PASS | `origin=reverse_tool` 1건 | 세션 +1, 자식 라벨 `ch.toolDepth=1` |
 | grok 1.0.13 | `meta:use_tool` | PASS | `origin=reverse_tool` 1건 | 세션 +1, 자식 라벨 `ch.toolDepth=1` |
 | pi 0.84.1 | `direct:session_new` (접두사 없음) | PASS | `origin=reverse_tool` 1건 | 세션 +1, 자식 라벨 `ch.toolDepth=1` |
+
+### 위임 루프 (2026-09-01, 7.3.1)
+
+같은 프로브가 write 왕복 뒤에 **생성 → 전송 → 대기 → 회수**를 이어 돌린다. 부모가 자식을 만들고, 프롬프트를 보내고, 완료를 기다린 뒤, 자식의 응답 본문을 회수한다.
+
+| 하네스 | `session_say` | `session_wait` | `session_result` | 자식 응답 회수 |
+|---|---|---|---|---|
+| omp 17.3.8 | ok | **done** | ok | 있음 |
+| grok 1.0.13 | ok | **done** | ok | 있음 |
+| pi 0.84.1 | ok | **done** | ok | 있음 |
+
+자식 세션의 누적 사용량도 부모 쪽에서 조회된다 — 7.3.2 사용량 합산의 입력이 실제로 잡힌다는 확인이다.
+
+**측정 도구 결함 1건 수정**: 프로브가 대화 이력의 **첫** 툴 결과를 붙들고 있었다(`if (found && !obs.toolResultSeen)`). 한 턴만 도는 측정에서는 문제가 없지만 위임 루프처럼 여러 턴을 돌면 새 턴의 첫 요청에서 지난 턴 결과가 굳어, 뒤 턴을 재는 것처럼 보이면서 실제로는 옛 값을 읽는다. 마지막 `role: 'tool'` 메시지를 매번 덮어쓰도록 고쳤다 — 이 결함이 남아 있었다면 `wait=not-done` 이라는 **거짓 실패**를 제품 결함으로 오인할 뻔했다.
 
 부수 확인:
 

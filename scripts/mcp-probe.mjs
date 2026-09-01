@@ -142,15 +142,27 @@ function collectToolNames(body) {
 }
 
 /** 메시지 배열에서 프로브 툴 결과가 되돌아왔는지 찾는다 */
+/**
+ * 대화 이력에서 **가장 최근** 툴 결과를 뽑는다.
+ *
+ * 앞에서부터 찾아 첫 것을 쓰면 여러 턴을 도는 측정(7.3.1 위임 루프)에서 항상 1턴째 결과가
+ * 잡힌다 — 뒤 턴의 결과를 재는 것처럼 보이지만 실제로는 옛 값이라 측정이 조용히 거짓이 된다.
+ * `role: 'tool'` 을 우선하고(툴 결과의 정본 형식), 없으면 마커 포함 메시지로 떨어진다.
+ */
 function findToolResult(body) {
-  for (const m of body?.messages ?? []) {
-    const content =
-      typeof m?.content === 'string'
-        ? m.content
-        : Array.isArray(m?.content)
-          ? m.content.map((c) => c?.text ?? '').join('')
-          : '';
-    if (content.includes(RESULT_MARKER)) return { role: m.role, content };
+  const contentOf = (m) =>
+    typeof m?.content === 'string'
+      ? m.content
+      : Array.isArray(m?.content)
+        ? m.content.map((c) => c?.text ?? '').join('')
+        : '';
+  const messages = body?.messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === 'tool') return { role: 'tool', content: contentOf(messages[i]) };
+  }
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const content = contentOf(messages[i]);
+    if (content.includes(RESULT_MARKER)) return { role: messages[i].role, content };
   }
   return null;
 }
@@ -207,8 +219,10 @@ const mockGateway = createServer((req, res) => {
           );
         }
         for (const n of collectToolNames(body)) obs.toolNamesSeen.add(n);
+        // **항상 덮어쓴다.** 첫 값을 붙들면 턴을 여러 번 도는 측정에서 옛 결과가 굳는다 —
+        // 새 턴의 첫 요청에는 아직 이번 툴 결과가 없고 이력에는 지난 턴 것이 남아 있기 때문이다.
         const found = findToolResult(body);
-        if (found && !obs.toolResultSeen) obs.toolResultSeen = found;
+        if (found) obs.toolResultSeen = found;
       }
 
       const exposure = obs ? resolveExposure(obs) : null;
@@ -728,50 +742,87 @@ async function probeViaDaemon() {
       }
       // write 툴 왕복 (7.2.4) — 승인 대기를 낀 경로. 자동 승인은 위 리스너가 한다
       if (writeProbe && !error) {
-        const before = (await daemon.manager.listSessions()).length;
-        // 목이 부를 툴을 write 로 바꾸고 "이미 한 번 불렀다" 표시를 되돌린다
-        targetTool = { name: 'session_new', args: { harness, cwd: workDir } };
-        o.toolCallIssued = false;
-        o.searchIssued = false;
-        o.toolResultSeen = null;
-        const { turnId } = await daemon.manager.prompt(
-          session.sessionId,
-          `Use the session_new tool with harness="${harness}" and cwd="${workDir}". ` +
-            `You must call the tool. After the tool returns, reply with DONE and nothing else.`,
-        );
-        const deadline = Date.now() + 150_000;
-        for (;;) {
-          const terminal = events.find(
-            (e) =>
-              e.sessionId === session.sessionId &&
-              (e.type === 'turn_completed' || e.type === 'turn_failed') &&
-              e.turnId === turnId,
+        /**
+         * 목이 부를 툴을 지정하고 한 턴을 돌린다. 프롬프트 본문은 형식일 뿐 — 목은 그것을
+         * 읽지 않고 `targetTool` 을 부른다. 진짜로 재는 것은 **툴이 하네스를 통과해 데몬에
+         * 닿고 결과가 대화로 돌아오는가** 이고, 모델의 툴 선택 능력이 아니다.
+         */
+        const toolTurn = async (name, toolArgs) => {
+          targetTool = { name, args: toolArgs };
+          o.toolCallIssued = false;
+          o.searchIssued = false;
+          o.toolResultSeen = null;
+          const { turnId } = await daemon.manager.prompt(
+            session.sessionId,
+            `Use the ${name} tool. You must call the tool. After it returns, reply with DONE.`,
           );
-          if (terminal) {
-            if (terminal.type === 'turn_failed') {
-              writeResult = { error: terminal.error?.message ?? 'turn_failed' };
+          const deadline = Date.now() + 150_000;
+          for (;;) {
+            const terminal = events.find(
+              (e) =>
+                e.sessionId === session.sessionId &&
+                (e.type === 'turn_completed' || e.type === 'turn_failed') &&
+                e.turnId === turnId,
+            );
+            if (terminal) {
+              return terminal.type === 'turn_failed'
+                ? { error: terminal.error?.message ?? 'turn_failed' }
+                : { result: o.toolResultSeen?.content ?? null };
             }
-            break;
+            if (Date.now() > deadline) return { error: 'timeout' };
+            await new Promise((r) => setTimeout(r, 200));
           }
-          if (Date.now() > deadline) {
-            writeResult = { error: 'timeout' };
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 200));
-        }
+        };
+
+        const before = (await daemon.manager.listSessions()).length;
+        const created = await toolTurn('session_new', { harness, cwd: workDir });
         const after = await daemon.manager.listSessions();
+        const child = after.find((s) => s.labels?.['ch.parentSessionId'] === session.sessionId);
         writeResult = {
-          ...(writeResult ?? {}),
+          ...(created.error ? { error: created.error } : {}),
           approvals: permissions.filter(
             (x) => x.sessionId === session.sessionId && x.origin === 'reverse_tool',
           ).length,
           sessionsCreated: after.length - before,
           // 라벨이 붙어야 재귀 상한이 다음 세대에도 성립한다
-          childLabels:
-            after.find((s) => s.labels?.['ch.parentSessionId'] === session.sessionId)?.labels ??
-            null,
-          toolResult: o.toolResultSeen?.content?.slice(0, 200) ?? null,
+          childLabels: child?.labels ?? null,
         };
+
+        // ── 위임 루프 (WBS 7.3.1) — 전송 → 대기 → 회수 ──────────────────────
+        // 자식이 프롬프트를 받으면 목은 툴을 한 번 더 부르지 않는다(이 턴의 툴 호출은 이미
+        // 부모가 썼다) — 그래서 자식은 평범한 텍스트로 답하고, 그 텍스트가 회수 대상이 된다.
+        if (child && !created.error) {
+          const said = await toolTurn('session_say', {
+            sessionId: child.sessionId,
+            prompt: 'Reply with the single word DELEGATED and nothing else.',
+          });
+          const waited = await toolTurn('session_wait', {
+            sessionId: child.sessionId,
+            timeoutMs: 60_000,
+          });
+          const collected = await toolTurn('session_result', { sessionId: child.sessionId });
+          // 툴 결과는 JSON 문자열 1개다 (7.2.3 결과 스키마) — 파싱 실패는 원문 앞부분으로 남긴다
+          const payloadOf = (step) => {
+            if (step.error || !step.result) return null;
+            try {
+              return JSON.parse(step.result);
+            } catch {
+              return { raw: step.result.slice(0, 120) };
+            }
+          };
+          const childText = payloadOf(collected)?.text ?? null;
+          writeResult.delegation = {
+            say: said.error ?? 'ok',
+            wait: waited.error ?? (payloadOf(waited)?.done === true ? 'done' : 'not-done'),
+            result: collected.error ?? 'ok',
+            childText: typeof childText === 'string' ? childText.trim().slice(0, 80) : null,
+            // 자식 세션의 누적 사용량 — 7.3.2 합산 표시의 입력이 실제로 잡히는지
+            childUsage:
+              (await daemon.manager.listSessions()).find(
+                (s) => s.sessionId === child.sessionId,
+              )?.usage ?? null,
+          };
+        }
         targetTool = { name: TOOL_NAME, args: realServer ? {} : { text: 'ping' } };
       }
       await daemon.manager.closeSession(session.sessionId).catch(() => {});
@@ -847,7 +898,11 @@ for (const r of results) {
       `foreign=${r.foreignMcpTools?.length ?? 0}` +
       (r.writeTool
         ? ` write(승인 ${r.writeTool.approvals ?? 0}건, 세션 +${r.writeTool.sessionsCreated ?? 0}` +
-          `${r.writeTool.error ? `, error=${r.writeTool.error}` : ''})`
+          `${r.writeTool.error ? `, error=${r.writeTool.error}` : ''})` +
+          (r.writeTool.delegation
+            ? ` 위임(say=${r.writeTool.delegation.say} wait=${r.writeTool.delegation.wait}` +
+              ` result=${r.writeTool.delegation.result} 회수=${r.writeTool.delegation.childText ? '있음' : '없음'})`
+            : '')
         : ''),
   );
 }

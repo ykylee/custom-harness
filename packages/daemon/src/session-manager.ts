@@ -40,6 +40,12 @@ interface LiveSession {
    * 반면 `pending` 에는 양쪽이 다 들어간다 — 조회·주의 상태·UI 는 출처를 구분할 필요가 없다.
    */
   daemonPending: Map<string, (granted: boolean) => void>;
+  /**
+   * 턴 종료를 기다리는 호출자 (M7 7.3.1) — 부모 세션이 자식의 완료를 기다린다.
+   * 활성 턴이 사라지는 **모든** 경로에서 풀어 준다(정상 종료·중단·오류·세션 닫힘).
+   * 하나라도 빠뜨리면 그 경로에서 대기가 타임아웃까지 매달린다.
+   */
+  turnWaiters: Set<() => void>;
   /** 영속화·팬아웃 순서 보장용 직렬 체인 */
   chain: Promise<void>;
   /**
@@ -111,6 +117,7 @@ export class SessionManager {
         activeTurnId: undefined,
         pending: new Map(),
         daemonPending: new Map(),
+        turnWaiters: new Set(),
         lastTurnOutcome: undefined,
         // 재기동 복원 — 영속된 주의 상태를 그대로 되살린다 (FR-9.1 재접속 조회)
         attentionAcknowledged: meta.requiresAttention !== true,
@@ -185,6 +192,7 @@ export class SessionManager {
       activeTurnId: undefined,
       pending: new Map(),
       daemonPending: new Map(),
+      turnWaiters: new Set(),
       lastTurnOutcome: undefined,
       attentionAcknowledged: true,
       chain: Promise.resolve(),
@@ -285,6 +293,8 @@ export class SessionManager {
       live.unsubscribe = undefined;
       live.activeTurnId = undefined;
       live.pending.clear();
+      // 닫힌 세션의 턴은 끝난 것이다 — 풀어 주지 않으면 대기가 타임아웃까지 매달린다
+      this.releaseTurnWaiters(live);
     }
     await this.transition(live, 'closed');
   }
@@ -313,6 +323,115 @@ export class SessionManager {
       await this.transition(live, 'running');
     }
     return { turnId };
+  }
+
+  /**
+   * 활성 턴이 끝날 때까지 기다린다 (M7 7.3.1, FR-9.3).
+   *
+   * 이미 끝나 있으면 즉시 돌아온다 — 부모가 `session_say` 직후에 부르든 한참 뒤에 부르든
+   * 같은 답을 준다. `prompt()` 가 `activeTurnId` 를 세운 뒤에 반환하므로 "보내자마자 기다린다"
+   * 순서에서 턴을 놓치지 않는다.
+   *
+   * **상한이 있다.** 이 호출은 하네스가 spawn 한 프로세스의 RPC 를 타고 오고 그쪽 대기도
+   * 유한하다 — 끊기는 대기보다 `timedOut` 을 돌려주고 다시 걸게 하는 편이 낫다.
+   */
+  async waitForTurn(
+    sessionId: string,
+    options: { timeoutMs?: number } = {},
+  ): Promise<{
+    status: SessionMeta['status'];
+    activeTurn: boolean;
+    lastTurnOutcome?: 'completed' | 'failed' | 'canceled';
+    timedOut: boolean;
+  }> {
+    const live = this.requireSession(sessionId);
+    const describe = (
+      timedOut: boolean,
+    ): {
+      status: SessionMeta['status'];
+      activeTurn: boolean;
+      lastTurnOutcome?: 'completed' | 'failed' | 'canceled';
+      timedOut: boolean;
+    } => ({
+      status: live.meta.status,
+      activeTurn: live.activeTurnId !== undefined,
+      ...(live.lastTurnOutcome !== undefined ? { lastTurnOutcome: live.lastTurnOutcome } : {}),
+      timedOut,
+    });
+
+    if (live.activeTurnId === undefined) return describe(false);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const release = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        live.turnWaiters.delete(release);
+        resolve(describe(false));
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        live.turnWaiters.delete(release);
+        resolve(describe(true));
+      }, options.timeoutMs ?? 60_000);
+      timer.unref?.();
+      live.turnWaiters.add(release);
+    });
+  }
+
+  /**
+   * 마지막 턴의 결과만 회수한다 (M7 7.3.1, FR-9.3).
+   *
+   * 타임라인을 되짚어 마지막 `turn_started` 이후의 assistant 본문을 잇는다. 턴 경계를
+   * `turnId` 가 아니라 **위치**로 잡는 이유: `message_delta` 의 `turnId` 는 선택 필드라
+   * 어댑터에 따라 비어 있을 수 있다(protocol events).
+   */
+  async lastTurnResult(sessionId: string): Promise<{
+    status: SessionMeta['status'];
+    outcome?: 'completed' | 'failed' | 'canceled';
+    text: string;
+    error?: string;
+    usage?: SessionSummary['usage'];
+    /** 턴이 아직 안 끝났다 — text 는 지금까지 온 부분이다 */
+    pending: boolean;
+  }> {
+    const live = this.requireSession(sessionId);
+    const events = await this.store.readTimeline(sessionId, 0);
+    let start = -1;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      if (events[i]?.type === 'turn_started') {
+        start = i;
+        break;
+      }
+    }
+    if (start < 0) {
+      return { status: live.meta.status, text: '', pending: live.activeTurnId !== undefined };
+    }
+
+    let text = '';
+    let outcome: 'completed' | 'failed' | 'canceled' | undefined;
+    let error: string | undefined;
+    let usage: SessionSummary['usage'];
+    for (const event of events.slice(start + 1)) {
+      if (event.type === 'message_delta') text += event.delta;
+      else if (event.type === 'turn_completed') {
+        outcome = 'completed';
+        usage = event.usage;
+      } else if (event.type === 'turn_failed') {
+        outcome = 'failed';
+        error = event.error.message;
+      } else if (event.type === 'turn_canceled') outcome = 'canceled';
+    }
+    return {
+      status: live.meta.status,
+      ...(outcome !== undefined ? { outcome } : {}),
+      text,
+      ...(error !== undefined ? { error } : {}),
+      ...(usage !== undefined ? { usage } : {}),
+      pending: outcome === undefined,
+    };
   }
 
   /** 멱등 — 활성 턴이 없어도 에러 없이 완료 (FR-1.6) */
@@ -437,6 +556,12 @@ export class SessionManager {
 
   // ── 내부 ─────────────────────────────────────────────────────────────────
 
+  /** 활성 턴이 사라졌음을 대기자에게 알린다 (M7 7.3.1) — 호출 지점은 3곳뿐이다 */
+  private releaseTurnWaiters(live: LiveSession): void {
+    for (const release of [...live.turnWaiters]) release();
+    live.turnWaiters.clear();
+  }
+
   private requireSession(sessionId: string): LiveSession {
     const live = this.sessions.get(sessionId);
     if (!live) throw new DaemonError('not_found', `세션 없음: ${sessionId}`);
@@ -488,6 +613,7 @@ export class SessionManager {
             : event.type === 'turn_failed'
               ? 'failed'
               : 'canceled';
+        this.releaseTurnWaiters(live);
         // 턴이 끝났다 = 사용자가 아직 결과를 못 봤다 (7.1.1)
         live.attentionAcknowledged = false;
         void this.transition(live, 'idle');
@@ -497,6 +623,7 @@ export class SessionManager {
         live.meta.status = event.status;
         if (event.status === 'error') {
           live.activeTurnId = undefined;
+          this.releaseTurnWaiters(live);
           live.attentionAcknowledged = false;
         }
         void this.persistMeta(live);

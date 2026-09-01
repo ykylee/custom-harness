@@ -41,7 +41,8 @@ const sessionId = z.string().describe('세션 ID');
 
 /**
  * 카탈로그 정본. FR-9.2 가 열거한 범위(세션 생성·프롬프트 전송·상태 조회·중단·
- * 워크스페이스 조회·터미널 조작)를 모두 덮는다.
+ * 워크스페이스 조회·터미널 조작)를 모두 덮고, 7.3.1 이 위임에 필요한 둘을 더한다
+ * (완료 대기·결과 회수 — FR-9.3 "완료를 기다리거나 결과를 회수").
  */
 export const TOOL_CATALOG = [
   // ── 세션 ─────────────────────────────────────────────────────────────────
@@ -53,6 +54,8 @@ export const TOOL_CATALOG = [
     params: z.strictObject({
       workspaceId: z.string().optional().describe('이 워크스페이스의 세션만'),
       requiresAttention: z.boolean().optional().describe('주의가 필요한 세션만'),
+      // 부모-자식은 라벨로만 표현한다 (FR-9.3) — 별도 인덱스를 두지 않는다
+      parentSessionId: z.string().optional().describe('이 세션이 만든 자식 세션만'),
     }),
     effect: 'read',
     approval: false,
@@ -87,6 +90,44 @@ export const TOOL_CATALOG = [
     params: z.strictObject({ sessionId, prompt: z.string().describe('보낼 프롬프트') }),
     effect: 'write',
     approval: true,
+  },
+  {
+    /**
+     * 자식 세션의 완료를 기다린다 (M7 7.3.1, FR-9.3).
+     *
+     * **상한 있는 대기**다 — 무한정 기다리지 않는다. 하네스의 툴 호출 타임아웃과 우리
+     * 전송 대기가 유한하므로, 끝나지 않았으면 `done: false` 로 돌려주고 모델이 다시 부른다.
+     * 상태를 바꾸지 않으므로 승인 대상이 아니다.
+     */
+    name: 'session_wait',
+    description:
+      '세션의 진행 중인 턴이 끝날 때까지 기다린다(최대 timeoutMs). 시간 안에 안 끝나면 done=false 로 돌아온다 — 다시 호출하면 이어서 기다린다.',
+    params: z.strictObject({
+      sessionId,
+      timeoutMs: z
+        .number()
+        .int()
+        .positive()
+        .max(120_000)
+        .optional()
+        .describe('최대 대기 밀리초 (기본 60000, 상한 120000)'),
+    }),
+    effect: 'read',
+    approval: false,
+  },
+  {
+    /**
+     * 마지막 턴의 결과만 회수한다 (M7 7.3.1, FR-9.3).
+     *
+     * `session_read` 로도 읽히지만 그쪽은 타임라인 전체다 — 위임한 작업의 답만 필요한
+     * 부모가 자식의 툴 실행 기록까지 컨텍스트에 싣게 된다.
+     */
+    name: 'session_result',
+    description:
+      '세션의 마지막 턴 결과(assistant 응답 본문·성패·사용량)만 회수한다. 타임라인 전체가 필요하면 session_read 를 쓴다.',
+    params: z.strictObject({ sessionId }),
+    effect: 'read',
+    approval: false,
   },
   {
     // 멱등 — 활성 턴이 없어도 성공이다 (FR-1.6 과 같은 의미론)
