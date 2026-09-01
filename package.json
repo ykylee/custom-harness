@@ -17,7 +17,8 @@
     "format": "prettier --write \"packages/*/src/**/*.{ts,tsx,css}\"",
     "format:check": "prettier --check \"packages/*/src/**/*.{ts,tsx,css}\"",
     "smoke:nfr1": "node scripts/nfr1-smoke.mjs",
-    "smoke:terminal": "node scripts/terminal-bundle-smoke.mjs"
+    "smoke:terminal": "node scripts/terminal-bundle-smoke.mjs",
+    "smoke:m7": "node scripts/m7-acceptance.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

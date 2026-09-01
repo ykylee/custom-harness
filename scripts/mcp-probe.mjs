@@ -607,11 +607,7 @@ async function probeViaDaemon() {
   await mkdir(dirname(settingsPath), { recursive: true });
   await writeFile(
     settingsPath,
-    JSON.stringify(
-      { ...current, tools: { reverseExposure: true, maxSessionDepth: 2 } },
-      null,
-      2,
-    ),
+    JSON.stringify({ ...current, tools: { reverseExposure: true, maxSessionDepth: 2 } }, null, 2),
   );
   const { startDaemon, PiAdapter, OmpAdapter, GrokAdapter } = await import(
     join(repoRoot, 'packages/daemon/dist/index.js')
@@ -827,9 +823,8 @@ async function probeViaDaemon() {
             activeChildCount: payloadOf(usage)?.activeChildCount ?? null,
             // 자식 세션의 누적 사용량 — 7.3.2 합산 표시의 입력이 실제로 잡히는지
             childUsage:
-              (await daemon.manager.listSessions()).find(
-                (s) => s.sessionId === child.sessionId,
-              )?.usage ?? null,
+              (await daemon.manager.listSessions()).find((s) => s.sessionId === child.sessionId)
+                ?.usage ?? null,
           };
         }
         targetTool = { name: TOOL_NAME, args: realServer ? {} : { text: 'ping' } };

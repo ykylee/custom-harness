@@ -324,7 +324,18 @@ export class SessionManager {
     return { mapped, skipped };
   }
 
-  async closeSession(sessionId: string): Promise<void> {
+  /**
+   * 세션 닫기. `reason` 이 계약을 가른다 (M7 M7 수용 검증에서 드러난 결함):
+   *
+   * - `'user'` — 사용자가 이 세션을 정리했다. 주의 상태도 함께 내린다.
+   * - `'shutdown'` — 데몬이 내려가느라 닫는다. **주의 상태를 건드리지 않는다.**
+   *
+   * 구분이 필요한 이유: 닫을 때 `pending` 을 비우므로 그 뒤 주의 상태를 다시 계산하면
+   * "승인 대기"가 `false` 가 되어 영속된다. 데몬 종료는 모든 세션을 닫으므로, 구분이
+   * 없으면 **재기동 때마다 주의 상태가 통째로 지워진다** — FR-9.1 이 없애려던 바로 그
+   * 실패(클라이언트가 없는 동안 생긴 신호가 사라진다)를 데몬이 스스로 만든다.
+   */
+  async closeSession(sessionId: string, reason: 'user' | 'shutdown' = 'user'): Promise<void> {
     const live = this.requireSession(sessionId);
     if (live.runtime) {
       live.unsubscribe?.();
@@ -336,7 +347,16 @@ export class SessionManager {
       // 닫힌 세션의 턴은 끝난 것이다 — 풀어 주지 않으면 대기가 타임아웃까지 매달린다
       this.releaseTurnWaiters(live);
     }
-    await this.transition(live, 'closed');
+    await this.transition(live, 'closed', { refreshAttention: false });
+    // 사용자가 정리한 세션은 "확인 필요"에서도 내린다. 종료 절차(`shutdown`)는 내리지
+    // 않는다 — 사용자는 그 세션들에 대해 아무것도 하지 않았다.
+    if (reason === 'user' && live.meta.requiresAttention === true) {
+      live.meta.requiresAttention = false;
+      delete live.meta.attentionReason;
+      delete live.meta.attentionTimestamp;
+      await this.persistMeta(live);
+      this.emit(live, { type: 'attention_changed', requiresAttention: false });
+    }
   }
 
   async prompt(sessionId: string, text: string): Promise<{ turnId: string }> {
@@ -452,6 +472,11 @@ export class SessionManager {
     pending: boolean;
   }> {
     const live = this.requireSession(sessionId);
+    // 쓰기 체인을 먼저 비운다 (M7 수용 검증에서 드러난 경합). `waitForTurn` 은
+    // `applyEvent` 안에서 풀리는데 그 이벤트의 **파일 기록은 아직 체인 위에 있다** —
+    // 위임의 정해진 순서인 `session_wait`(done) → `session_result` 가 방금 기다린 턴이
+    // 없는 타임라인을 읽을 수 있다. 실물 하네스는 지연이 있어 가려졌을 뿐이다.
+    await live.chain;
     const events = await this.store.readTimeline(sessionId, 0);
     let start = -1;
     for (let i = events.length - 1; i >= 0; i -= 1) {
@@ -654,7 +679,10 @@ export class SessionManager {
   }
 
   async timeline(sessionId: string, fromSeq?: number): Promise<SessionEvent[]> {
-    this.requireSession(sessionId);
+    const live = this.requireSession(sessionId);
+    // 재동기화도 같은 이유로 체인을 먼저 비운다 — 방금 받은 이벤트가 파일에 아직 없으면
+    // 클라이언트는 갭을 메우려다 그 갭을 그대로 다시 받는다
+    await live.chain;
     return this.store.readTimeline(sessionId, fromSeq ?? 0);
   }
 
@@ -667,12 +695,15 @@ export class SessionManager {
       } catch {
         // interrupt 실패해도 정리는 계속
       }
-      await this.closeSession(live.meta.sessionId);
+      await this.closeSession(live.meta.sessionId, 'shutdown');
     }
     // 타임라인 쓰기는 세션별 체인에 실려 있다 (§emit) — 기다리지 않으면 "종료 완료"를
     // 알린 뒤에도 파일이 써진다. timeline.jsonl 이 SSOT 이고 검색 색인이 그걸 다시
-    // 읽는 만큼(7.4.1), 종료가 쓰기를 앞지르면 안 된다.
-    await Promise.allSettled([...this.sessions.values()].map((live) => live.chain));
+    // 읽는 만큼(7.4.1), 종료가 쓰기를 앞지르면 안 된다. meta 도 같은 이유로 기다린다 —
+    // 주의 상태·제목이 거기 실린다.
+    await Promise.allSettled(
+      [...this.sessions.values()].flatMap((live) => [live.chain, live.metaChain]),
+    );
   }
 
   // ── 내부 ─────────────────────────────────────────────────────────────────
@@ -803,11 +834,16 @@ export class SessionManager {
       });
   }
 
-  private async transition(live: LiveSession, status: SessionMeta['status']): Promise<void> {
+  private async transition(
+    live: LiveSession,
+    status: SessionMeta['status'],
+    options: { refreshAttention?: boolean } = {},
+  ): Promise<void> {
     live.meta.status = status;
     await this.persistMeta(live);
     this.emit(live, { type: 'session_status_changed', status });
-    this.refreshAttention(live);
+    // 기본은 재계산이다 — 끄는 경로는 세션 닫기뿐이고 그 이유는 closeSession 에 적었다
+    if (options.refreshAttention !== false) this.refreshAttention(live);
   }
 
   // ── 주의 상태 (M7 7.1.1·7.1.2, FR-9.1) ───────────────────────────────────
@@ -817,6 +853,15 @@ export class SessionManager {
    * 상태를 바꿀 수 있는 지점(턴 종료·상태 전이·승인 요청/해소·확인)이 전부 여기로 모인다.
    */
   private refreshAttention(live: LiveSession): void {
+    // **런타임이 없으면 얼린다** (M7 수용 검증에서 드러난 결함). 닫힌 세션에서는 새 사건이
+    // 생길 수 없고, 다시 계산해 봐야 `pending` 이 이미 비워진 뒤라 "승인 대기"가 거짓으로
+    // 사라질 뿐이다. 데몬 종료는 모든 세션을 닫으므로, 이 규칙이 없으면 **재기동 때마다
+    // 주의 상태가 통째로 지워진다** — FR-9.1 이 없애려던 실패를 데몬이 스스로 만든다.
+    //
+    // 종료 절차의 `interrupt()` 가 발행한 `turn_canceled` 는 `void transition('idle')` 을
+    // 남기고, 그 늦은 재계산이 닫힌 뒤에 도착한다. 호출 지점마다 막는 대신 여기서 한 번
+    // 막는 이유다. 사용자가 명시적으로 닫는 경우는 `closeSession` 이 따로 내린다.
+    if (live.runtime === undefined) return;
     const previous: AttentionState = {
       requiresAttention: live.meta.requiresAttention === true,
       ...(live.meta.attentionReason !== undefined

@@ -30,7 +30,7 @@ M0 설계 ─→ M1 코어 수직 절단 ─→ M2 멀티 하네스/멀티 세�
 | **M4 확장** | [m4-extensions.md](./roadmap/m4-extensions.md) | 후순위 편입 — 트랙별 go/no-go 후 독립 릴리스 | 트랙별 독립 (T1 스킬/MCP → T2 opencode → T3 claude/codex 권장 순) | 3 트랙 / 변환 계층, 어댑터 2종 |
 | **M5 워크스페이스** | [m5-workspace.md](./roadmap/m5-workspace.md) | 세션 위에 작업 단위를 세운다 — 프로젝트 → 워크스페이스 → 세션 3계층 | 3계층이 데몬 정본으로 동작 + 기존 세션 백필 + 사이드바 재편 | 8 WP / 레지스트리 2종, worktree, UI 재편 |
 | **M6 캔버스** | [m6-canvas.md](./roadmap/m6-canvas.md) | 워크스페이스를 대화창에서 작업 캔버스로 — 터미널·파일·diff 탭 | 탭 타깃 다형화 + 터미널 복원 + diff 열람 + 번들 오프라인 성립 | 7 WP / 바이너리 프레임, pty, 뷰어 |
-| **M7 오케스트레이션** | [m7-orchestration.md](./roadmap/m7-orchestration.md) | 세션을 위임·감시 가능한 작업 단위로 — 주의 상태·역방향 툴·서브에이전트·CLI 자동화 | 주의 상태 데몬 정본 + 세션 위임/회수 + CLI 세션 조작 | 6 WP / 툴 카탈로그, 서브에이전트 |
+| **M7 오케스트레이션** — **완료 (2026-09-01)** | [m7-orchestration.md](./roadmap/m7-orchestration.md) | 세션을 위임·감시 가능한 작업 단위로 — 주의 상태·역방향 툴·서브에이전트·검색·CLI 자동화·세션 제목 | 주의 상태 데몬 정본 + 세션 위임/회수 + CLI 세션 조작 → [수용 검증 PASS](./roadmap/m7-orchestration.md#완료-선언-2026-09-01) (`npm run smoke:m7`) | 6 WP 전부 done |
 
 ## 마일스톤 간 핵심 의존
 

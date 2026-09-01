@@ -768,3 +768,71 @@ describe('세션 제목 자동 생성 배선 (M7 7.6.1, FR-9.5)', () => {
     await second.shutdown();
   });
 });
+
+describe('M7 수용 검증에서 드러난 결함 (2026-09-01)', () => {
+  const boot = async (): Promise<{
+    store: SessionStore;
+    manager: SessionManager;
+    sessionId: string;
+  }> => {
+    const store = new SessionStore(await mkdtemp(join(tmpdir(), 'ch-m7-fix-')));
+    const manager = new SessionManager({ store, adapters: [new MockAdapter()] });
+    await manager.init();
+    const session = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    return { store, manager, sessionId: session.sessionId };
+  };
+
+  it('데몬 종료가 주의 상태를 지우지 않는다', async () => {
+    // 종료는 모든 세션을 닫는다 — 닫을 때 주의 상태를 다시 계산하면 `pending` 이 이미
+    // 비워진 뒤라 "승인 대기"가 거짓으로 사라지고, 재기동 때마다 통째로 지워진다.
+    const { store, manager, sessionId } = await boot();
+    await manager.prompt(sessionId, '[approval] 위험한 명령');
+    await vi.waitFor(async () => {
+      const [summary] = await manager.listSessions();
+      expect(summary?.requiresAttention).toBe(true);
+    });
+    await manager.shutdown();
+
+    const restarted = new SessionManager({ store, adapters: [new MockAdapter()] });
+    await restarted.init();
+    const [summary] = await restarted.listSessions();
+    expect(summary).toMatchObject({ requiresAttention: true, attentionReason: 'permission' });
+    await restarted.shutdown();
+  });
+
+  it('사용자가 닫은 세션은 확인 필요에서 내려간다', async () => {
+    // 종료 절차와 달리 이건 사용자가 그 세션을 정리한 것이다
+    const { manager, sessionId } = await boot();
+    await manager.prompt(sessionId, '[approval] 위험한 명령');
+    await vi.waitFor(async () => {
+      expect((await manager.listSessions())[0]?.requiresAttention).toBe(true);
+    });
+    await manager.closeSession(sessionId);
+    expect((await manager.listSessions())[0]?.requiresAttention).toBe(false);
+    await manager.shutdown();
+  });
+
+  it('wait 직후의 result 가 방금 기다린 턴을 본다', async () => {
+    // 위임의 정해진 순서다(session_wait → session_result). waitForTurn 은 applyEvent
+    // 안에서 풀리는데 그 이벤트의 파일 기록은 아직 체인 위에 있다 — 기다리지 않으면
+    // 방금 끝난 턴이 없는 타임라인을 읽는다.
+    const { manager, sessionId } = await boot();
+    await manager.prompt(sessionId, '자식이 할 일');
+    const waited = await manager.waitForTurn(sessionId, { timeoutMs: 5000 });
+    expect(waited.timedOut).toBe(false);
+
+    const result = await manager.lastTurnResult(sessionId);
+    expect(result.text).toContain('작업을 시작합니다');
+    expect(result.pending).toBe(false);
+    await manager.shutdown();
+  });
+
+  it('턴 직후의 timeline 재동기화가 그 턴을 포함한다', async () => {
+    const { manager, sessionId } = await boot();
+    await manager.prompt(sessionId, '무엇이든');
+    await manager.waitForTurn(sessionId, { timeoutMs: 5000 });
+    const events = await manager.timeline(sessionId);
+    expect(events.some((e) => e.type === 'turn_completed')).toBe(true);
+    await manager.shutdown();
+  });
+});

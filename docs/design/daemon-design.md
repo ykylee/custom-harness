@@ -65,6 +65,19 @@ data/sessions/<sessionId>/
 완료"를 알린 뒤에도 `timeline.jsonl` 이 써진다 — 그 파일이 SSOT 이고 검색 색인이 다시 읽는
 대상(§5)이므로 종료가 쓰기를 앞지르면 안 된다.
 
+### 4.2 주의 상태와 쓰기 체인의 경계 (M7 수용 검증, 2026-09-01)
+
+- **런타임이 없는 세션의 주의 상태는 얼린다.** 닫힌 세션에서는 새 사건이 생길 수 없고, 다시
+  계산하면 `pending` 이 이미 비워진 뒤라 "승인 대기"가 거짓으로 사라진다. 데몬 종료는 모든
+  세션을 닫으므로 이 규칙이 없으면 **재기동 때마다 주의 상태가 통째로 지워진다**. 사용자가
+  명시적으로 닫는 경우에만 `closeSession` 이 따로 내린다.
+- **타임라인을 읽는 조회는 세션 쓰기 체인을 먼저 비운다** (`session.result`·`session.timeline`).
+  `waitForTurn` 은 `applyEvent` 안에서 풀리는데 그 이벤트의 파일 기록은 아직 체인 위에 있다 —
+  위임의 정해진 순서(`session_wait` → `session_result`)가 방금 기다린 턴이 없는 타임라인을
+  읽을 수 있다.
+- **`shutdown()` 은 `chain` 과 `metaChain` 을 모두 기다린다.** 전자는 타임라인, 후자는 주의
+  상태·제목이 실리는 `meta.json` 이다.
+
 ## 5. 타임라인 검색 색인 (M7 7.4.1, FR-9.4)
 
 `data/search-index.db` — SQLite FTS5. **파생물이다**: SSOT 는 §2 의 `timeline.jsonl` 이고,
