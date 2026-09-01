@@ -985,3 +985,101 @@ button.settings-link:hover {
   border: 1px solid var(--border-subtle);
   padding: 4px 10px;
 }
+
+/* ── 커맨드 팔레트 (M7 7.4.2, FR-9.4) ─────────────────────────────────── */
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  /* 화면 정중앙이 아니라 위쪽 — 목록이 길어져도 입력창이 제자리에 있다 */
+  padding-top: 12vh;
+  background: rgba(0, 0, 0, 0.45);
+}
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 90vw);
+  max-height: 60vh;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.palette-input {
+  flex: none;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-1);
+  font-size: 14px;
+  outline: none;
+}
+.palette-list {
+  overflow-y: auto;
+}
+.palette-heading {
+  padding: 6px 14px 2px;
+  color: var(--text-3);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.palette-item.is-selected {
+  background: var(--accent-tint);
+}
+.palette-item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-item-detail {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-empty,
+.palette-status {
+  padding: 10px 14px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.palette-status {
+  flex: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 검색 결과로 찾아온 항목 — 어디에 내렸는지 한 번은 보여 준다 */
+.timeline-focus {
+  animation: timeline-focus-fade 2s ease-out;
+}
+@keyframes timeline-focus-fade {
+  from {
+    background: var(--accent-tint);
+  }
+  to {
+    background: transparent;
+  }
+}

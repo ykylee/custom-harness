@@ -1,6 +1,7 @@
 // 앱 루트 (WBS 1.5.1·2.4) — 연결 배너 + 라우팅 + 사이드바(버킷) + 탭/분할 페인 + 단축키.
 // FR-3.3: 탭 닫기 ≠ 세션 종료, 배치는 localStorage 복원. 단축키(FR-3.3.4):
 //   Mod+N 새 세션 뷰 · Mod+W 탭 닫기 · Mod+1~9 탭 선택 · Mod+. 활성 세션 중단
+//   Mod+K 커맨드 팔레트 (M7 7.4.2, FR-9.4)
 import { useEffect } from 'react';
 import type { AppController } from './store/app-store.js';
 import type { TabTarget } from './workbench/tabs.js';
@@ -9,6 +10,7 @@ import { useStore } from './store/store.js';
 import { emptySessionView } from './timeline.js';
 import { TOOL_LABEL_PARENT_SESSION } from '@custom-harness/protocol';
 import { ChildTrack } from './components/ChildTrack.js';
+import { CommandPalette } from './components/CommandPalette.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Tabs } from './components/Tabs.js';
 import { Conversation } from './views/Conversation.js';
@@ -99,7 +101,12 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
       const layout = controller.layout;
-      if (event.key === 'n') {
+      if (event.key === 'k') {
+        // 토글이다 — 팔레트를 여는 손가락이 닫기도 한다 (M7 7.4.2)
+        event.preventDefault();
+        if (controller.store.get().palette.open) controller.closePalette();
+        else controller.openPalette();
+      } else if (event.key === 'n') {
         event.preventDefault();
         controller.showNewSessionView();
       } else if (event.key === 'w') {
@@ -158,6 +165,18 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
         <div className="error-banner" onClick={() => controller.clearError()}>
           {state.lastError}
         </div>
+      )}
+      {state.palette.open && (
+        <CommandPalette
+          query={state.palette.query}
+          items={controller.paletteItems()}
+          loading={state.palette.loading}
+          actions={{
+            search: (query) => void controller.searchPalette(query),
+            run: (action) => controller.runPaletteAction(action),
+            close: () => controller.closePalette(),
+          }}
+        />
       )}
       <Sidebar
         projects={state.projects}

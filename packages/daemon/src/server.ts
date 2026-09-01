@@ -26,7 +26,12 @@ import type { SessionManager } from './session-manager.js';
 import type { SearchIndex } from './search/index-store.js';
 import type { TerminalManager } from './terminals.js';
 import { commitDiff, workingDiff, DiffWatcher } from './workspaces/diffs.js';
-import { listDirectory, readWorkspaceFile, PathEscapeError } from './workspaces/files.js';
+import {
+  listDirectory,
+  readWorkspaceFile,
+  searchFiles,
+  PathEscapeError,
+} from './workspaces/files.js';
 import type { WorkspaceProvisioning } from './workspaces/registry.js';
 
 export interface DaemonServerOptions {
@@ -620,6 +625,12 @@ export class DaemonServer {
       case 'file.list.request': {
         const workspace = await this.requireWorkspace(message.params.workspaceId);
         return this.mapPathError(() => listDirectory(workspace.cwd, message.params.path));
+      }
+      case 'file.search.request': {
+        const workspace = await this.requireWorkspace(message.params.workspaceId);
+        return this.mapPathError(() =>
+          searchFiles(workspace.cwd, message.params.query, message.params.limit),
+        );
       }
       case 'file.read.request': {
         const workspace = await this.requireWorkspace(message.params.workspaceId);

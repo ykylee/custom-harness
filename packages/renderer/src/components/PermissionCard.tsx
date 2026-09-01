@@ -21,7 +21,7 @@ export function PermissionCard({
 }): React.JSX.Element {
   const { request } = item;
   return (
-    <div className="permission-card" data-testid="permission-card">
+    <div className="permission-card" data-testid="permission-card" data-seq={item.seq}>
       <div className="permission-header">
         <strong>{KIND_LABEL[request.kind]}</strong>
         <span className="permission-summary">{request.summary}</span>

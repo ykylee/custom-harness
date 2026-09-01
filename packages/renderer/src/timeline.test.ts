@@ -166,3 +166,37 @@ describe('timeline reducer (FR-3.2 데이터 계층)', () => {
     expect(view.lastError).toBe('pi 비정상 종료');
   });
 });
+
+describe('타임라인 항목의 seq 앵커 (M7 7.4.2)', () => {
+  it('각 항목이 자기를 연 이벤트의 seq 를 들고 있다', () => {
+    const view = applyEvents(emptySessionView(), standardStream());
+    // 검색 결과가 찾아올 자리 — 없으면 7.4.1 의 앵커가 내릴 곳이 없다
+    expect(view.items.map((item) => item.seq)).toEqual([1, 2, 8]);
+  });
+
+  it('어시스턴트 항목은 turn_started 에서 열린다 — 세그먼트 앵커보다 이르다', () => {
+    // 그래서 대화 뷰는 "앵커 이하 중 가장 큰" 항목을 찾는다(정확히 같은 값을 찾지 않는다)
+    const view = applyEvents(emptySessionView(), standardStream());
+    const assistant = view.items.find((item) => item.kind === 'assistant');
+    expect(assistant?.seq).toBe(2); // 첫 message_delta 는 seq 6
+  });
+
+  it('turn_started 없이 델타가 먼저 와도 앵커를 잃지 않는다', () => {
+    seq = 0;
+    const view = applyEvents(emptySessionView(), [
+      ev({ type: 'message_delta', turnId: 't-1', delta: '먼저 온 델타' }),
+    ]);
+    expect(view.items[0]?.seq).toBe(0);
+  });
+
+  it('permission 항목도 앵커를 갖는다', () => {
+    seq = 0;
+    const view = applyEvents(emptySessionView(), [
+      ev({
+        type: 'permission_requested',
+        request: { requestId: 'r-1', kind: 'shell', summary: 'rm', options: [] },
+      }),
+    ]);
+    expect(view.items[0]?.seq).toBe(0);
+  });
+});

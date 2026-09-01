@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // App 배선 — 컴포넌트를 따로 검증해도 **연결이 틀리면 화면에는 아무것도 안 나온다**.
-// 여기서는 세션 탭이 자식 트랙에 올바른 값을 넘기는지만 본다 (M7 7.3.3).
-import { cleanup, render, screen } from '@testing-library/react';
+// 세션 탭 ↔ 자식 트랙 (M7 7.3.3), 단축키 ↔ 커맨드 팔레트 (M7 7.4.2).
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App.js';
 import { AppController, type DaemonTransport } from './store/app-store.js';
@@ -163,5 +163,57 @@ describe('App — 자식 트랙 배선 (M7 7.3.3)', () => {
 
     render(<App controller={controller} />);
     expect(screen.queryByTestId('child-track')).toBeNull();
+  });
+});
+
+describe('App — 커맨드 팔레트 배선 (M7 7.4.2)', () => {
+  beforeEach(() => installMemoryStorage());
+
+  const openApp = async (): Promise<AppController> => {
+    const controller = new AppController(transportFor());
+    await controller.bootstrap();
+    render(<App controller={controller} />);
+    return controller;
+  };
+
+  it('Mod+K 로 열린다 — 단축키가 안 붙으면 팔레트는 도달 불가능하다', async () => {
+    await openApp();
+    expect(screen.queryByTestId('command-palette')).toBeNull();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(screen.getByTestId('command-palette')).toBeTruthy();
+  });
+
+  it('같은 단축키로 닫힌다', async () => {
+    await openApp();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(screen.queryByTestId('command-palette')).toBeNull();
+  });
+
+  it('수식키 없는 k 는 팔레트를 열지 않는다 — 그냥 타이핑이다', async () => {
+    await openApp();
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(screen.queryByTestId('command-palette')).toBeNull();
+  });
+
+  it('열면 세션·워크스페이스가 이미 보인다', async () => {
+    await openApp();
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    // 로컬 소스는 원격 응답을 기다리지 않는다
+    expect(screen.getByTestId('command-palette').textContent).toContain('명령');
+  });
+
+  it('항목을 고르면 팔레트가 닫히고 동작이 일어난다', async () => {
+    const controller = await openApp();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    fireEvent.change(screen.getByLabelText('커맨드 팔레트'), { target: { value: 'parent-1' } });
+    await vi.waitFor(() => {
+      expect(screen.getByText('parent-1')).toBeTruthy();
+    });
+    fireEvent.mouseDown(screen.getByText('parent-1'));
+    expect(screen.queryByTestId('command-palette')).toBeNull();
+    await vi.waitFor(() => {
+      expect(controller.layout.active).toBe('session:parent-1');
+    });
   });
 });

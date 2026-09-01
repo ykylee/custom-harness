@@ -141,3 +141,83 @@ export async function readWorkspaceFile(
     tooLarge: false,
   };
 }
+
+// ── 파일 이름 검색 (M7 WBS 7.4.2, FR-9.4) ─────────────────────────────────
+
+/**
+ * 훑는 파일 수 상한. 워크스페이스 크기는 우리가 못 정하는데(사용자 저장소다) 팔레트는
+ * 타이핑마다 부른다 — 상한이 없으면 큰 저장소에서 한 글자가 수십만 stat 이 된다.
+ */
+const MAX_SEARCH_SCAN = 20_000;
+/** 돌려주는 경로 수 상한 — 순위는 렌더러가 매기므로 후보만 넉넉히 준다 */
+const MAX_SEARCH_RESULTS = 200;
+
+/**
+ * 워크스페이스 전체에서 경로가 질의에 맞는 파일을 찾는다.
+ *
+ * `listDirectory` 는 한 단계만 본다(트리 펼치기용). 팔레트는 "이름 일부만 아는 파일"을
+ * 찾아야 해서 전체 순회가 필요하다 — 그래서 별도 함수다.
+ *
+ * **판정은 부분 문자열이 아니라 부분 수열(subsequence)** 이다: `dsi` 로
+ * `daemon/src/index.ts` 를 찾을 수 있어야 팔레트답다. 다만 **순위는 매기지 않는다** —
+ * 렌더러가 세션·워크스페이스·명령까지 한 줄에 세워야 하고, 점수 계산이 두 곳에 있으면
+ * 파일만 다른 규칙으로 정렬된다.
+ */
+export async function searchFiles(
+  workspaceCwd: string,
+  query: string,
+  limit = MAX_SEARCH_RESULTS,
+): Promise<{ paths: string[]; truncated: boolean }> {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return { paths: [], truncated: false };
+  const cap = Math.min(Math.max(limit, 1), MAX_SEARCH_RESULTS);
+  const root = await resolveInWorkspace(workspaceCwd, '.');
+  const paths: string[] = [];
+  let scanned = 0;
+  let truncated = false;
+
+  // 너비 우선 — 얕은 경로가 먼저 차면 상한에 걸려도 사용자가 아는 파일이 남을 확률이 높다
+  const queue: string[] = [''];
+  while (queue.length > 0) {
+    const relativeDir = queue.shift() as string;
+    let dirents;
+    try {
+      dirents = await readdir(relativeDir === '' ? root : join(root, relativeDir), {
+        withFileTypes: true,
+      });
+    } catch {
+      continue; // 권한 없는 디렉토리 등 — 검색이 거기서 멈출 이유는 없다
+    }
+    for (const dirent of dirents) {
+      if (IGNORED_DIRS.has(dirent.name)) continue;
+      const childRelative = relativeDir === '' ? dirent.name : `${relativeDir}/${dirent.name}`;
+      if (dirent.isDirectory()) {
+        queue.push(childRelative);
+        continue;
+      }
+      if (!dirent.isFile()) continue;
+      if (scanned >= MAX_SEARCH_SCAN) {
+        return { paths, truncated: true };
+      }
+      scanned += 1;
+      if (!matchesSubsequence(childRelative.toLowerCase(), needle)) continue;
+      if (paths.length >= cap) {
+        truncated = true;
+        continue; // 계속 훑되 더 담지는 않는다 — scanned 상한 판정을 유지한다
+      }
+      paths.push(childRelative);
+    }
+  }
+  return { paths, truncated };
+}
+
+/** 질의의 글자들이 순서대로 나타나는가. 공백은 구분자가 아니라 글자로 본다 */
+function matchesSubsequence(haystack: string, needle: string): boolean {
+  let at = 0;
+  for (const char of needle) {
+    at = haystack.indexOf(char, at);
+    if (at === -1) return false;
+    at += 1;
+  }
+  return true;
+}

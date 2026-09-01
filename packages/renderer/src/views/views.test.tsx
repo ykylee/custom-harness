@@ -99,6 +99,41 @@ describe('Conversation (FR-3.2)', () => {
   });
 });
 
+describe('Conversation — 검색 결과로 찾아가기 (M7 7.4.2)', () => {
+  it('앵커 seq 이하 중 가장 큰 항목을 표시한다', () => {
+    // 어시스턴트 항목은 turn_started(seq 2)에서 열리는데 검색 세그먼트의 앵커는
+    // 첫 델타(seq 5)다 — 정확히 일치하는 항목을 찾으면 아무것도 못 찾는다
+    const view = { ...runningView(), focusSeq: 5 };
+    const { container } = render(<Conversation view={view} actions={noopActions} />);
+    const focused = container.querySelector('.timeline-focus');
+    expect(focused?.getAttribute('data-seq')).toBe('2');
+    expect(focused?.className).toContain('msg-assistant');
+  });
+
+  it('사용자 메시지 앵커는 그 메시지에 내린다', () => {
+    const view = { ...runningView(), focusSeq: 1 };
+    const { container } = render(<Conversation view={view} actions={noopActions} />);
+    expect(container.querySelector('.timeline-focus')?.getAttribute('data-seq')).toBe('1');
+  });
+
+  it('툴 카드에도 내린다', () => {
+    const view = { ...runningView(), focusSeq: 6 };
+    const { container } = render(<Conversation view={view} actions={noopActions} />);
+    expect(container.querySelector('.timeline-focus')?.className).toContain('tool-card');
+  });
+
+  it('앵커가 없으면 아무것도 표시하지 않는다', () => {
+    const { container } = render(<Conversation view={runningView()} actions={noopActions} />);
+    expect(container.querySelector('.timeline-focus')).toBeNull();
+  });
+
+  it('앵커보다 이른 항목이 하나도 없으면 조용히 넘어간다', () => {
+    const view = { ...runningView(), focusSeq: -1 };
+    const { container } = render(<Conversation view={view} actions={noopActions} />);
+    expect(container.querySelector('.timeline-focus')).toBeNull();
+  });
+});
+
 describe('SessionCreate (FR-3.1 · WBS 5.6.4)', () => {
   const harnesses = [{ id: 'pi' as const, capabilities: { streaming: true } }];
   const gateway = {

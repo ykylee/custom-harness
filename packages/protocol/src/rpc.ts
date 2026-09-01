@@ -577,6 +577,28 @@ export const rpc = {
         truncated: z.boolean(),
       }),
     ),
+    /**
+     * 워크스페이스 전체 파일 이름 검색 (M7 7.4.2, FR-9.4) — 커맨드 팔레트의 파일 축.
+     *
+     * `file.list` 와 나눈 이유는 순회 범위다: 그쪽은 트리를 펼치는 한 단계 조회이고,
+     * 이쪽은 "이름 일부만 아는 파일"을 찾는 전체 순회다. 데몬은 **후보만** 고르고
+     * 순위는 매기지 않는다 — 팔레트는 세션·명령까지 한 줄에 세우므로 점수 계산이
+     * 두 곳에 있으면 파일만 다른 규칙으로 정렬된다.
+     */
+    search: rpcPair(
+      'file.search',
+      z.looseObject({
+        workspaceId: z.string(),
+        query: z.string(),
+        limit: z.number().int().positive().max(200).optional(),
+      }),
+      z.looseObject({
+        /** 워크스페이스 상대 경로 */
+        paths: z.array(z.string()),
+        /** 훑기·결과 상한에 걸려 잘렸는지 */
+        truncated: z.boolean(),
+      }),
+    ),
     read: rpcPair(
       'file.read',
       z.looseObject({ workspaceId: z.string(), path: z.string() }),
@@ -699,6 +721,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.terminal.write.request,
   rpc.terminal.kill.request,
   rpc.file.list.request,
+  rpc.file.search.request,
   rpc.file.read.request,
   rpc.diff.get.request,
   rpc.diff.subscribe.request,
@@ -752,6 +775,7 @@ export const RpcResponseSchema = z.union([
   rpc.terminal.write.response,
   rpc.terminal.kill.response,
   rpc.file.list.response,
+  rpc.file.search.response,
   rpc.file.read.response,
   rpc.diff.get.response,
   rpc.diff.subscribe.response,

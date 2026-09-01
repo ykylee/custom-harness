@@ -8,6 +8,7 @@ import type {
   PermissionOutcome,
   ProbeResult,
   Project,
+  SearchHit,
   SessionSummary,
   SessionUsageTree,
   Terminal,
@@ -26,6 +27,12 @@ import {
   type LayoutState,
   type TabTarget,
 } from '../workbench/tabs.js';
+import {
+  buildItems,
+  type PaletteAction,
+  type PaletteCommandId,
+  type PaletteItem,
+} from '../palette/items.js';
 import { applyEvent, applyEvents, emptySessionView, type SessionView } from '../timeline.js';
 import { Store } from './store.js';
 
@@ -100,8 +107,28 @@ export interface AppState {
   usageTrees: Record<string, SessionUsageTree>;
   /** 하네스 상태 패널 (FR-3.6.3) — harness.probe 결과 캐시 */
   probes: Record<string, ProbeResult>;
+  /** 커맨드 팔레트 (M7 7.4.2, FR-9.4) */
+  palette: PaletteState;
   /** 마지막 전역 오류 (RPC 실패 등) — 배너 표시용 */
   lastError: string | null;
+}
+
+export interface PaletteState {
+  open: boolean;
+  query: string;
+  /**
+   * 원격 결과(파일·대화 내용)가 **어느 질의의 답인지**. 늦게 온 옛 응답이 새 결과를
+   * 덮어쓰는 것을 막는 유일한 근거다 — 타이핑마다 요청이 나가므로 순서 보장이 없다.
+   */
+  resultsFor: string;
+  filePaths: string[];
+  hits: SearchHit[];
+  /** 원격 조회가 도는 중 — 로컬 결과는 이미 떠 있으므로 화면을 막지는 않는다 */
+  loading: boolean;
+}
+
+export function emptyPaletteState(): PaletteState {
+  return { open: false, query: '', resultsFor: '', filePaths: [], hits: [], loading: false };
 }
 
 const LAYOUT_KEY = 'custom-harness.layout';
@@ -162,6 +189,7 @@ export function initialAppState(): AppState {
     notificationsEnabled: loadPersisted<boolean>(NOTIFICATIONS_KEY) ?? true,
     probes: {},
     diffs: {},
+    palette: emptyPaletteState(),
     lastError: null,
   };
 }
@@ -188,6 +216,8 @@ export class AppController {
   readonly store = new Store<AppState>(initialAppState());
   /** 현재 구독 중인 워크스페이스 — 워크스페이스를 바꾸면 옮겨 건다 */
   private diffSubscription: string | undefined;
+  /** 팔레트 원격 조회 일련번호 (M7 7.4.2) — 늦게 온 옛 응답을 버리는 근거 */
+  private paletteSeq = 0;
 
   constructor(private readonly client: DaemonTransport) {
     client.onState((connection) => {
@@ -681,6 +711,155 @@ export class AppController {
     this.openTarget({ kind: 'session', sessionId });
     this.acknowledgeAttention(sessionId);
     await this.loadSessionTab(sessionId);
+  }
+
+  // ── 커맨드 팔레트 (M7 WBS 7.4.2, FR-9.4) ─────────────────────────────────
+
+  openPalette(): void {
+    // 온보딩 중에는 열지 않는다 — 그 화면은 팔레트를 그리지 않으므로 상태만 켜지고
+    // 사용자에게는 단축키가 먹통으로 보인다
+    if (this.store.get().route === 'onboarding') return;
+    // 열 때 이전 질의를 비운다 — 남아 있으면 그 결과가 잠깐 깜빡인 뒤 갱신된다
+    this.store.set({ palette: { ...emptyPaletteState(), open: true } });
+    void this.searchPalette('');
+  }
+
+  closePalette(): void {
+    this.paletteSeq += 1; // 도는 중인 응답을 버린다
+    this.store.set({ palette: emptyPaletteState() });
+  }
+
+  /**
+   * 질의 갱신 — 로컬 소스는 즉시 반영되고 원격(파일·대화 내용)만 여기서 조회한다.
+   *
+   * 응답 경합을 **질의 문자열이 아니라 일련번호**로 막는다: 같은 글자를 지웠다 다시
+   * 치면 질의는 같지만 앞 요청의 답이 뒤에 올 수 있다. 세는 것은 "몇 번째 요청인가"다.
+   */
+  async searchPalette(query: string): Promise<void> {
+    const seq = ++this.paletteSeq;
+    const previous = this.store.get().palette;
+    this.store.set({ palette: { ...previous, query, loading: query.trim() !== '' } });
+    const trimmed = query.trim();
+    if (trimmed === '') {
+      this.store.set({
+        palette: { ...this.store.get().palette, resultsFor: '', filePaths: [], hits: [] },
+      });
+      return;
+    }
+    const workspaceId = this.store.get().activeWorkspaceId;
+    const [files, timeline] = await Promise.all([
+      workspaceId === null
+        ? Promise.resolve({ paths: [] })
+        : (this.client.rpc('file.search', { workspaceId, query: trimmed, limit: 50 }).catch(() => ({
+            paths: [] as string[],
+          })) as Promise<{ paths: string[] }>),
+      this.client.rpc('session.search', { query: trimmed, limit: 20 }).catch(() => ({
+        hits: [] as SearchHit[],
+      })) as Promise<{ hits: SearchHit[] }>,
+    ]);
+    // 이 응답을 기다리는 사이 사용자가 더 쳤다면 버린다 (실패도 조용히 — 팔레트는 보조 경로다)
+    if (seq !== this.paletteSeq) return;
+    this.store.set({
+      palette: {
+        ...this.store.get().palette,
+        resultsFor: trimmed,
+        filePaths: files.paths,
+        hits: timeline.hits,
+        loading: false,
+      },
+    });
+  }
+
+  /** 현재 질의로 세운 목록 — 컴포넌트가 소스 조립을 다시 하지 않게 컨트롤러가 준다 */
+  paletteItems(): PaletteItem[] {
+    const state = this.store.get();
+    const palette = state.palette;
+    const trimmed = palette.query.trim();
+    // 원격 결과는 **그 질의의 답일 때만** 쓴다 — 아니면 옛 파일·히트가 잠깐 섞여 보인다
+    const fresh = palette.resultsFor === trimmed;
+    return buildItems(palette.query, {
+      sessions: state.sessions,
+      workspaces: state.workspaces,
+      filePaths: fresh ? palette.filePaths : [],
+      hits: fresh ? palette.hits : [],
+      context: {
+        hasActiveTab: this.layout.active !== null,
+        hasWorkspace: state.activeWorkspaceId !== null,
+        isSplit: this.layout.split !== null,
+      },
+    });
+  }
+
+  /** 항목 실행 — 팔레트는 닫고 동작을 넘긴다 */
+  runPaletteAction(action: PaletteAction): void {
+    this.closePalette();
+    switch (action.kind) {
+      case 'command':
+        this.runPaletteCommand(action.id);
+        return;
+      case 'open-session':
+        void this.openSession(action.sessionId);
+        return;
+      case 'select-workspace':
+        this.selectWorkspace(action.workspaceId);
+        return;
+      case 'open-file':
+        this.openFile(action.path);
+        return;
+      case 'open-timeline':
+        // 대화 내용 히트는 세션 탭으로 데려간다. `seq` 는 7.4.1 이 실어 준 앵커이고,
+        // 타임라인 안에서 그 자리로 스크롤하는 것은 대화 뷰의 몫이다.
+        void this.openSession(action.sessionId).then(() =>
+          this.store.set({
+            views: {
+              ...this.store.get().views,
+              [action.sessionId]: {
+                ...(this.store.get().views[action.sessionId] ?? emptySessionView()),
+                focusSeq: action.seq,
+              },
+            },
+          }),
+        );
+        return;
+    }
+  }
+
+  private runPaletteCommand(id: PaletteCommandId): void {
+    switch (id) {
+      case 'new-session':
+        this.showNewSessionView();
+        return;
+      case 'new-workspace':
+        this.navigate('workspace-create');
+        return;
+      case 'new-terminal':
+        void this.createTerminal();
+        return;
+      case 'open-files':
+        this.openTarget({ kind: 'files' });
+        return;
+      case 'open-diff':
+        this.openTarget({ kind: 'diff', scope: 'working' });
+        void this.refreshDiff();
+        return;
+      case 'open-settings':
+        this.navigate('settings');
+        return;
+      case 'close-tab': {
+        const active = this.layout.active;
+        if (active !== null) this.closeTab(active);
+        return;
+      }
+      case 'split-row':
+        this.setSplit('row');
+        return;
+      case 'split-column':
+        this.setSplit('column');
+        return;
+      case 'split-off':
+        this.setSplit(null);
+        return;
+    }
   }
 
   /** 임의 타깃을 탭으로 연다 (WBS 6.2.1) */

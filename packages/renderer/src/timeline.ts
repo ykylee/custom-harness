@@ -11,9 +11,11 @@ import type {
 } from '@custom-harness/protocol';
 
 export type TimelineItem =
-  | { kind: 'user'; turnId: string; text: string }
+  | { kind: 'user'; seq: number; turnId: string; text: string }
   | {
       kind: 'assistant';
+      /** 이 항목을 **연** 이벤트의 seq — 검색 결과에서 찾아오는 앵커 (M7 7.4.2) */
+      seq: number;
       turnId: string;
       text: string;
       reasoning: string;
@@ -24,6 +26,7 @@ export type TimelineItem =
     }
   | {
       kind: 'tool';
+      seq: number;
       toolCallId: string;
       toolKind: ToolKind;
       toolName?: string;
@@ -34,6 +37,7 @@ export type TimelineItem =
     }
   | {
       kind: 'permission';
+      seq: number;
       request: PermissionRequest;
       status: 'pending' | 'resolved';
       outcome?: PermissionOutcome;
@@ -50,6 +54,12 @@ export interface SessionView {
   totalTokens?: number;
   activeTurnId?: string;
   lastError?: string;
+  /**
+   * 검색 결과에서 찾아온 자리 (M7 7.4.2) — 대화 뷰가 여기로 스크롤한다.
+   * 세그먼트를 연 이벤트의 seq 라 **그 이하 중 가장 큰** 항목이 목표다: 어시스턴트 항목은
+   * `turn_started` 에서 만들어지고 세그먼트 앵커는 첫 델타라 seq 가 정확히 같지 않다.
+   */
+  focusSeq?: number;
 }
 
 export function emptySessionView(status: SessionStatus = 'initializing'): SessionView {
@@ -90,7 +100,16 @@ function appendToAssistant(
     activeTurnId: id,
     items: [
       ...view.items,
-      { kind: 'assistant', turnId: id, text: '', reasoning: '', status: 'running', [field]: delta },
+      // turn_started 없이 델타가 먼저 온 경로 — 이 항목을 연 이벤트가 곧 지금 이벤트다
+      {
+        kind: 'assistant',
+        seq: view.lastSeq,
+        turnId: id,
+        text: '',
+        reasoning: '',
+        status: 'running',
+        [field]: delta,
+      },
     ],
   };
 }
@@ -137,7 +156,10 @@ export function applyEvent(view: SessionView, event: SessionEvent): SessionView 
     case 'user_message':
       return {
         ...base,
-        items: [...base.items, { kind: 'user', turnId: event.turnId, text: event.text }],
+        items: [
+          ...base.items,
+          { kind: 'user', seq: event.seq, turnId: event.turnId, text: event.text },
+        ],
       };
     case 'turn_started':
       return {
@@ -145,7 +167,14 @@ export function applyEvent(view: SessionView, event: SessionEvent): SessionView 
         activeTurnId: event.turnId,
         items: [
           ...base.items,
-          { kind: 'assistant', turnId: event.turnId, text: '', reasoning: '', status: 'running' },
+          {
+            kind: 'assistant',
+            seq: event.seq,
+            turnId: event.turnId,
+            text: '',
+            reasoning: '',
+            status: 'running',
+          },
         ],
       };
     case 'message_delta':
@@ -172,6 +201,7 @@ export function applyEvent(view: SessionView, event: SessionEvent): SessionView 
           ...base.items,
           {
             kind: 'tool',
+            seq: event.seq,
             toolCallId: event.toolCallId,
             toolKind: event.kind,
             ...(event.toolName !== undefined ? { toolName: event.toolName } : {}),
@@ -210,7 +240,10 @@ export function applyEvent(view: SessionView, event: SessionEvent): SessionView 
     case 'permission_requested':
       return {
         ...base,
-        items: [...base.items, { kind: 'permission', request: event.request, status: 'pending' }],
+        items: [
+          ...base.items,
+          { kind: 'permission', seq: event.seq, request: event.request, status: 'pending' },
+        ],
       };
     case 'permission_resolved': {
       const index = base.items.findIndex(

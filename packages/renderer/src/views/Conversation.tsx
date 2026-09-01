@@ -38,9 +38,37 @@ export function Conversation({
   const [unseen, setUnseen] = useState(0);
   const running = view.status === 'running';
 
+  /**
+   * 검색 결과에서 찾아온 자리로 이동 (M7 7.4.2). 앵커 seq **이하 중 가장 큰** 항목이
+   * 목표다 — 어시스턴트 항목은 `turn_started` 에서 만들어지고 검색 세그먼트의 앵커는
+   * 첫 델타라 둘이 정확히 같지 않다.
+   *
+   * 추적(tracking)을 끈다: 켜 둔 채로 이동하면 다음 델타 한 번에 바닥으로 되돌아가
+   * 찾아온 자리가 사라진다.
+   */
+  useEffect(() => {
+    const focusSeq = view.focusSeq;
+    if (focusSeq === undefined) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    let target: Element | undefined;
+    for (const element of container.querySelectorAll('[data-seq]')) {
+      const seq = Number(element.getAttribute('data-seq'));
+      if (Number.isNaN(seq) || seq > focusSeq) continue;
+      target = element;
+    }
+    if (target === undefined) return;
+    setTracking(false);
+    programmaticScroll.current = true;
+    target.scrollIntoView?.({ block: 'center' });
+    target.classList.add('timeline-focus');
+  }, [view.focusSeq, view.items.length]);
+
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
+    // 찾아온 자리를 보고 있는 동안에는 바닥으로 끌고 가지 않는다
+    if (view.focusSeq !== undefined && !tracking) return;
     if (tracking) {
       programmaticScroll.current = true;
       container.scrollTop = container.scrollHeight;
@@ -99,7 +127,12 @@ export function Conversation({
           switch (item.kind) {
             case 'user':
               return (
-                <div key={index} className="msg-user" data-testid="user-message">
+                <div
+                  key={index}
+                  className="msg-user"
+                  data-testid="user-message"
+                  data-seq={item.seq}
+                >
                   {item.text}
                 </div>
               );
@@ -115,7 +148,11 @@ export function Conversation({
                 item.status !== 'canceled';
               if (isEmpty && !(item.status === 'running' && isLast)) return null;
               return (
-                <div key={index} className={`msg-assistant turn-${item.status}`}>
+                <div
+                  key={index}
+                  className={`msg-assistant turn-${item.status}`}
+                  data-seq={item.seq}
+                >
                   {item.reasoning && (
                     <details className="reasoning" data-testid="reasoning">
                       <summary>사고 과정</summary>

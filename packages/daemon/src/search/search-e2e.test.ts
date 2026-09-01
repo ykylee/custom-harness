@@ -2,7 +2,7 @@
 //
 // 단위 테스트가 각 층을 따로 확인해도, 이벤트 구독을 안 걸거나 서버에 색인을 안 넘기면
 // 화면에서는 아무것도 안 잡힌다. 그 연결을 여기서만 확인할 수 있다.
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
@@ -115,6 +115,29 @@ describe('session.search (e2e)', () => {
     expect(hits[0]?.snippet).toContain('작업을 시작합니다');
     // 결과를 눌렀을 때 찾아갈 자리
     expect(hits[0]?.seq).toBeGreaterThanOrEqual(0);
+  });
+
+  it('파일 검색이 같은 연결에서 왕복한다 — 팔레트가 두 RPC 를 함께 쓴다', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ch-search-file-'));
+    const cwd = await mkdtemp(join(tmpdir(), 'ch-search-cwd-'));
+    await mkdir(join(cwd, 'src'), { recursive: true });
+    await writeFile(join(cwd, 'src', 'palette.ts'), 'export const x = 1;\n');
+    const daemon = await boot(root);
+    cleanup.push(async () => {
+      await daemon.stop();
+      await rm(root, { recursive: true, force: true });
+      await rm(cwd, { recursive: true, force: true });
+    });
+    await daemon.searchReady;
+    const { workspace } = await daemon.provisioning.openProject(cwd);
+
+    const client = await RpcClient.connect(daemon);
+    cleanup.push(async () => client.close());
+    const result = await client.call<{ paths: string[]; truncated: boolean }>('file.search', {
+      workspaceId: workspace.id,
+      query: 'palette',
+    });
+    expect(result.paths).toEqual(['src/palette.ts']);
   });
 
   it('색인 파일을 지워도 기동 시 타임라인에서 되살아난다', async () => {

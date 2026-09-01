@@ -46,7 +46,7 @@ export function toolSummary(item: ToolItem): string {
 
 export function ToolCard({ item }: { item: ToolItem }): React.JSX.Element {
   return (
-    <div className={`tool-card tool-${item.status}`} data-testid="tool-card">
+    <div className={`tool-card tool-${item.status}`} data-testid="tool-card" data-seq={item.seq}>
       <div className="tool-card-header">
         <span className="tool-kind">{KIND_LABEL[item.toolKind]}</span>
         <code className="tool-summary">{toolSummary(item)}</code>

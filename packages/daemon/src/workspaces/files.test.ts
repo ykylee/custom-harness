@@ -9,6 +9,7 @@ import {
   listDirectory,
   readWorkspaceFile,
   resolveInWorkspace,
+  searchFiles,
 } from './files.js';
 
 async function makeWorkspace(): Promise<string> {
@@ -111,5 +112,71 @@ describe('파일 읽기 (WBS 6.4.2)', () => {
   it('디렉토리를 읽으려 하면 거절한다', async () => {
     const cwd = await makeWorkspace();
     await expect(readWorkspaceFile(cwd, 'src')).rejects.toThrow('파일이 아님');
+  });
+});
+
+describe('파일 이름 검색 (M7 WBS 7.4.2, FR-9.4)', () => {
+  it('하위 디렉토리까지 훑는다 — file.list 와 나눈 이유가 이것이다', async () => {
+    const cwd = await makeWorkspace();
+    const { paths } = await searchFiles(cwd, 'deep');
+    expect(paths).toEqual(['src/nested/deep.txt']);
+  });
+
+  it('부분 수열로 찾는다 — `si` 로 src/index 를 찾을 수 있어야 팔레트답다', async () => {
+    const cwd = await makeWorkspace();
+    const { paths } = await searchFiles(cwd, 'srcindex');
+    expect(paths).toContain('src/index.ts');
+  });
+
+  it('대소문자를 가리지 않는다', async () => {
+    const cwd = await makeWorkspace();
+    expect((await searchFiles(cwd, 'readme')).paths).toEqual(['README.md']);
+  });
+
+  it('node_modules·.git 은 훑지 않는다', async () => {
+    const cwd = await makeWorkspace();
+    await writeFile(join(cwd, 'node_modules', 'index.ts'), '');
+    await writeFile(join(cwd, '.git', 'index.ts'), '');
+    const { paths } = await searchFiles(cwd, 'index.ts');
+    expect(paths).toEqual(['src/index.ts']);
+  });
+
+  it('디렉토리는 결과에 넣지 않는다 — 열 수 있는 것만 준다', async () => {
+    const cwd = await makeWorkspace();
+    const { paths } = await searchFiles(cwd, 'src');
+    expect(paths.every((path) => path.includes('.'))).toBe(true);
+    expect(paths).not.toContain('src');
+  });
+
+  it('빈 질의는 전체를 쏟지 않는다', async () => {
+    const cwd = await makeWorkspace();
+    expect(await searchFiles(cwd, '   ')).toEqual({ paths: [], truncated: false });
+  });
+
+  it('결과 상한을 지키고 잘렸음을 알린다', async () => {
+    const cwd = await makeWorkspace();
+    await mkdir(join(cwd, 'many'), { recursive: true });
+    for (let i = 0; i < 12; i += 1) await writeFile(join(cwd, 'many', `item-${i}.ts`), '');
+    const result = await searchFiles(cwd, 'item', 5);
+    expect(result.paths).toHaveLength(5);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('얕은 경로를 먼저 담는다 — 상한에 걸려도 아는 파일이 남을 확률이 높다', async () => {
+    const cwd = await makeWorkspace();
+    await writeFile(join(cwd, 'target.ts'), '');
+    await writeFile(join(cwd, 'src', 'nested', 'target.ts'), '');
+    const result = await searchFiles(cwd, 'target', 1);
+    expect(result.paths).toEqual(['target.ts']);
+  });
+
+  it('워크스페이스 밖으로 나가지 않는다', async () => {
+    const cwd = await makeWorkspace();
+    const outside = await mkdtemp(join(tmpdir(), 'ch-outside-'));
+    await writeFile(join(outside, 'secret.txt'), 'x');
+    await symlink(outside, join(cwd, 'link'));
+    const { paths } = await searchFiles(cwd, 'secret');
+    // 심링크를 따라 밖의 파일을 노출하면 §경로 경계가 무너진다
+    expect(paths).toEqual([]);
   });
 });
