@@ -189,8 +189,20 @@ describe('logs (WBS 2.6.2, FR-5.3)', () => {
   });
 
   it('guides when the logs directory does not exist yet', async () => {
+    // 종료 코드 1 이면 오류다 — 오류는 stdout 이 아니라 stderr 로 간다 (M7 7.5.3 규약).
+    // 이전에는 exit 1 인데도 stdout 으로 나갔다.
     const io = captureIo();
     expect(await runCli(['logs'], io)).toBe(1);
-    expect(io.lines[0]).toContain('로그 디렉토리 없음');
+    expect(io.errors[0]).toContain('로그 디렉토리 없음');
+    expect(io.lines).toEqual([]);
+  });
+
+  it('--json 실패는 stderr 에 기계 판독 봉투로 나간다', async () => {
+    const io = captureIo();
+    expect(await runCli(['logs', '--json'], io)).toBe(1);
+    // stdout 은 payload 전용 — 성공했을 때만 내용을 갖는다
+    expect(io.lines).toEqual([]);
+    const parsed = JSON.parse(io.errors[0] as string) as { error: { code: string } };
+    expect(parsed.error.code).toBe('not_found');
   });
 });

@@ -60,7 +60,7 @@ async function probeVersion(
   return match?.[1] ?? raw.slice(0, 40);
 }
 
-export async function runDoctor(paths: DaemonPaths, io: CliIo): Promise<number> {
+export async function runDoctor(paths: DaemonPaths, io: CliIo, json = false): Promise<number> {
   const checks: DoctorCheck[] = [];
   const add = (name: string, verdict: Verdict, detail: string): void => {
     checks.push({ name, verdict, detail });
@@ -198,11 +198,21 @@ export async function runDoctor(paths: DaemonPaths, io: CliIo): Promise<number> 
   }
 
   // 출력 + 종료 코드
+  const fails = checks.filter((c) => c.verdict === 'fail').length;
+  const warns = checks.filter((c) => c.verdict === 'warn').length;
+  if (json) {
+    // 진단 결과는 항목 배열이 본체다 — 사람이 읽는 줄을 파싱하게 두지 않는다 (7.5.3)
+    io.out(
+      JSON.stringify({
+        checks,
+        summary: { pass: checks.length - fails - warns, warn: warns, fail: fails },
+      }),
+    );
+    return fails > 0 ? 1 : 0;
+  }
   for (const check of checks) {
     io.out(`[${MARK[check.verdict]}] ${check.name} — ${check.detail}`);
   }
-  const fails = checks.filter((c) => c.verdict === 'fail').length;
-  const warns = checks.filter((c) => c.verdict === 'warn').length;
   io.out(`doctor: pass ${checks.length - fails - warns} · warn ${warns} · fail ${fails}`);
   return fails > 0 ? 1 : 0;
 }

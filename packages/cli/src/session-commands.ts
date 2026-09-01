@@ -23,6 +23,11 @@ export interface SessionCommandContext {
   json: boolean;
 }
 
+/** 실패는 언제나 stderr — `--json` 이면 기계가 읽는 봉투로 (7.5.3 §출력 규약) */
+function failOut(context: SessionCommandContext, code: string, message: string): void {
+  context.io.err(context.json ? JSON.stringify({ error: { code, message } }) : message);
+}
+
 // ── list ───────────────────────────────────────────────────────────────────
 
 export async function cmdSessionList(
@@ -151,7 +156,7 @@ export async function cmdSessionApprove(
   const { sessions } = await context.connection.rpc<{ sessions: SessionSummary[] }>('session.list');
   const session = sessions.find((s) => s.sessionId === options.sessionId);
   if (session === undefined) {
-    context.io.err(`세션 없음: ${options.sessionId}`);
+    failOut(context, 'not_found', `세션 없음: ${options.sessionId}`);
     return 1;
   }
   const pending = session.pendingPermissions ?? [];
@@ -163,7 +168,9 @@ export async function cmdSessionApprove(
         : undefined;
   if (request === undefined) {
     // 여러 건일 때 **고르지 않는다** — 잘못 고른 승인은 되돌릴 수 없다
-    context.io.err(
+    failOut(
+      context,
+      pending.length === 0 ? 'not_found' : 'ambiguous',
       pending.length === 0
         ? '승인 대기 중인 요청이 없습니다'
         : `승인 대기 ${pending.length}건 — --request 로 지정하세요:\n` +
@@ -173,7 +180,9 @@ export async function cmdSessionApprove(
   }
   const optionId = options.optionId ?? defaultOptionId(request, options.reject);
   if (optionId === undefined) {
-    context.io.err(
+    failOut(
+      context,
+      'ambiguous',
       `${options.reject ? '거절' : '허용'} 선택지가 없습니다 — --option 으로 지정하세요:\n` +
         request.options.map((o) => `  ${o.optionId}  ${o.kind}  ${o.label}`).join('\n'),
     );

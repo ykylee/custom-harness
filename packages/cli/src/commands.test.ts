@@ -56,6 +56,14 @@ describe('CLI (WBS 1.6.3, FR-5.1)', () => {
     const io = captureIo();
     expect(await runCli(['bogus'], io)).toBe(2);
     expect(io.errors[0]).toContain('사용법');
+    expect(io.lines).toEqual([]); // 오류는 stdout 을 더럽히지 않는다 (M7 7.5.3)
+  });
+
+  it('help 는 성공이므로 stdout 으로 나간다 (M7 7.5.3)', async () => {
+    const io = captureIo();
+    expect(await runCli(['help'], io)).toBe(0);
+    expect(io.lines[0]).toContain('사용법');
+    expect(io.errors).toEqual([]);
   });
 
   it('reports stopped status with exit 1', async () => {
