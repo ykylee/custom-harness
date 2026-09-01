@@ -26,7 +26,7 @@
 - 로컬 실행: `npm run typecheck` 후 `npm run -w @custom-harness/shell start` (Electron 앱) / 데몬 단독 `node packages/cli/dist/index.js daemon start`
 - 빠른 테스트: `npm test`
 - 격리 테스트: `npx vitest run <path>`
-- 실행 확인: `npm run smoke:nfr1` (외부 접속 0) / `npm run smoke:terminal` (번들 pty 왕복) / `npm run smoke:m7` (M7 완료 기준 수용) / `npm run smoke:update` (업데이트·버전 보존)
+- 실행 확인: `npm run smoke:nfr1` (외부 접속 0) / `npm run smoke:terminal` (번들 pty 왕복) / `npm run smoke:m7` (M7 완료 기준 수용) / `npm run smoke:update` (업데이트·롤백) / `npm run smoke:nfr8` (설치 원자성 — 실패 주입)
 - 커밋 전 게이트: `npm run typecheck && npm test && npm run lint && npm run format:check`
 
 ## 4. 검증 포인트 (Validation)

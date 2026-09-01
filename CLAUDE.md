@@ -106,7 +106,7 @@ When the user invokes `/workflow-session-start` (or on automatic read), it attem
 - **run**: `npm run typecheck` 후 `npm run -w @custom-harness/shell start` (Electron 앱) / 데몬 단독은 `node packages/cli/dist/index.js daemon start`
 - **quick test**: `npm test`
 - **isolated test**: `npx vitest run <path>`
-- **smoke check**: `npm run smoke:nfr1` (외부 접속 0 검증) / `npm run smoke:terminal` (번들 pty 왕복) / `npm run smoke:m7` (M7 완료 기준 수용) / `npm run smoke:update` (업데이트·버전 보존)
+- **smoke check**: `npm run smoke:nfr1` (외부 접속 0 검증) / `npm run smoke:terminal` (번들 pty 왕복) / `npm run smoke:m7` (M7 완료 기준 수용) / `npm run smoke:update` (업데이트·롤백) / `npm run smoke:nfr8` (설치 원자성 — 실패 주입)
 
 게이트: `npm run typecheck && npm test && npm run lint && npm run format:check`
 

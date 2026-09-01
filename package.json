@@ -19,7 +19,8 @@
     "smoke:nfr1": "node scripts/nfr1-smoke.mjs",
     "smoke:terminal": "node scripts/terminal-bundle-smoke.mjs",
     "smoke:m7": "node scripts/m7-acceptance.mjs",
-    "smoke:update": "node scripts/update-smoke.mjs"
+    "smoke:update": "node scripts/update-smoke.mjs",
+    "smoke:nfr8": "node scripts/nfr8-smoke.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

@@ -57,6 +57,9 @@ if ($Here -like "$Versions*") {
 } elseif (Test-Path $Target) {
     Write-Host "[install] 동일 버전 디렉토리가 이미 존재: $Target — 기존 설치 유지, 전환만 수행"
 } else {
+    # 중단된 이전 설치의 잔여물을 먼저 지운다 (WBS 3.1.3) — 남아 있으면 재시도가
+    # 불완전한 트리 위에 덧씌워져 정상처럼 보이는 깨진 설치본이 된다
+    if (Test-Path "$Target.partial") { Remove-Item -Recurse -Force "$Target.partial" }
     # 부분 복사가 노출되지 않게 partial 후 rename (NFR-8). MAX_PATH 는 매니페스트 경로가 짧아 회피
     Copy-Item -Recurse -Path $Here -Destination "$Target.partial"
     Rename-Item -Path "$Target.partial" -NewName $BundleName

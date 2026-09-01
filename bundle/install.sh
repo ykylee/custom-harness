@@ -66,6 +66,11 @@ case "$HERE" in
     if [ -e "$TARGET" ]; then
       echo "[install] 동일 버전 디렉토리가 이미 존재: $TARGET — 기존 설치 유지, 전환만 수행"
     else
+      # 중단된 이전 설치가 남긴 잔여물을 먼저 지운다 (WBS 3.1.3 실측).
+      # `cp -R src dst` 는 dst 가 이미 있으면 그 **안으로** 복사한다 — 지우지 않으면
+      # 재시도가 "중단 시점의 불완전한 트리 + 전체 복사본 중첩"을 만들고, 최상위
+      # manifest 는 남아 있어 **정상처럼 보인 채** current 가 그것을 가리킨다.
+      rm -rf "$TARGET.partial"
       cp -R "$HERE" "$TARGET.partial"
       mv "$TARGET.partial" "$TARGET" # 부분 복사가 노출되지 않게 (NFR-8)
     fi
