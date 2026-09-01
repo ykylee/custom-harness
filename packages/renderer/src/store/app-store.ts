@@ -9,6 +9,7 @@ import type {
   ProbeResult,
   Project,
   SessionSummary,
+  SessionUsageTree,
   Terminal,
   Workspace,
   WorkspaceSetupState,
@@ -91,6 +92,12 @@ export interface AppState {
   autoApprove: Record<string, boolean>;
   /** 네이티브 알림 on/off (FR-3.5.2) — localStorage 영속 */
   notificationsEnabled: boolean;
+  /**
+   * 위임 비용 트리 (M7 7.3.3) — 자식 트랙이 소비한다. 화면에 떠 있는 세션 탭만 채운다.
+   * 합산을 렌더러에서 다시 계산하지 않는 이유: 데몬의 게이트가 세는 값과 갈라지면
+   * 사용자가 보는 "자식 2개"와 상한이 막는 기준이 달라진다 (7.3.2 결정).
+   */
+  usageTrees: Record<string, SessionUsageTree>;
   /** 하네스 상태 패널 (FR-3.6.3) — harness.probe 결과 캐시 */
   probes: Record<string, ProbeResult>;
   /** 마지막 전역 오류 (RPC 실패 등) — 배너 표시용 */
@@ -151,6 +158,7 @@ export function initialAppState(): AppState {
     views: {},
     terminals: [],
     autoApprove: {},
+    usageTrees: {},
     notificationsEnabled: loadPersisted<boolean>(NOTIFICATIONS_KEY) ?? true,
     probes: {},
     diffs: {},
@@ -310,6 +318,12 @@ export class AppController {
   async refreshSessions(): Promise<void> {
     const result = (await this.client.rpc('session.list')) as { sessions: SessionSummary[] };
     this.store.set({ sessions: result.sessions });
+    // 열린 세션 탭의 자식 트랙도 같이 갱신한다 — 자식의 상태·토큰이 바뀌는 시점이
+    // 곧 목록이 바뀌는 시점이고, 여기서 안 하면 트랙이 탭을 다시 열 때까지 낡는다
+    for (const tabId of this.openTabIds()) {
+      const target = targetOf(this.layout, tabId);
+      if (target?.kind === 'session') void this.refreshUsageTree(target.sessionId);
+    }
   }
 
   // ── 프로젝트·워크스페이스 (WBS 5.6) ───────────────────────────────────────
@@ -620,10 +634,34 @@ export class AppController {
     );
   }
 
-  /** 탭 타깃별 적재 — 세션은 타임라인, 그 외는 아직 없다 */
+  /** 탭 타깃별 적재 — 세션은 타임라인 + 위임 비용, 그 외는 아직 없다 */
   private async loadTabContent(tabId: string): Promise<void> {
     const target = targetOf(this.layout, tabId);
-    if (target?.kind === 'session') await this.loadTimeline(target.sessionId);
+    if (target?.kind === 'session') await this.loadSessionTab(target.sessionId);
+  }
+
+  /**
+   * 세션 탭 하나가 필요로 하는 것 — 진입점이 둘(목록에서 열기 / 탭 전환)이라 여기 모은다.
+   * 나뉘어 있으면 한쪽에만 적재를 추가하는 실수가 조용히 통과한다.
+   */
+  private async loadSessionTab(sessionId: string): Promise<void> {
+    await this.loadTimeline(sessionId);
+    await this.refreshUsageTree(sessionId);
+  }
+
+  /**
+   * 위임 비용 조회 (M7 7.3.3). 열려 있는 세션 탭에 대해서만 부른다 — 목록 전체를 훑으면
+   * 세션 수만큼 RPC 가 나가고, 화면에 없는 세션의 트랙은 아무도 보지 않는다.
+   *
+   * 실패는 삼킨다. 트랙은 보조 정보라 못 받았다고 대화 화면을 막을 이유가 없다.
+   */
+  async refreshUsageTree(sessionId: string): Promise<void> {
+    try {
+      const tree = (await this.client.rpc('session.usage', { sessionId })) as SessionUsageTree;
+      this.store.set({ usageTrees: { ...this.store.get().usageTrees, [sessionId]: tree } });
+    } catch {
+      /* 트랙 없이도 대화는 된다 */
+    }
   }
 
   /** 탭으로 열기 — 목록·재개 공용 진입점 */
@@ -642,7 +680,7 @@ export class AppController {
     }
     this.openTarget({ kind: 'session', sessionId });
     this.acknowledgeAttention(sessionId);
-    await this.loadTimeline(sessionId);
+    await this.loadSessionTab(sessionId);
   }
 
   /** 임의 타깃을 탭으로 연다 (WBS 6.2.1) */

@@ -389,12 +389,92 @@ body {
 }
 
 /* ── 대화 뷰 ────────────────────────────────────────────────────────────── */
+/* 세션 페인 — 자식 트랙(있을 때만) + 대화 (M7 7.3.3) */
+.session-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.session-pane > .conversation {
+  flex: 1;
+  min-height: 0;
+}
 .conversation {
   display: flex;
   flex-direction: column;
   height: 100%;
   position: relative;
   background: var(--bg-app);
+}
+
+/* 자식 세션 트랙 — 한 줄을 넘지 않는다. 넘치면 가로로 스크롤한다 */
+.child-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  font-size: 11px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.child-track-label {
+  color: var(--text-2);
+  flex: none;
+}
+.child-track-parent {
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-2);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 10.5px;
+  cursor: pointer;
+  flex: none;
+}
+.child-track-parent:hover {
+  color: var(--accent);
+  border-color: var(--accent-ring);
+}
+.child-track-list {
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.child-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  color: var(--text-1);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.child-chip:hover {
+  border-color: var(--accent-ring);
+  background: var(--accent-tint);
+}
+.child-harness {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.child-tokens,
+.child-track-total {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.child-track-total {
+  margin-left: auto;
+  flex: none;
 }
 .conversation-status {
   display: flex;

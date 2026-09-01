@@ -90,6 +90,33 @@ export const SessionSummarySchema = z.looseObject({
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
+/**
+ * 위임 비용 트리 (M7 7.3.2) — 자기 사용량과 자손 합을 나눠 준다.
+ * 자식 트랙 UI(7.3.3)가 그대로 소비한다.
+ */
+export const SessionUsageTreeSchema = z.looseObject({
+  /** 이 세션 자신의 누적 사용량 */
+  own: UsageSchema,
+  /** 자신 + 자손 전체 */
+  subtree: UsageSchema,
+  /** 직계 자식 수 (닫힌 것 포함) */
+  childCount: z.number().int().nonnegative(),
+  /** 그중 아직 살아 있는 수 — 팬아웃 상한이 세는 대상 */
+  activeChildCount: z.number().int().nonnegative(),
+  /** 직계 자식 요약 — 어느 자식이 비싼지 */
+  children: z.array(
+    z.looseObject({
+      sessionId: z.string(),
+      status: SessionStatusSchema,
+      harness: HarnessIdSchema,
+      usage: UsageSchema.optional(),
+      /** 이 자식이 거느린 자손까지 포함한 합 */
+      subtree: UsageSchema,
+    }),
+  ),
+});
+export type SessionUsageTree = z.infer<typeof SessionUsageTreeSchema>;
+
 export const ModelInfoSchema = z.looseObject({
   id: z.string(),
   displayName: z.string().optional(),
@@ -239,27 +266,7 @@ export const rpc = {
     usage: rpcPair(
       'session.usage',
       z.looseObject({ sessionId: z.string() }),
-      z.looseObject({
-        /** 이 세션 자신의 누적 사용량 */
-        own: UsageSchema,
-        /** 자신 + 자손 전체 */
-        subtree: UsageSchema,
-        /** 직계 자식 수 (닫힌 것 포함) */
-        childCount: z.number().int().nonnegative(),
-        /** 그중 아직 살아 있는 수 — 팬아웃 상한이 세는 대상 */
-        activeChildCount: z.number().int().nonnegative(),
-        /** 직계 자식 요약 — 어느 자식이 비싼지 */
-        children: z.array(
-          z.looseObject({
-            sessionId: z.string(),
-            status: SessionStatusSchema,
-            harness: HarnessIdSchema,
-            usage: UsageSchema.optional(),
-            /** 이 자식이 거느린 자손까지 포함한 합 */
-            subtree: UsageSchema,
-          }),
-        ),
-      }),
+      SessionUsageTreeSchema,
     ),
     /**
      * 마지막 턴의 결과만 (M7 7.3.1, FR-9.3) — 위임한 작업의 "회수"에 해당한다.

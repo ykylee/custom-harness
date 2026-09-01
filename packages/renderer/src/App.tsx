@@ -7,6 +7,8 @@ import type { TabTarget } from './workbench/tabs.js';
 import { targetOf } from './workbench/tabs.js';
 import { useStore } from './store/store.js';
 import { emptySessionView } from './timeline.js';
+import { TOOL_LABEL_PARENT_SESSION } from '@custom-harness/protocol';
+import { ChildTrack } from './components/ChildTrack.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Tabs } from './components/Tabs.js';
 import { Conversation } from './views/Conversation.js';
@@ -36,18 +38,27 @@ function Pane({
   switch (target.kind) {
     case 'session': {
       const { sessionId } = target;
+      const summary = state.sessions.find((s) => s.sessionId === sessionId);
       return (
-        <Conversation
-          view={state.views[sessionId] ?? emptySessionView()}
-          autoApprove={state.autoApprove[sessionId] === true}
-          actions={{
-            prompt: (text) => void controller.prompt(sessionId, text),
-            interrupt: () => void controller.interrupt(sessionId),
-            respondPermission: (requestId, outcome) =>
-              void controller.respondPermission(sessionId, requestId, outcome),
-            setAutoApprove: (enabled) => controller.setAutoApprove(sessionId, enabled),
-          }}
-        />
+        <div className="session-pane">
+          {/* 부모-자식은 트랙으로, 형제는 탭으로 (M7 7.3.3, FR-9.3) */}
+          <ChildTrack
+            usage={state.usageTrees[sessionId]}
+            parentSessionId={summary?.labels?.[TOOL_LABEL_PARENT_SESSION]}
+            actions={{ open: (id) => void controller.openSession(id) }}
+          />
+          <Conversation
+            view={state.views[sessionId] ?? emptySessionView()}
+            autoApprove={state.autoApprove[sessionId] === true}
+            actions={{
+              prompt: (text) => void controller.prompt(sessionId, text),
+              interrupt: () => void controller.interrupt(sessionId),
+              respondPermission: (requestId, outcome) =>
+                void controller.respondPermission(sessionId, requestId, outcome),
+              setAutoApprove: (enabled) => controller.setAutoApprove(sessionId, enabled),
+            }}
+          />
+        </div>
       );
     }
     case 'terminal':

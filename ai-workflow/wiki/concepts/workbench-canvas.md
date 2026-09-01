@@ -1,7 +1,7 @@
 ---
 type: concept
 status: active
-updated: 2026-08-31
+updated: 2026-09-01
 last_ingested_from: docs/design/workbench-tabs.md, packages/renderer/src/workbench/tabs.ts, packages/daemon/src/terminals.ts
 related_pages: [workspace-three-layer, reverse-tools, closed-network-self-containment]
 ---
@@ -32,6 +32,16 @@ type TabTarget =
 새 타깃은 **유니온에 추가**하고 렌더러의 `switch` 가 컴파일 에러로 누락을 잡게 한다. 결정적 ID: `session:<id>` · `terminal:<id>` · `files` · `file:<path>` · `diff:working` · `diff:<sha>`.
 
 레이아웃은 **워크스페이스 단위**로 보존한다(`layout[workspaceId]`). 복원 시 **살아 있지 않은 타깃은 조용히 버린다** — 복원 실패가 화면 전체를 막지 않는다.
+
+## 부모-자식은 탭이 아니라 트랙이다 (7.3.3)
+
+형제 세션(같은 워크스페이스의 독립 세션)은 탭·페인이고, 위임한 자식은 부모 화면 위의 **한 줄 트랙**이다.
+
+자식을 탭으로 승격시키지 않는 이유는 **자리 다툼**이다 — 위임한 작업 5개가 탭 5개가 되면 사용자가 하던 일이 밀려난다. 트랙은 "무엇이 돌고 있고 얼마를 썼는가"만 보여 주고, 눌렀을 때 비로소 탭이 열린다(자식도 1급 세션이라 직접 대화할 수 있어야 한다).
+
+자식 칩에는 그 **가지 전체**의 토큰을 싣는다 — 자식 자신의 사용량이 아니라 자손까지 포함한 합이다. 판단 기준은 "이 가지가 통째로 얼마를 썼나"이기 때문이다. 합계는 자기 대화와 나눠 보여 준다([[concepts/reverse-tools]] 의 `session_usage` 와 같은 값).
+
+**렌더러가 합산을 다시 계산하지 않는다.** 데몬의 팬아웃 게이트가 세는 값과 갈라지면 사용자가 보는 "자식 2개"와 상한이 막는 기준이 달라진다.
 
 ## 터미널은 데몬이 소유한다
 

@@ -79,6 +79,15 @@ function makeFakeTransport(): {
         });
       }
       if (type === 'harness.list') return Promise.resolve({ harnesses: [] });
+      if (type === 'session.usage') {
+        return Promise.resolve({
+          own: { totalTokens: 5 },
+          subtree: { totalTokens: 9 },
+          childCount: 1,
+          activeChildCount: 1,
+          children: [{ sessionId: 'kid', status: 'idle', harness: 'mock', subtree: {} }],
+        });
+      }
       if (type === 'project.list') return Promise.resolve({ projects });
       if (type === 'workspace.list') return Promise.resolve({ workspaces });
       if (type === 'session.create') {
@@ -105,6 +114,49 @@ function makeFakeTransport(): {
     workspaces,
   };
 }
+
+describe('AppController 자식 트랙 (M7 7.3.3)', () => {
+  beforeEach(() => installMemoryStorage());
+
+  it('세션 탭을 열면 위임 비용도 함께 적재한다', async () => {
+    const { transport, calls } = makeFakeTransport();
+    const controller = new AppController(transport);
+    await controller.bootstrap();
+
+    await controller.openSession('s-1');
+    expect(calls.some((c) => c.type === 'session.usage')).toBe(true);
+    expect(controller.store.get().usageTrees['s-1']?.subtree.totalTokens).toBe(9);
+  });
+
+  it('목록 갱신이 열린 탭의 트랙도 갱신한다 — 안 하면 탭을 다시 열 때까지 낡는다', async () => {
+    const { transport, calls } = makeFakeTransport();
+    const controller = new AppController(transport);
+    await controller.bootstrap();
+    await controller.openSession('s-1');
+    const before = calls.filter((c) => c.type === 'session.usage').length;
+
+    await controller.refreshSessions();
+    await Promise.resolve(); // refreshUsageTree 는 대기하지 않고 띄운다
+    expect(calls.filter((c) => c.type === 'session.usage').length).toBeGreaterThan(before);
+  });
+
+  it('비용 조회 실패가 대화 화면을 막지 않는다 — 트랙은 보조 정보다', async () => {
+    const { transport } = makeFakeTransport();
+    const failing: DaemonTransport = {
+      ...transport,
+      rpc: (type, params) =>
+        type === 'session.usage'
+          ? Promise.reject(new Error('데몬 거절'))
+          : transport.rpc(type, params),
+    };
+    const controller = new AppController(failing);
+    await controller.bootstrap();
+
+    await expect(controller.openSession('s-1')).resolves.toBeUndefined();
+    expect(controller.store.get().usageTrees['s-1']).toBeUndefined();
+    expect(controller.store.get().lastError).toBeNull();
+  });
+});
 
 describe('AppController 탭·분할 (FR-3.3.2/3)', () => {
   beforeEach(() => installMemoryStorage());

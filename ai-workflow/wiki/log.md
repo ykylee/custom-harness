@@ -34,3 +34,10 @@
 - 원천: `packages/daemon/src/session-manager.ts`(usageTree), `packages/daemon/src/mcp/gate.ts`, `docs/design/reverse-tool-catalog.md` §8.5.
 - 태스크: TASK-2026-09-01-main-004
 
+## 2026-09-01 (4) — M7 7.3.3 반영
+
+- 계기: 자식 트랙 UI 로 WP 7.3(서브에이전트 위임) 완결.
+- 갱신: `concepts/workbench-canvas` — "부모-자식은 탭이 아니라 트랙이다" 절 추가(자리 다툼 / 가지 전체 토큰 / 렌더러가 합산을 다시 계산하지 않는다).
+- 원천: `packages/renderer/src/components/ChildTrack.tsx`, `docs/design/workbench-tabs.md` §3.5.
+- 태스크: TASK-2026-09-01-main-005
+
