@@ -54,19 +54,20 @@
 
 ## Work Status
 
-- 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
-- M3 잔여 후보(사내 협조 무관 순수 사외분 아님 — 대부분 C-1·C-5 후속) — 3.1 업데이트·롤백, 3.3.2 앱 정보 화면 고지 열람·clean-room 검수, 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
-- TASK-2026-09-01-main-005 M7 7.3.3 자식 트랙 UI(부모 화면의 상태 줄): done
-- TASK-2026-09-01-main-004 M7 7.3.2 팬아웃 상한 + 사용량 합산: done
-- TASK-2026-09-01-main-003 M7 7.3.1 서브에이전트 위임(부모-자식 관계·대기·회수): done
-- TASK-2026-09-01-main-002 M7 7.2.4 역방향 툴 안전장치(opt-in·승인 채널·재귀 상한·감사·선점 탐지): done
-- TASK-2026-09-01-main-001 M7 7.2.3b 역방향 툴 노출 — pi 확장(pi.registerTool): done
-- TASK-2026-08-31-main-008 M7 7.2.3a 역방향 툴 노출 — 데몬 MCP stdio 서버(omp·grok): done
-- TASK-2026-08-31-main-007 워크플로 지식 계층 소급 구축(ai-workflow/wiki 26 페이지): done
-- TASK-2026-08-31-main-006 M7 7.2.2 역방향 툴 카탈로그 정본 정의(FR-9.2): done
-- TASK-2026-08-31-main-005 M7 WP 7.1 주의 상태 1급화(FR-9.1): done
-- TASK-2026-08-31-main-004 M7 7.2.0b grok 권한 모드 확정(FR-1.5): done
+- 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정, **업데이트·롤백 경로와 junction 전환 추가**), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
+- M3 잔여(사외 가능분) — 3.3.2 앱 정보 화면 고지 열람·clean-room 검수, 3.6.1 사용자 가이드, 3.5.1 NFR 자동화 게이트 정리(smoke:nfr1·nfr8·update·m7 이 이미 명령으로 존재), 3.6.2 운영 문서: planned
+- M3 조건부·사내 의존 — 3.2 저장소 연동(M0 0.5.2 결과 대기), 3.4 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
 - TASK-2026-08-31-main-002 번들 grok darwin 버전 세트 불변성 결함(manifest 1.0.5 vs 실물 1.0.13): planned
+- TASK-2026-09-01-main-015 M3 3.1.3 설치·업데이트 실패 주입 테스트(NFR-8 원자성): done
+- TASK-2026-09-01-main-014 M3 3.1.2 롤백(current 전환 단일 조작 + 세션 데이터 무영향): done
+- TASK-2026-09-01-main-013 M3 3.1.1 업데이트 흐름(실행 중 안내·동의 + 버전 보존 정책): done
+- TASK-2026-09-01-main-012 M7 완료 선언(수용 검증 + 결함 2건 수정): done
+- TASK-2026-09-01-main-011 M7 7.6.1 세션 제목 자동 생성(비 LLM 기본, LLM opt-in): done
+- TASK-2026-09-01-main-010 M7 7.5.3 CLI 기계 판독 출력(JSON) 일관화: done
+- TASK-2026-09-01-main-009 M7 7.5.2 CLI 워크스페이스 명령(목록·생성·아카이브): done
+- TASK-2026-09-01-main-008 M7 7.5.1 CLI 세션 명령(생성·목록·프롬프트·스트리밍·중단·승인): done
+- TASK-2026-09-01-main-007 M7 7.4.2 커맨드 팔레트(세션·워크스페이스·파일·명령): done
+- TASK-2026-09-01-main-006 M7 7.4.1 타임라인 전문 검색(인덱스 전략 + session.search): done
 
 ## Key Changes
 
@@ -121,30 +122,15 @@
 
 ## Next Actions
 
-- [x] ~~7.2.3a MCP 서버 경로(omp·grok)~~ — 완료 (2026-09-01)
-- [x] ~~7.2.3b pi 확장~~ — 완료 (2026-09-01). **7.2.3 전체 완결**
-- [x] ~~7.2.4 안전장치~~ — 완료 (2026-09-01). **WP 7.2 전 구간 완결, write 5종 개방**
-- [x] ~~7.3.1 부모-자식 관계·대기·회수~~ — 완료 (2026-09-01). 3하네스 위임 루프 PASS
-- [x] ~~7.3.2 팬아웃 상한 + 사용량 합산~~ — 완료 (2026-09-01). 3하네스 차단·합산 실측
-- [x] ~~7.3.3 자식 트랙 UI~~ — 완료 (2026-09-01). **WP 7.3 완결**
-- [x] ~~7.4.1 타임라인 전문 검색~~ — 완료 (2026-09-01). FTS5 trigram + 세그먼트 코퍼스, 번들 런타임 실측 PASS
-- [x] ~~7.4.2 커맨드 팔레트~~ — 완료 (2026-09-01). **WP 7.4 완결**. `file.search` RPC 동반 신설
-- [x] ~~7.5.1 CLI 세션 명령~~ — 완료 (2026-09-01). 실물 pi 왕복 PASS. 데몬 결함 2건 동반 수정
-- [x] ~~7.5.2 워크스페이스 명령 · 7.5.3 JSON 출력 일관화~~ — 완료 (2026-09-01). **WP 7.5 완결**, 실물 pi 전 구간 왕복 PASS
-- [x] ~~7.6.1 세션 제목 자동 생성~~ — 완료 (2026-09-01). **M7 WBS 전 항목 done**
-- [x] ~~M7 완료 선언~~ — 완료 (2026-09-01). 수용 검증 PASS + 결함 2건 선언 전 수정
-- [x] ~~3.1.1 업데이트 흐름~~ — 완료 (2026-09-01). 설치기 `current` 전환 결함 동반 수정
-- [x] ~~3.1.2 롤백~~ — 완료 (2026-09-01). **WP 3.1 완결**
-- [x] ~~3.1.3 실패 주입 테스트~~ — 완료 (2026-09-01). **WP 3.1 완결**
-- [ ] **M3 다음**: **3.3.2 고지 열람·clean-room 검수**(S) → 3.6.1 사용자 가이드 → 3.5.1 NFR CI 게이트 정리(smoke:nfr1·nfr8·update·m7 이 이미 명령으로 있다)
-- [ ] 사내 협조: C-1 게이트웨이 실측 → M1 수용, C-5 실기기 linux/win(업데이트 경로·junction 전환 포함)
-- [ ] ~~구 7.2.3 항목~~: **7.2.3 노출 2경로 구현** — ① 데몬 소유 MCP stdio 서버(omp·grok 공용) ② pi 확장(`pi.registerTool`). 등록은 grok=`grok mcp add` 위임 / omp=격리 홈 `mcp.json` + `tools.xdev=false` / pi=확장 주입. **omp rpc 경로의 MCP 준비 완료 게이트** 필수(1턴째 미노출 실측). 툴 결과 스키마도 여기서 확정 → 7.2.4 안전장치(opt-in·재귀 상한·감사 로그·서버명 선점 탐지)
+> 완료 항목은 여기 쌓지 않는다 — 이력의 SSOT 는 `backlog/tasks/` 와 `docs/roadmap/PROGRESS.md` 다.
+> (2026-09-01 세션에서 M7 WBS 전 항목 + M7 완료 선언 + M3 WP 3.1 전 항목 done)
+
+- [ ] **M3 다음(사외 가능)**: **3.3.2 고지 열람 + clean-room 검수**(S — paseo 유래 코드 부재 확인까지 범위 확장) → 3.6.1 사용자 가이드 → 3.5.1 NFR 자동화 게이트 정리(`smoke:nfr1`·`nfr8`·`update`·`m7` 이 이미 명령으로 존재) → 3.6.2 운영 문서
 - [ ] 7.1 잔여(작음): 트레이 배지·자동 승인이 주의 상태를 **직접** 소비하도록 셸 트랙 배선, `attentionTimestamp` 기반 "오래 기다린 순" 정렬 UI
-- [ ] 7.2.2 툴 카탈로그 정본 정의 → 7.2.3 노출 2경로(데몬 MCP 서버 + pi 확장) → 7.2.4 안전장치
 - [ ] TASK-2026-08-31-main-002 번들 grok 버전 대조 경고 추가 (FR-4.7 회복)
+- [ ] M7 이월 5건 — 토큰 예산 상한·`autoApprove` 와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리. 상세는 [m7-orchestration.md §완료 선언 §잔여](../../../docs/roadmap/m7-orchestration.md)
 - [ ] **C-1 실 게이트웨이 실측 회신** → 1.7.3 M1 수용 시나리오 → M1 완료 선언 (M2 완료 선언의 선행)
-- [ ] **C-5 실기기 실측 요청** — linux/win 매트릭스(m2-smoke-matrix.md 절차), install.ps1·uninstall.ps1 검증. 추가 확인 항목: Windows junction 환경에서 git `--show-prefix` 경로 유도
-- [ ] M3 잔여: 3.1 업데이트·롤백, 3.3.2 앱 정보 화면 고지 열람·**clean-room 검수(paseo 유래 코드 부재 확인까지 범위 확장)**
+- [ ] **C-5 실기기 실측 요청** — linux/win 매트릭스(m2-smoke-matrix.md 절차), install.ps1·uninstall.ps1 검증. 추가 확인: **업데이트·롤백 경로**(junction 전환·`custom-harness-rollback.cmd` 미실행 검증), 디스크 부족 주입(램디스크 경로는 darwin 만 구현), Windows junction 환경의 git `--show-prefix` 경로 유도
 
 ## Risks & Blockers
 
