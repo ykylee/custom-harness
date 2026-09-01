@@ -90,6 +90,28 @@ export const SessionSummarySchema = z.looseObject({
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
+/** 검색 세그먼트 종류 (M7 7.4.1) — 결과를 대화/사고/툴로 좁히는 필터 축 */
+export const SearchSegmentKindSchema = z.enum(['user', 'assistant', 'reasoning', 'tool']);
+export type SearchSegmentKind = z.infer<typeof SearchSegmentKindSchema>;
+
+/** 검색 결과 한 건. 세션 메타를 함께 실어 팔레트가 추가 조회 없이 한 줄을 그린다 */
+export const SearchHitSchema = z.looseObject({
+  sessionId: z.string(),
+  /** 세그먼트를 여는 이벤트의 seq — 결과를 눌렀을 때 타임라인에서 찾아갈 위치 */
+  seq: z.number().int().nonnegative(),
+  kind: SearchSegmentKindSchema,
+  /** tool 세그먼트의 하네스 네이티브 툴명 */
+  toolName: z.string().optional(),
+  /** 매치 주변만 잘라낸 본문 */
+  snippet: z.string(),
+  harness: HarnessIdSchema,
+  workspaceId: z.string().optional(),
+  title: z.string().optional(),
+  cwd: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+export type SearchHit = z.infer<typeof SearchHitSchema>;
+
 /**
  * 위임 비용 트리 (M7 7.3.2) — 자기 사용량과 자손 합을 나눠 준다.
  * 자식 트랙 UI(7.3.3)가 그대로 소비한다.
@@ -293,6 +315,34 @@ export const rpc = {
       'session.timeline',
       z.looseObject({ sessionId: z.string(), fromSeq: z.number().int().nonnegative().optional() }),
       z.looseObject({ events: z.array(SessionEventSchema) }),
+    ),
+    /**
+     * 타임라인 전문 검색 (M7 7.4.1, FR-9.4).
+     *
+     * 검색 대상은 원본 이벤트가 아니라 **턴 단위로 합친 텍스트**다 — 델타 조각을 그대로
+     * 뒤지면 두 조각에 걸친 문자열이 영영 안 잡힌다. 그래서 결과 단위도 이벤트가 아니라
+     * 세그먼트이고, `seq` 는 그 세그먼트를 **여는** 이벤트를 가리킨다(타임라인 점프 앵커).
+     */
+    search: rpcPair(
+      'session.search',
+      z.looseObject({
+        /** 공백으로 끊어 AND — 각 항이 어딘가에 부분 문자열로 나타나야 한다 */
+        query: z.string(),
+        workspaceId: z.string().optional(),
+        harness: HarnessIdSchema.optional(),
+        sessionId: z.string().optional(),
+        kinds: z.array(SearchSegmentKindSchema).optional(),
+        /**
+         * 기간 필터 (ISO). **세션 시각 기준**이다 — 이벤트 봉투에는 시각이 없고
+         * (sessionId + seq 뿐) 이벤트별 시각을 넣는 것은 프로토콜 변경인 데다 이미 쌓인
+         * 타임라인에는 소급되지 않는다. 세션 타임라인은 그 세션의 수명 안에 있으므로
+         * 겹침 판정으로 거른다.
+         */
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.number().int().positive().max(500).optional(),
+      }),
+      z.looseObject({ hits: z.array(SearchHitSchema) }),
     ),
   },
   config: {
@@ -622,6 +672,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.session.usage.request,
   rpc.session.result.request,
   rpc.session.timeline.request,
+  rpc.session.search.request,
   rpc.config.keySet.request,
   rpc.config.keyTest.request,
   rpc.config.get.request,
@@ -674,6 +725,7 @@ export const RpcResponseSchema = z.union([
   rpc.session.usage.response,
   rpc.session.result.response,
   rpc.session.timeline.response,
+  rpc.session.search.response,
   rpc.config.keySet.response,
   rpc.config.keyTest.response,
   rpc.config.get.response,

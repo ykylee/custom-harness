@@ -25,6 +25,8 @@ export interface DaemonPaths {
   /** 게이트웨이 API 키 암호문/폴백 저장 (credential-injection-design §1) */
   credentialsFile: string;
   settingsFile: string;
+  /** 타임라인 검색 색인 (WBS 7.4.1) — 파생물이라 지워도 기동 시 재생성된다 */
+  searchIndexFile: string;
   logsDir: string;
 }
 
@@ -49,6 +51,7 @@ export function resolvePaths(
     processesFile: join(dataDir, 'processes.json'),
     credentialsFile: join(dataDir, 'credentials.enc'),
     settingsFile: join(dataDir, 'settings.json'),
+    searchIndexFile: join(dataDir, 'search-index.db'),
     logsDir: join(root, 'logs'),
   };
 }

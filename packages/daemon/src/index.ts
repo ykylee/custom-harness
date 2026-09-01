@@ -23,6 +23,8 @@ import { SessionManager } from './session-manager.js';
 import { SettingsStore } from './settings.js';
 import { TerminalManager } from './terminals.js';
 import { WorkspaceProvisioning } from './workspaces/registry.js';
+import { SearchIndex } from './search/index-store.js';
+import { SearchIndexer } from './search/indexer.js';
 import { SessionStore } from './store.js';
 import { generateToken, removeTokenFile, writeTokenFile } from './token.js';
 
@@ -48,6 +50,9 @@ export * from './launcher.js';
 export * from './manifest.js';
 export * from './paths.js';
 export * from './processes.js';
+export * from './search/index-store.js';
+export * from './search/indexer.js';
+export * from './search/segments.js';
 export * from './server.js';
 export * from './session-manager.js';
 export * from './store.js';
@@ -92,6 +97,10 @@ export interface DaemonHandle {
   provisioning: WorkspaceProvisioning;
   /** 데몬 소유 터미널 (WBS 6.3) */
   terminals: TerminalManager;
+  /** 타임라인 검색 색인 (WBS 7.4.1) */
+  searchIndex: SearchIndex;
+  /** 기동 시 따라잡기 완료 — 색인을 전제하는 테스트·스크립트가 기다릴 지점 */
+  searchReady: Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -133,6 +142,16 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
   const provisioning = new WorkspaceProvisioning(paths);
   // 데몬 소유 터미널 (WBS 6.3) — 클라이언트가 끊겨도 pty 는 살아 있다
   const terminals = new TerminalManager();
+  // 타임라인 검색 색인 (WBS 7.4.1, FR-9.4) — SSOT 는 timeline.jsonl 이고 이건 파생물이다.
+  // 열기 실패는 기동을 막지 않는다: 검색이 빠질 뿐 대화는 그대로 된다.
+  const searchIndex = new SearchIndex(paths.searchIndexFile);
+  let searchIndexer: SearchIndexer | undefined;
+  try {
+    searchIndex.open();
+    searchIndexer = new SearchIndexer({ index: searchIndex, store });
+  } catch (error) {
+    console.warn('[daemon] 검색 색인 열기 실패 — session.search 비활성:', error);
+  }
   // pi 확장이 쓸 spawn 사양 — 아래 등록 단계에서 채워지고, buildEnv 클로저가 **호출 시점에**
   // 읽는다(세션 생성은 등록 뒤에 일어난다). 선언을 여기 두어 그 의존을 눈에 보이게 한다.
   let piReverseToolsEnv: Record<string, string> | undefined;
@@ -152,6 +171,27 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     ...(manifest !== undefined ? { manifest } : {}),
   });
   await manager.init();
+
+  // 색인 갱신은 이벤트 구독으로 붙인다 — 세션 매니저는 색인의 존재를 모른다.
+  // 따라잡기는 **기동을 막지 않는다**: 이력이 많으면 오래 걸리고, 그동안 검색만 덜 찬다.
+  const indexer = searchIndexer;
+  let unsubscribeSearch: (() => void) | undefined;
+  const searchReady =
+    indexer === undefined
+      ? Promise.resolve()
+      : (async () => {
+          unsubscribeSearch = manager.onEvent((event) => indexer.handleEvent(event));
+          try {
+            const outcome = await indexer.catchUp();
+            if (outcome.reindexed > 0 || outcome.removed > 0) {
+              console.warn(
+                `[daemon] 검색 색인 따라잡기: 재색인 ${outcome.reindexed}건, 정리 ${outcome.removed}건`,
+              );
+            }
+          } catch (error) {
+            console.warn('[daemon] 검색 색인 따라잡기 실패:', error);
+          }
+        })();
 
   // 세션 워크스페이스 백필 (WBS 5.4.2, workspace-model §9) — 1회만 실행하고 마커를 남긴다.
   // cwd → workspaceId 매핑이 존재하는 유일한 지점이며, 실패한 세션은 건너뛰고 기동을 막지 않는다.
@@ -281,6 +321,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     keyStore,
     provisioning,
     terminals,
+    ...(searchIndexer !== undefined ? { searchIndex } : {}),
     // 역방향 툴 관문 (WBS 7.2.4). opt-in 은 **호출 시점에** 다시 읽는다 — 기동 시 값을 굳히면
     // 설정을 끈 뒤에도 이미 떠 있는 MCP 서버가 계속 통과한다.
     reverseTools: {
@@ -331,6 +372,9 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     // 셧다운 순서: 서버 → 세션 정리 → 프로세스 정리 → 원장·토큰·pid 정리 (daemon-design §3)
     await server.stop();
     terminals.shutdown();
+    unsubscribeSearch?.();
+    await searchIndexer?.stop();
+    searchIndex.close();
     await manager.shutdown();
     await supervisor.terminateAll();
     settings.close();
@@ -348,6 +392,8 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     keyStore,
     provisioning,
     terminals,
+    searchIndex,
+    searchReady,
     stop,
   };
 }

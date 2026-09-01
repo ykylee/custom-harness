@@ -23,6 +23,7 @@ import type { ProcessSupervisor } from './processes.js';
 import type { KeyStore } from './gateway/key-store.js';
 import type { GatewayService } from './gateway/service.js';
 import type { SessionManager } from './session-manager.js';
+import type { SearchIndex } from './search/index-store.js';
 import type { TerminalManager } from './terminals.js';
 import { commitDiff, workingDiff, DiffWatcher } from './workspaces/diffs.js';
 import { listDirectory, readWorkspaceFile, PathEscapeError } from './workspaces/files.js';
@@ -42,6 +43,8 @@ export interface DaemonServerOptions {
   provisioning?: WorkspaceProvisioning;
   /** terminal.* 도메인 배선 (WBS 6.3) — 미공급 시 unimplemented 응답 */
   terminals?: TerminalManager;
+  /** session.search 배선 (WBS 7.4.1) — 미공급 시 unimplemented 응답 */
+  searchIndex?: SearchIndex;
   /**
    * tool.* 도메인 배선 (WBS 7.2.4) — 미공급 시 unimplemented 응답.
    * 셋이 다 있어야 관문이 성립한다: opt-in(설정)·호출자 판정(PID 원장)·감사(로거).
@@ -483,6 +486,11 @@ export class DaemonServer {
         return {
           events: await manager.timeline(message.params.sessionId, message.params.fromSeq),
         };
+      case 'session.search.request': {
+        const { searchIndex } = this.options;
+        if (!searchIndex) throw new DaemonError('unimplemented', '검색 색인이 배선되지 않음');
+        return { hits: searchIndex.search(message.params) };
+      }
       case 'harness.list.request': {
         // 모델 카탈로그(FR-2.4)·경계 경고(FR-2.5)는 gateway 배선 시에만 — 미배선이면 기본 목록
         const { gateway } = this.options;
