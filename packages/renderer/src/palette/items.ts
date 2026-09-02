@@ -36,6 +36,7 @@ export type PaletteCommandId =
   | 'open-files'
   | 'open-diff'
   | 'open-settings'
+  | 'open-about'
   | 'close-tab'
   | 'split-row'
   | 'split-column'
@@ -91,6 +92,7 @@ const COMMANDS: CommandSpec[] = [
     available: (context) => context.hasWorkspace,
   },
   { id: 'open-settings', label: '설정 열기' },
+  { id: 'open-about', label: '앱 정보 · 오픈소스 고지' },
   {
     id: 'close-tab',
     label: '탭 닫기',

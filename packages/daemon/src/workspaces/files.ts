@@ -1,9 +1,12 @@
 // 워크스페이스 파일 접근 (WBS 6.4, workbench-tabs §3).
 //
-// 이 모듈의 첫 번째 책임은 **경계**다. 데몬은 워크스페이스 밖의 파일을 읽지 않는다 —
-// `..`·절대경로·심링크 탈출 전부 거절한다. 두 번째는 크기·바이너리 방어다.
-import { readFile, readdir, realpath, stat } from 'node:fs/promises';
-import { isAbsolute, join, normalize, relative, sep } from 'node:path';
+// 경계는 `safe-path.ts` 의 공용 가드가 본다 — 워크스페이스 밖의 파일은 읽지 않는다
+// (`..`·절대경로·심링크 탈출 전부 거절). 이 모듈의 몫은 크기·바이너리 방어다.
+import { readFile, readdir, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import { PathEscapeError, resolveUnderRoot } from '../safe-path.js';
+
+export { PathEscapeError };
 
 /** 뷰어 상한 (workbench-tabs §3) — 초과분은 내용 대신 메타데이터만 준다 */
 export const MAX_READ_BYTES = 2 * 1024 * 1024;
@@ -12,42 +15,12 @@ export const MAX_ENTRIES = 2000;
 
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store']);
 
-export class PathEscapeError extends Error {
-  constructor(readonly requested: string) {
-    super(`워크스페이스 밖 경로는 접근할 수 없음: ${requested}`);
-    this.name = 'PathEscapeError';
-  }
-}
-
-/**
- * 워크스페이스 상대 경로 → 절대 경로. 탈출 시도는 예외.
- *
- * lexical 정규화로 1차 거절하고, 실제 경로(realpath)로 2차 확인한다 —
- * 심링크가 밖을 가리키는 경우는 lexical 검사만으로 못 잡는다.
- */
+/** 워크스페이스 루트에 봉쇄된 경로 해석 (공용 가드 위임) */
 export async function resolveInWorkspace(
   workspaceCwd: string,
   relativePath: string,
 ): Promise<string> {
-  if (isAbsolute(relativePath)) throw new PathEscapeError(relativePath);
-  const normalized = normalize(relativePath);
-  if (normalized === '..' || normalized.startsWith(`..${sep}`)) {
-    throw new PathEscapeError(relativePath);
-  }
-  const target = join(workspaceCwd, normalized);
-  const rel = relative(workspaceCwd, target);
-  if (rel.startsWith('..') || isAbsolute(rel)) throw new PathEscapeError(relativePath);
-
-  // 심링크 탈출 확인 — 대상이 아직 없으면(신규 파일 등) lexical 판정으로 만족한다
-  try {
-    const realTarget = await realpath(target);
-    const realRoot = await realpath(workspaceCwd);
-    const realRel = relative(realRoot, realTarget);
-    if (realRel.startsWith('..') || isAbsolute(realRel)) throw new PathEscapeError(relativePath);
-  } catch (error) {
-    if (error instanceof PathEscapeError) throw error;
-  }
-  return target;
+  return resolveUnderRoot(workspaceCwd, relativePath, '워크스페이스');
 }
 
 export interface FileEntry {

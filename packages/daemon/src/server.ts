@@ -11,6 +11,7 @@ import {
   TERMINAL_SLOT_MAX,
   decodeTerminalFrame,
   encodeTerminalFrame,
+  type BundleInfo,
   type CapabilityFlags,
   type ClientMessage,
   type ServerMessage,
@@ -26,12 +27,9 @@ import type { SessionManager } from './session-manager.js';
 import type { SearchIndex } from './search/index-store.js';
 import type { TerminalManager } from './terminals.js';
 import { commitDiff, workingDiff, DiffWatcher } from './workspaces/diffs.js';
-import {
-  listDirectory,
-  readWorkspaceFile,
-  searchFiles,
-  PathEscapeError,
-} from './workspaces/files.js';
+import { listDirectory, readWorkspaceFile, searchFiles } from './workspaces/files.js';
+import { PathEscapeError } from './safe-path.js';
+import { readLicenseChunk, readLicenseIndex, type LicenseIndex } from './licenses.js';
 import type { WorkspaceProvisioning } from './workspaces/registry.js';
 
 export interface DaemonServerOptions {
@@ -41,6 +39,11 @@ export interface DaemonServerOptions {
   port?: number;
   /** hello.response.features — 렌더러 기능 게이트 (protocol-design §3) */
   features?: CapabilityFlags;
+  /**
+   * 앱 정보 화면의 근거 (WBS 3.3.2, FR-4.5) — 번들 신원과 `licenses/` 절대 경로.
+   * 번들이 아닌 실행(개발)에서는 미공급이며, 그때 고지는 `available=false` 로 나간다.
+   */
+  about?: { bundle?: BundleInfo; licensesDir?: string };
   /** config.* 도메인 배선 (WBS 1.4.3) — 미공급 시 unimplemented 응답 */
   gateway?: GatewayService;
   keyStore?: KeyStore;
@@ -84,6 +87,17 @@ export class DaemonServer {
     WebSocket,
     { bySlot: Map<number, string>; bySession: Map<string, { slot: number; detach: () => void }> }
   >();
+
+  /**
+   * 고지 색인 캐시 (WBS 3.3.2) — 번들 `licenses/` 는 설치 후 불변이라 매번 훑을 이유가 없다.
+   * 화면을 다시 열 때마다 20MB 트리를 stat 하는 것이 그 화면의 유일한 비용이 되면 곤란하다.
+   */
+  private licenseIndexCache: Promise<LicenseIndex> | undefined;
+
+  private licenseIndex(): Promise<LicenseIndex> {
+    this.licenseIndexCache ??= readLicenseIndex(this.options.about?.licensesDir);
+    return this.licenseIndexCache;
+  }
 
   constructor(private readonly options: DaemonServerOptions) {}
 
@@ -657,6 +671,24 @@ export class DaemonServer {
       }
       case 'system.version.request':
         return { version: this.options.serverVersion, protocolVersion: PROTOCOL_VERSION };
+      case 'system.about.request': {
+        const bundle = this.options.about?.bundle;
+        return {
+          version: this.options.serverVersion,
+          protocolVersion: PROTOCOL_VERSION,
+          ...(bundle !== undefined ? { bundle } : {}),
+          licenses: await this.licenseIndex(),
+        };
+      }
+      case 'system.license.read.request':
+        return this.mapPathError(() =>
+          readLicenseChunk(
+            this.options.about?.licensesDir,
+            message.params.path,
+            message.params.offset,
+            message.params.limit,
+          ),
+        );
       case 'system.shutdown.request':
         queueMicrotask(() => this.options.onShutdownRequest?.());
         return {};

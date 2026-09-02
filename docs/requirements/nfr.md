@@ -25,7 +25,7 @@
 ## NFR-4 라이선스 준수 (M)
 
 - **정의**: ① paseo(AGPL-3.0) 코드 미사용 — 패턴·인터페이스만 분석 문서를 매개로 참고(clean-room). ② 동봉물(MIT/Apache 2.0) 고지 의무 이행 (FR-4.5).
-- **검증**: 코드 리뷰 체크리스트에 "paseo 소스 직접 참조 금지" 항목 + 릴리스 전 NOTICE 검수. 유사도 검사 도구 도입은 선택.
+- **검증**: `npm run audit:cleanroom` (M3 3.3.2 — paseo 참조 경계·copyleft 의존성·고지 완전성·고지 정합성 4종) + 코드 리뷰 체크리스트의 "paseo 소스 직접 참조 금지" 항목. 검사 범위와 한계는 [clean-room 검수 기록](../reference/clean-room-audit.md). 유사도 검사 도구 도입은 선택.
 
 ## NFR-5 호환성 견고성 (M)
 

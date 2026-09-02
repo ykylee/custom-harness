@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
@@ -299,6 +299,121 @@ describe('DaemonServer config domain (WBS 1.4.3)', () => {
       // harness.list — gateway 배선 시 모델 카탈로그 동봉 (FR-2.4). 미온보딩이면 빈 목록
       ws.send(JSON.stringify({ type: 'harness.list.request', requestId: 'c-5', params: {} }));
       expect(await nextMessage(ws)).toMatchObject({ requestId: 'c-5', ok: true });
+    } finally {
+      ws.close();
+      await server.stop();
+    }
+  });
+});
+
+// ── 앱 정보 · 라이선스 고지 (WBS 3.3.2, FR-4.5) ────────────────────────────
+describe('system.about / system.license.read', () => {
+  it('번들 신원·고지 색인을 주고, licenses/ 밖은 거절한다', async () => {
+    const bundleRoot = await mkdtemp(join(tmpdir(), 'ch-about-'));
+    const licensesDir = join(bundleRoot, 'licenses');
+    await mkdir(join(licensesDir, 'pi'), { recursive: true });
+    await writeFile(join(licensesDir, 'NOTICE.md'), '# NOTICE\n');
+    await writeFile(
+      join(licensesDir, 'notices.json'),
+      JSON.stringify({
+        components: [{ name: 'pi', version: '0.84.1', license: 'MIT', paths: ['pi/LICENSE'] }],
+      }),
+    );
+    await writeFile(join(licensesDir, 'pi', 'LICENSE'), 'MIT License — pi\n');
+    await writeFile(join(bundleRoot, 'manifest.json'), '{}'); // 봉쇄 밖의 이웃 파일
+
+    const store = new SessionStore(await mkdtemp(join(tmpdir(), 'ch-srv-about-')));
+    const manager = new SessionManager({ store, adapters: [new FakeAdapter()] });
+    await manager.init();
+    const server = new DaemonServer({
+      manager,
+      token: TOKEN,
+      serverVersion: '0.1.0',
+      about: {
+        bundle: { root: bundleRoot, version: '0.1.0', os: 'darwin', arch: 'arm64' },
+        licensesDir,
+      },
+    });
+    const { port } = await server.start();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, [], {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    try {
+      await hello(ws);
+
+      ws.send(JSON.stringify({ type: 'system.about.request', requestId: 'a-1', params: {} }));
+      expect(await nextMessage(ws)).toMatchObject({
+        requestId: 'a-1',
+        ok: true,
+        result: {
+          version: '0.1.0',
+          protocolVersion: PROTOCOL_VERSION,
+          bundle: { root: bundleRoot, version: '0.1.0', os: 'darwin' },
+          licenses: {
+            available: true,
+            notice: '# NOTICE\n',
+            components: [{ name: 'pi', version: '0.84.1', paths: ['pi/LICENSE'] }],
+          },
+        },
+      });
+
+      ws.send(
+        JSON.stringify({
+          type: 'system.license.read.request',
+          requestId: 'a-2',
+          params: { path: 'pi/LICENSE' },
+        }),
+      );
+      expect(await nextMessage(ws)).toMatchObject({
+        requestId: 'a-2',
+        ok: true,
+        result: { text: 'MIT License — pi\n', eof: true },
+      });
+
+      // 봉쇄 — 번들 안이라도 licenses/ 밖은 이 창구로 읽히지 않는다
+      ws.send(
+        JSON.stringify({
+          type: 'system.license.read.request',
+          requestId: 'a-3',
+          params: { path: '../manifest.json' },
+        }),
+      );
+      expect(await nextMessage(ws)).toMatchObject({
+        requestId: 'a-3',
+        ok: false,
+        error: { code: 'bad_request' },
+      });
+    } finally {
+      ws.close();
+      await server.stop();
+    }
+  });
+
+  it('번들이 아닌 실행에서는 고지 없음으로 응답한다 — 화면이 깨지지 않는다', async () => {
+    const store = new SessionStore(await mkdtemp(join(tmpdir(), 'ch-srv-dev-')));
+    const manager = new SessionManager({ store, adapters: [new FakeAdapter()] });
+    await manager.init();
+    const server = new DaemonServer({ manager, token: TOKEN, serverVersion: '0.1.0' });
+    const { port } = await server.start();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, [], {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    try {
+      await hello(ws);
+      ws.send(JSON.stringify({ type: 'system.about.request', requestId: 'd-1', params: {} }));
+      expect(await nextMessage(ws)).toMatchObject({
+        requestId: 'd-1',
+        ok: true,
+        result: { licenses: { available: false, components: [], files: [] } },
+      });
+      ws.send(
+        JSON.stringify({
+          type: 'system.license.read.request',
+          requestId: 'd-2',
+          params: { path: 'pi/LICENSE' },
+        }),
+      );
+      expect(await nextMessage(ws)).toMatchObject({ requestId: 'd-2', ok: false });
     } finally {
       ws.close();
       await server.stop();

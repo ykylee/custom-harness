@@ -5,5 +5,5 @@
 - `lib/manifest.mjs`, `tools/` — manifest 생성·검증, 오프라인 프리셋 주입 (설치기가 호출)
 - `install.sh` / `install.ps1` — 설치기 (WBS 2.5.2, FR-4.3.1~3)
 - `uninstall.sh` / `uninstall.ps1` — 제거기 (WBS 3.5.2, FR-4.3.4): 기본은 프로그램만 제거·데이터 보존, `--purge` 로 확인 후 전체 삭제
-- `licenses-src/` — 하네스 라이선스 원문 반입본 + PROVENANCE (WBS 3.3.1, FR-4.5) — 번들 `licenses/` 로 동봉됨
+- `licenses-src/` — 하네스 라이선스 원문 반입본 + PROVENANCE (WBS 3.3.1, FR-4.5) — 번들 `licenses/` 로 동봉됨. 빌드가 `NOTICE.md` 와 앱 정보 화면용 기계 판독 색인 `notices.json` 을 같은 원천에서 함께 생성한다 (WBS 3.3.2)
 - `cache/` — 고정 해시 조달물 캐시 (오프라인 재조립용, git 미추적) / `out/` — 산출물 (아카이브 + .sha256)

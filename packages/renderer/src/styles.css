@@ -784,6 +784,7 @@ body {
 /* ── 폼 화면 (온보딩·세션 생성·설정) ────────────────────────────────────── */
 .session-create,
 .settings,
+.about,
 .onboarding {
   max-width: 520px;
   margin: 56px auto;
@@ -1082,4 +1083,118 @@ button.settings-link:hover {
   to {
     background: transparent;
   }
+}
+
+/* ── 앱 정보 · 오픈소스 고지 (WBS 3.3.2, FR-4.5) ────────────────────────── */
+.about {
+  max-width: 720px;
+}
+.about-loading,
+.about-error {
+  padding: 20px;
+  color: var(--text-2);
+}
+.about-error {
+  color: var(--err);
+}
+.about-note {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.about-versions {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12.5px;
+}
+.about-versions dt {
+  color: var(--text-2);
+}
+.about-versions dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.about-components {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  width: 100%;
+}
+.about-components th,
+.about-components td {
+  border: 1px solid var(--border-subtle);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.about-components th {
+  background: var(--bg-panel);
+  color: var(--text-2);
+  font-weight: 600;
+}
+.about-details {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+}
+.about-details summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.about-file-list {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.about-size {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+button.link {
+  background: none;
+  border: none;
+  padding: 0 6px 0 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+button.link:hover {
+  text-decoration: underline;
+}
+.license-viewer {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.license-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.license-viewer-head strong {
+  font-size: 12.5px;
+}
+.license-viewer-head button {
+  margin-left: auto;
+}
+.license-text {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
 }

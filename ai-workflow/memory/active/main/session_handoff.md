@@ -6,10 +6,12 @@
 - Scope: current focus, task status, key changes, next actions, risks
 - Audience: AI agents, maintainers
 - Status: draft
-- Updated: 2026-09-01
+- Updated: 2026-09-02
 - Related docs: [Project Profile](../../docs/PROJECT_PROFILE.md), [Work Backlog](./work_backlog.md)
 
 ## Current Focus
+
+- (2026-09-02 28차 갱신) **M3 3.3.2 고지 열람·clean-room 검수 + 3.6.1 사용자 가이드 완료.** 결정 넷. ① **고지의 SSOT 는 번들 자신이다** — 앱이 동봉물 목록을 들고 있으면 번들과 어긋난 고지를 띄우는 날이 온다. 빌드가 `NOTICE.md` 와 **같은 `noticeRows` 에서** `licenses/notices.json`(기계 판독)을 함께 만들고 앱은 그것을 그대로 그린다. 검수 스크립트도 목록을 갖지 않고 **번들에서 역산**한다(manifest 하네스 + Electron + `app/node_modules`) — 손 목록은 두 번째 SSOT 가 되고, 빠진 항목은 목록에도 없어 영영 안 잡힌다. ② **원문은 조각 단위로 넘긴다.** Chromium 고지가 20MB 다. 상한을 두고 자르면 그 원문은 앱에서 *열람 불가* 가 되어 FR-4.5 요건 자체를 못 지킨다 → `nextOffset` 이어 읽기, 조각 경계의 불완전 UTF-8 은 다음 조각으로 미룸. 실물 번들 종단 확인 19.2MB·77조각·263ms·**원문 완전 복원**. (이때 e2e 가 한 번 FAIL 했는데 원인은 코드가 아니라 **그 파일이 원본에 U+FFFD 를 97개 품고 있어서**였다 — "깨진 문자 없음"이 잘못된 판정 기준이었고 올바른 불변식은 "원문 복원"이다.) 읽기는 `licenses/` 안으로 봉쇄하되 워크스페이스 뷰어와 **같은 가드**로 통합했다(`safe-path.ts`) — 가드가 두 벌이면 한쪽만 고쳐진다. ③ **검수를 산문이 아니라 명령으로.** NFR-4 의 두 갈래(clean-room·고지 의무)는 모두 조용히 깨진다 — 의존성 한 줄이면 고지가 빠지고, 파일 하나 옮겨 붙이면 clean-room 이 깨진다. 릴리스 직전 육안으로는 못 막는다 → `npm run audit:cleanroom` 4종, 번들 3종 전부 PASS. **한계를 스크립트 출력과 기록 양쪽에 명시**했다: ④ 는 manifest↔고지 대조라 실물 드리프트(grok 1.0.5 vs 1.0.13)를 못 잡는다 — PASS 를 "고지가 실물과 같다"로 읽으면 안 된다. ④ **가이드는 번들 안에 있어야 가이드다** — 폐쇄망 사용자는 저장소에 닿지 못하므로 저장소 링크 없는 자족 문서로 쓰고 번들 루트에 동봉했다. 격리 루트 실설치로 레이아웃·`doctor` 9행·`rollback --list`·CLI 를 대조해 문구를 교정(설정 위치를 "사이드바 하단"이라 썼는데 실제는 위쪽 버튼 줄). 그 과정에서 **doctor 는 grok 드리프트를 실행해서 잡는다**는 것을 확인 — audit ④ 가 못 보는 지점을 doctor 가 본다(역할 분담이 의도대로). 테스트 704건·게이트 4종·audit 그린, 번들 3종 재조립·검증 통과. → 다음은 **3.5.1 NFR 자동화 게이트 정리**(smoke 4종 + audit:cleanroom 을 CI 필수로) 또는 **3.6.2 운영 문서**.
 
 - (2026-09-01 27차 갱신) **M3 WP 3.1 완결** (3.1.1 업데이트 · 3.1.2 롤백 · 3.1.3 실패 주입). 3.1.3 은 NFR-8 이 검증 방법까지 못박은 항목이라("단계별 중단 주입, 디스크 부족·권한 오류 모사") 그대로 돌렸다. 결정 셋. ① **실패는 바깥에서 주입한다** — 설치기에 검증용 훅을 넣으면 그 분기 자체가 검증되지 않은 경로가 된다. 체크섬 훼손(번들 사본의 하네스 파일)·권한 오류(`versions/` 0555)·디스크 부족(**20MB 램디스크**, `hdiutil`+`diskutil` 로 권한 없이 생성 — 진짜 ENOSPC)·SIGKILL·재시도 5종. ② **중단은 시간이 아니라 단계로 죽인다.** 처음엔 300/1500/3000ms 로 죽였는데 셋 다 복사 단계에 떨어져 "단계별"이 아니었다 — 설치기가 찍는 `[install] N/7` 표시를 보고 그 단계에서 죽이면 결정적이고 3~7단계를 실제로 덮는다. ③ **원자성 경계를 `current` 전환으로 명시**했다: 전환 전(1~5)에서 죽으면 이전 상태 불변(current·이전 버전·`data/`·미완성 노출 없음), 전환 시점 이후(6~7)면 이미 새 상태로 완결된 것이므로 **가리키는 것이 완전한가**와 이전 버전 보존을 본다. NFR-8 의 "심링크 전환 전까지 기존 상태 불변"이 그 뜻이다. **결함 1건을 잡았다**: `cp -R src dst` 는 dst 가 이미 있으면 그 **안으로** 복사한다. 중단이 남긴 `versions/<name>.partial` 을 지우지 않고 재시도하면 "중단 시점의 불완전한 트리 + 전체 복사본 중첩"이 되는데, **최상위 `manifest.json` 은 남아 있어 정상처럼 보인 채** `current` 가 그것을 가리킨다 — 잘린 바이너리를 품은 설치본이 활성이 될 수 있었다. 체크섬 검증이 *설치 대상*이 아니라 *번들 원본*을 보기 때문에 그쪽으로도 안 잡힌다. → 복사 전 `rm -rf "$TARGET.partial"`(ps1 도 동일). **실패 주입이 잡아야 할 것은 실패 자체가 아니라 실패 뒤의 상태**라는 걸 보여 준 사례다. 검증 `npm run smoke:nfr8` 41건 + `smoke:update` 39건 PASS, 테스트 684건·게이트 4종 그린, 번들 재조립 통과. → 다음은 **3.3.2 고지 열람·clean-room 검수**(S) 또는 **3.6.1 사용자 가이드**.
 
@@ -55,9 +57,11 @@
 ## Work Status
 
 - 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정, **업데이트·롤백 경로와 junction 전환 추가**), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
-- M3 잔여(사외 가능분) — 3.3.2 앱 정보 화면 고지 열람·clean-room 검수, 3.6.1 사용자 가이드, 3.5.1 NFR 자동화 게이트 정리(smoke:nfr1·nfr8·update·m7 이 이미 명령으로 존재), 3.6.2 운영 문서: planned
+- M3 잔여(사외 가능분) — 3.5.1 NFR 자동화 게이트 정리(smoke:nfr1·nfr8·update·m7 + audit:cleanroom 이 이미 명령으로 존재), 3.6.2 운영 문서: planned
 - M3 조건부·사내 의존 — 3.2 저장소 연동(M0 0.5.2 결과 대기), 3.4 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
 - TASK-2026-08-31-main-002 번들 grok darwin 버전 세트 불변성 결함(manifest 1.0.5 vs 실물 1.0.13): planned
+- TASK-2026-09-02-main-001 M3 3.6.1 사용자 가이드(설치·온보딩·기본 사용·FAQ, 번들 동봉): done
+- TASK-2026-09-01-main-016 M3 3.3.2 앱 정보 화면 고지 열람 + clean-room 최종 검수: done
 - TASK-2026-09-01-main-015 M3 3.1.3 설치·업데이트 실패 주입 테스트(NFR-8 원자성): done
 - TASK-2026-09-01-main-014 M3 3.1.2 롤백(current 전환 단일 조작 + 세션 데이터 무영향): done
 - TASK-2026-09-01-main-013 M3 3.1.1 업데이트 흐름(실행 중 안내·동의 + 버전 보존 정책): done
@@ -66,10 +70,12 @@
 - TASK-2026-09-01-main-010 M7 7.5.3 CLI 기계 판독 출력(JSON) 일관화: done
 - TASK-2026-09-01-main-009 M7 7.5.2 CLI 워크스페이스 명령(목록·생성·아카이브): done
 - TASK-2026-09-01-main-008 M7 7.5.1 CLI 세션 명령(생성·목록·프롬프트·스트리밍·중단·승인): done
-- TASK-2026-09-01-main-007 M7 7.4.2 커맨드 팔레트(세션·워크스페이스·파일·명령): done
-- TASK-2026-09-01-main-006 M7 7.4.1 타임라인 전문 검색(인덱스 전략 + session.search): done
 
 ## Key Changes
+
+- (2026-09-02) **M3 3.6.1 사용자 가이드**: `docs/USER_GUIDE.md` + **번들 루트 동봉**(build-bundle 이 복사, INSTALL.md 상호 참조). 저장소 링크 없는 자족 문서 — 폐쇄망 사용자는 저장소에 닿지 못한다. 격리 루트 실설치 대조로 작성(레이아웃·doctor·rollback·workspace new·session list --json·logs). 설정 키 표·CLI 전 명령·FAQ 10문 포함.
+
+- (2026-09-02) **M3 3.3.2 고지 열람 + clean-room 검수**: `system.about`·`system.license.read`(조각 단위) + 렌더러 `views/About.tsx`(설정·팔레트 진입). 빌드가 `licenses/notices.json` 을 NOTICE.md 와 같은 원천에서 생성. 경로 가드를 `daemon/src/safe-path.ts` 로 통합(워크스페이스 뷰어와 공용). 검수 `scripts/cleanroom-audit.mjs` + `npm run audit:cleanroom` 4종. 기록: `docs/reference/clean-room-audit.md`, 설계: packaging §5.
 
 - (2026-09-01) **M3 3.1.3 실패 주입**: `scripts/nfr8-smoke.mjs` + `npm run smoke:nfr8` — 주입 5종(체크섬·권한·디스크 부족·단계별 중단·중단 후 재시도), 불변식 4개를 매번 확인(current·이전 버전·`data/`·미완성 노출). 중단은 `[install] N/7` 표시 기반(시간 기반은 전부 복사 단계에 떨어진다). **`install.sh`/`install.ps1` 이 복사 전 `.partial` 잔여물을 지운다** — 중단 후 재시도가 정상처럼 보이는 깨진 설치본을 만들던 결함. 문서: packaging.md §4.3(주입 표·원자성 경계·`cp -R` 실측).
 
@@ -123,9 +129,9 @@
 ## Next Actions
 
 > 완료 항목은 여기 쌓지 않는다 — 이력의 SSOT 는 `backlog/tasks/` 와 `docs/roadmap/PROGRESS.md` 다.
-> (2026-09-01 세션에서 M7 WBS 전 항목 + M7 완료 선언 + M3 WP 3.1 전 항목 done)
+> (2026-09-02 세션에서 M3 3.3.2 · 3.6.1 done. 직전 세션: M7 WBS 전 항목 + M7 완료 선언 + M3 WP 3.1 전 항목)
 
-- [ ] **M3 다음(사외 가능)**: **3.3.2 고지 열람 + clean-room 검수**(S — paseo 유래 코드 부재 확인까지 범위 확장) → 3.6.1 사용자 가이드 → 3.5.1 NFR 자동화 게이트 정리(`smoke:nfr1`·`nfr8`·`update`·`m7` 이 이미 명령으로 존재) → 3.6.2 운영 문서
+- [ ] **M3 다음(사외 가능)**: **3.5.1 NFR 자동화 게이트 정리**(M — `smoke:nfr1`·`nfr8`·`update`·`m7`·`audit:cleanroom` 5종이 이미 명령으로 존재하니 CI 필수 게이트로 묶고 NFR-5 COMPAT 스캔을 정기화하는 일) → **3.6.2 운영 문서**(사외 빌드→반입→배포 절차, 번들 갱신 주기, 롤백 대응)
 - [ ] 7.1 잔여(작음): 트레이 배지·자동 승인이 주의 상태를 **직접** 소비하도록 셸 트랙 배선, `attentionTimestamp` 기반 "오래 기다린 순" 정렬 UI
 - [ ] TASK-2026-08-31-main-002 번들 grok 버전 대조 경고 추가 (FR-4.7 회복)
 - [ ] M7 이월 5건 — 토큰 예산 상한·`autoApprove` 와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리. 상세는 [m7-orchestration.md §완료 선언 §잔여](../../../docs/roadmap/m7-orchestration.md)

@@ -10,6 +10,7 @@ export interface SettingsActions {
   setDefaultModel(modelId: string): Promise<void>;
   probeHarness(harness: HarnessId): Promise<void>;
   setNotificationsEnabled(enabled: boolean): void;
+  openAbout(): void;
   back(): void;
 }
 
@@ -179,6 +180,14 @@ export function Settings({
           자동 승인: {autoApproveCount > 0 ? `⚠ ${autoApproveCount}개 세션에서 활성` : '비활성'} —
           세션 한정 opt-in 이며 앱 재시작 시 해제됩니다.
         </p>
+      </section>
+
+      <section>
+        <h3>앱 정보</h3>
+        <p>버전·동봉 오픈소스 고지(FR-4.5)를 여기서 확인합니다.</p>
+        <button data-testid="open-about" onClick={() => actions.openAbout()}>
+          앱 정보 · 오픈소스 고지
+        </button>
       </section>
 
       <button className="back" onClick={() => actions.back()}>

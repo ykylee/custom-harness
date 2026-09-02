@@ -507,6 +507,28 @@ ${
 `,
 );
 
+// 기계 판독 색인 (WBS 3.3.2, FR-4.5) — 앱 정보 화면의 고지 표가 이걸 읽는다.
+// NOTICE.md 와 **같은 noticeRows 에서** 생성해 둘이 어긋날 수 없게 한다. 경로는
+// licenses/ 기준 상대(앱의 열람 봉쇄 루트와 같은 기준)로 낮춘다.
+await writeFile(
+  join(licensesDir, 'notices.json'),
+  `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      bundleVersion,
+      target: `${targetInfo.os}-${targetInfo.arch}`,
+      components: noticeRows.map(([name, version, license, paths]) => ({
+        name,
+        version,
+        license,
+        paths: paths.split(' · ').map((p) => p.replace(/^licenses\//, '')),
+      })),
+    },
+    null,
+    2,
+  )}\n`,
+);
+
 // ── manifest.json (FR-4.2 — lib/manifest.mjs 스키마) ──────────────────────
 console.log('[bundle] 체크섬 계산 중…');
 const manifest = await buildManifest(staging, {
@@ -519,6 +541,11 @@ const manifest = await buildManifest(staging, {
   verifiedAt: new Date().toISOString().slice(0, 10),
 });
 await writeFile(join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+// ── USER_GUIDE.md — 사용자 가이드 (WBS 3.6.1) ─────────────────────────────
+// 저장소 원본을 그대로 동봉한다. 폐쇄망 사용자는 저장소에 닿지 못하므로 번들 안에 없으면
+// 가이드가 없는 것과 같다. INSTALL.md 와 달리 타깃별로 달라질 내용이 없어 생성이 아니라 복사다.
+await cp(join(repoRoot, 'docs', 'USER_GUIDE.md'), join(staging, 'USER_GUIDE.md'));
 
 // ── INSTALL.md — 스크립트 안내 (수동 절차는 폴백) ─────────────────────────
 await writeFile(
@@ -535,6 +562,8 @@ await writeFile(
    실행 진입점 생성을 수행한다. 실패 시 기존 설치는 변경되지 않는다.
 3. 실행: \`~/.custom-harness/bin/custom-harness\` (GUI) / \`… daemon status\` (CLI)
 4. 최초 실행(zero-config): 앱 온보딩에서 게이트웨이 주소·API 키 입력 → 연결 확인 → 완료.
+
+일상 사용(온보딩·워크스페이스·세션·CLI·FAQ)은 같은 디렉토리의 \`USER_GUIDE.md\` 참조.
 
 수동 설치(폴백): 해제본을 \`~/.custom-harness/versions/${bundleName}\` 로 옮기고
 \`ln -sfn\` (Windows: junction) 으로 \`current\` 전환 후 \`bin/custom-harness\` 실행.

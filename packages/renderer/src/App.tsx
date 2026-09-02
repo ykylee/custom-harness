@@ -21,6 +21,7 @@ import { FilesView, FileViewer } from './views/FilesView.js';
 import { DiffView } from './views/DiffView.js';
 import { WorkspaceCreate } from './views/WorkspaceCreate.js';
 import { Settings } from './views/Settings.js';
+import { About } from './views/About.js';
 
 const CONNECTION_LABEL: Record<string, string> = {
   connecting: '데몬 연결 중…',
@@ -217,6 +218,14 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
               cancel: () => controller.navigate('main'),
             }}
           />
+        ) : state.route === 'about' ? (
+          <About
+            actions={{
+              load: () => controller.about(),
+              readLicense: (path, offset) => controller.readLicense(path, offset),
+              back: () => controller.navigate('settings'),
+            }}
+          />
         ) : state.route === 'settings' ? (
           <Settings
             gateway={state.gateway}
@@ -231,6 +240,7 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
               setDefaultModel: (modelId) => controller.setDefaultModel(modelId),
               probeHarness: (harness) => controller.probeHarness(harness),
               setNotificationsEnabled: (enabled) => controller.setNotificationsEnabled(enabled),
+              openAbout: () => controller.navigate('about'),
               back: () => controller.navigate('main'),
             }}
           />

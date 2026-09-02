@@ -3,11 +3,13 @@
 // M2 2.4: 탭·분할 레이아웃(FR-3.3.2/3, localStorage 복원), 자동 승인 opt-in(FR-3.4.3),
 // 네이티브 알림(FR-3.5.2 — Electron 렌더러의 Notification API), 하네스 상태 패널 데이터.
 import type {
+  BundleInfo,
   HarnessId,
   HarnessInfo,
   PermissionOutcome,
   ProbeResult,
   Project,
+  LicenseIndex,
   SearchHit,
   SessionSummary,
   SessionUsageTree,
@@ -36,7 +38,25 @@ import {
 import { applyEvent, applyEvents, emptySessionView, type SessionView } from '../timeline.js';
 import { Store } from './store.js';
 
-export type Route = 'onboarding' | 'main' | 'settings' | 'workspace-create';
+export type Route = 'onboarding' | 'main' | 'settings' | 'workspace-create' | 'about';
+
+/** 앱 정보 화면의 데이터 (WBS 3.3.2, FR-4.5) — 전부 데몬이 번들에서 읽어 온 것이다 */
+export interface AboutInfo {
+  version: string;
+  protocolVersion: number;
+  bundle?: BundleInfo;
+  licenses: LicenseIndex;
+}
+
+/** 라이선스 원문 한 조각 — 20MB 고지를 이어 읽는다 */
+export interface LicenseChunk {
+  path: string;
+  size: number;
+  offset: number;
+  nextOffset: number;
+  text: string;
+  eof: boolean;
+}
 
 export interface GatewaySettings {
   baseUrl: string;
@@ -411,6 +431,16 @@ export class AppController {
       entries: FileEntry[];
       truncated: boolean;
     };
+  }
+
+  // ── 앱 정보·라이선스 고지 (WBS 3.3.2, FR-4.5) ─────────────────────────────
+
+  async about(): Promise<AboutInfo> {
+    return (await this.client.rpc('system.about', {})) as AboutInfo;
+  }
+
+  async readLicense(path: string, offset: number): Promise<LicenseChunk> {
+    return (await this.client.rpc('system.license.read', { path, offset })) as LicenseChunk;
   }
 
   async readFile(path: string): Promise<FileContent> {
@@ -852,6 +882,9 @@ export class AppController {
       case 'open-diff':
         this.openTarget({ kind: 'diff', scope: 'working' });
         void this.refreshDiff();
+        return;
+      case 'open-about':
+        this.navigate('about');
         return;
       case 'open-settings':
         this.navigate('settings');

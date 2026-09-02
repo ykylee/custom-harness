@@ -1,9 +1,10 @@
 // @custom-harness/daemon — 데몬 조립 진입점 (daemon-design, WBS 1.2)
 import { access, mkdir, rm, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { AgentAdapter } from './adapters/contract.js';
 import { KeyStore, type SecretCipher } from './gateway/key-store.js';
 import { GatewayService } from './gateway/service.js';
+import { resolveLicensesDir } from './licenses.js';
 import { loadBundleManifest } from './manifest.js';
 import { createAuditLogger } from './mcp/audit.js';
 import {
@@ -48,6 +49,7 @@ export * from './mcp/tools.js';
 export * from './mcp/registration.js';
 export * from './gateway/service.js';
 export * from './launcher.js';
+export * from './licenses.js';
 export * from './manifest.js';
 export * from './paths.js';
 export * from './processes.js';
@@ -322,10 +324,31 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
     );
   }
 
+  // 앱 정보 화면의 근거 (WBS 3.3.2, FR-4.5) — 번들 신원과 고지 경로는 manifest 에서만 온다.
+  // 번들이 아닌 실행(개발)에서는 undefined 이고, 그때 고지 화면은 "번들 아님"으로 나간다.
+  const licensesDir = resolveLicensesDir(options.manifestPath);
+  const bundleRoot = options.manifestPath !== undefined ? dirname(options.manifestPath) : undefined;
+
   const server = new DaemonServer({
     manager,
     token,
     serverVersion: options.version ?? '0.0.0',
+    about: {
+      ...(bundleRoot !== undefined
+        ? {
+            bundle: {
+              root: bundleRoot,
+              ...(manifest?.bundleVersion !== undefined ? { version: manifest.bundleVersion } : {}),
+              ...(manifest?.os !== undefined ? { os: manifest.os } : {}),
+              ...(manifest?.arch !== undefined ? { arch: manifest.arch } : {}),
+              ...(manifest?.electronVersion !== undefined
+                ? { electronVersion: manifest.electronVersion }
+                : {}),
+            },
+          }
+        : {}),
+      ...(licensesDir !== undefined ? { licensesDir } : {}),
+    },
     gateway,
     keyStore,
     provisioning,

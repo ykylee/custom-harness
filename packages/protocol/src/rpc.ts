@@ -58,6 +58,37 @@ function rpcPair<M extends string, P extends z.ZodType, R extends z.ZodType>(
 
 // ── 공용 데이터 형 ─────────────────────────────────────────────────────────
 
+/** 실행 중인 번들의 신원 (WBS 3.3.2) — manifest 를 읽지 못하면 통째로 생략된다 */
+export const BundleInfoSchema = z.looseObject({
+  version: z.string().optional(),
+  os: z.string().optional(),
+  arch: z.string().optional(),
+  electronVersion: z.string().optional(),
+  /** 설치된 번들 루트 절대 경로 */
+  root: z.string(),
+});
+export type BundleInfo = z.infer<typeof BundleInfoSchema>;
+
+/** NOTICE 표 한 줄 — 빌드가 생성한 `licenses/notices.json` 을 그대로 옮긴 것 */
+export const NoticeComponentSchema = z.looseObject({
+  name: z.string(),
+  version: z.string().optional(),
+  license: z.string().optional(),
+  /** `licenses/` 기준 상대 경로 (원문이 둘 이상일 수 있다 — Electron) */
+  paths: z.array(z.string()),
+});
+export type NoticeComponent = z.infer<typeof NoticeComponentSchema>;
+
+export const LicenseIndexSchema = z.looseObject({
+  available: z.boolean(),
+  root: z.string().optional(),
+  notice: z.string().optional(),
+  provenance: z.string().optional(),
+  components: z.array(NoticeComponentSchema),
+  files: z.array(z.looseObject({ path: z.string(), size: z.number().int().nonnegative() })),
+});
+export type LicenseIndex = z.infer<typeof LicenseIndexSchema>;
+
 export const SessionSummarySchema = z.looseObject({
   sessionId: z.string(),
   harness: HarnessIdSchema,
@@ -674,6 +705,42 @@ export const rpc = {
       z.looseObject({}),
       z.looseObject({ version: z.string(), protocolVersion: z.literal(PROTOCOL_VERSION) }),
     ),
+    /**
+     * 앱 정보 + 동봉 라이선스 고지 색인 (WBS 3.3.2, FR-4.5).
+     *
+     * 고지는 번들 `licenses/` 가 SSOT 다 — 여기서 목록을 만들어 내지 않고 그 산출물을
+     * 읽어 전달한다. 개발 실행처럼 번들이 아니면 `licenses.available=false` 로 온다.
+     */
+    about: rpcPair(
+      'system.about',
+      z.looseObject({}),
+      z.looseObject({
+        version: z.string(),
+        protocolVersion: z.literal(PROTOCOL_VERSION),
+        bundle: BundleInfoSchema.optional(),
+        licenses: LicenseIndexSchema,
+      }),
+    ),
+    /**
+     * 라이선스 원문 한 조각 (WBS 3.3.2). 통째로 주지 않는 이유는 Chromium 고지가 20MB 라서다 —
+     * `nextOffset` 으로 이어 읽는다. 경로는 `licenses/` 상대이며 그 밖은 거절한다.
+     */
+    licenseRead: rpcPair(
+      'system.license.read',
+      z.looseObject({
+        path: z.string(),
+        offset: z.number().int().nonnegative().optional(),
+        limit: z.number().int().positive().optional(),
+      }),
+      z.looseObject({
+        path: z.string(),
+        size: z.number().int().nonnegative(),
+        offset: z.number().int().nonnegative(),
+        nextOffset: z.number().int().nonnegative(),
+        text: z.string(),
+        eof: z.boolean(),
+      }),
+    ),
     shutdown: rpcPair('system.shutdown', z.looseObject({}), z.looseObject({})),
   },
 } as const;
@@ -729,6 +796,8 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.workspace.setupRun.request,
   rpc.tool.invoke.request,
   rpc.system.version.request,
+  rpc.system.about.request,
+  rpc.system.licenseRead.request,
   rpc.system.shutdown.request,
 ]);
 export type RpcRequest = z.infer<typeof RpcRequestSchema>;
@@ -783,6 +852,8 @@ export const RpcResponseSchema = z.union([
   rpc.workspace.setupRun.response,
   rpc.tool.invoke.response,
   rpc.system.version.response,
+  rpc.system.about.response,
+  rpc.system.licenseRead.response,
   rpc.system.shutdown.response,
 ]);
 export type RpcResponse = z.infer<typeof RpcResponseSchema>;

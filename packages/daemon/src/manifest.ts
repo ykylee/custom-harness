@@ -10,6 +10,10 @@ import type { ProbeResult } from '@custom-harness/protocol';
 
 export interface BundleManifest {
   bundleVersion?: string;
+  /** 앱 정보 화면이 보여 주는 번들 신원 (WBS 3.3.2) */
+  os?: string;
+  arch?: string;
+  electronVersion?: string;
   /** harness name → 검증(동봉) 버전 */
   harnessVersions: Map<string, string>;
 }
@@ -105,7 +109,13 @@ export async function loadBundleManifest(path: string): Promise<BundleManifest |
     return undefined;
   }
   if (typeof parsed !== 'object' || parsed === null) return undefined;
-  const raw = parsed as { bundleVersion?: unknown; harnesses?: unknown };
+  const raw = parsed as {
+    bundleVersion?: unknown;
+    os?: unknown;
+    arch?: unknown;
+    electronVersion?: unknown;
+    harnesses?: unknown;
+  };
   const harnessVersions = new Map<string, string>();
   if (Array.isArray(raw.harnesses)) {
     for (const h of raw.harnesses) {
@@ -117,6 +127,9 @@ export async function loadBundleManifest(path: string): Promise<BundleManifest |
   }
   return {
     ...(typeof raw.bundleVersion === 'string' ? { bundleVersion: raw.bundleVersion } : {}),
+    ...(typeof raw.os === 'string' ? { os: raw.os } : {}),
+    ...(typeof raw.arch === 'string' ? { arch: raw.arch } : {}),
+    ...(typeof raw.electronVersion === 'string' ? { electronVersion: raw.electronVersion } : {}),
     harnessVersions,
   };
 }

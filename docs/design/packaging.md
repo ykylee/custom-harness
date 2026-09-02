@@ -22,7 +22,7 @@
 | ~~Node 런타임~~ | **동봉 안 함 (확정)** | Electron 채택 확정([tech-stack](./tech-stack.md) §6)으로 `ELECTRON_RUN_AS_NODE` 가 데몬·pi/omp 런타임을 겸용 — 별도 Node 동봉 불필요 |
 | 게이트웨이 연결 설정 | 하네스별 설정 템플릿 | `~/.pi/agent/models.json`, `~/.omp/agent/models.yml`, `~/.grok/config.toml` 주입용 — zero-config(§6-3)의 실체 |
 | 오프라인/차단 설정 | 하네스별 스위치 프리셋 | `PI_OFFLINE=1`, omp `startup.checkUpdate false`·`marketplace.autoUpdate off`, grok `auto_update/telemetry/remote_fetch = false` |
-| 라이선스 고지 | NOTICE + 각 라이선스 원문 | MIT/Apache 2.0 고지 의무 이행 |
+| 라이선스 고지 | `licenses/` — NOTICE.md + 기계 판독 색인 `notices.json` + 각 라이선스 원문 + PROVENANCE.md | MIT/Apache 2.0 고지 의무 이행. 앱 정보 화면 열람은 §5 (WBS 3.3.2) |
 | (후순위) 공용 스킬/MCP 세트 | SKILL.md 디렉토리 | 차별점 §6-4 |
 
 ## 2. 번들 포맷 옵션 비교
@@ -157,6 +157,42 @@ NFR-8 은 "**어느 단계에서 실패해도** 기존 설치본과 사용자 �
 ## 5. 권장안 (확정)
 
 **OS/아키텍처별 단일 오프라인 아카이브(A) + manifest 기반 불변 버전 세트 + 전체 번들 교체 업데이트.** 사용자 홈 설치(관리자 권한 불요), 설치 시 게이트웨이 설정 템플릿과 오프라인 스위치 프리셋까지 주입해 zero-config 를 완성한다.
+
+## 5. 라이선스 고지 (WBS 3.3.1·3.3.2, FR-4.5·NFR-4)
+
+### 5.1 산출물
+
+빌드가 `licenses/` 를 만든다 — **동봉물의 SSOT 는 번들 자신**이고, 앱도 검수 스크립트도 그것을 읽는다.
+
+| 파일 | 용도 |
+|---|---|
+| `NOTICE.md` | 사람이 읽는 고지 — 동봉물·버전·라이선스·원문 경로 표 |
+| `notices.json` | 같은 표의 기계 판독본 (`{name, version, license, paths[]}`) — 앱 정보 화면이 그린다 |
+| `<동봉물>/LICENSE` | 원문 전체. Electron 은 Chromium/Node 서드파티 고지(`LICENSES.chromium.html`, 약 20MB) 포함 |
+| `PROVENANCE.md` | 원문의 반입 출처·해시 |
+
+`NOTICE.md` 와 `notices.json` 은 빌드의 **같은 `noticeRows` 에서** 생성한다. 둘을 따로 만들면
+어긋나는 날이 오고, 어긋난 쪽이 어느 쪽인지 알 수 없게 된다.
+
+### 5.2 앱에서의 열람
+
+FR-4.5 는 동봉만이 아니라 **앱 정보 화면에서 열람 가능**할 것을 요구한다. 설정 → *앱 정보 ·
+오픈소스 고지*(커맨드 팔레트에서도 진입)에서 버전·번들 신원·동봉물 표·원문을 본다.
+
+- 데몬이 `system.about` 으로 색인을, `system.license.read` 로 원문을 준다. 번들 위치는
+  `CUSTOM_HARNESS_MANIFEST` 에서 유도한다(`<번들>/licenses/`) — 개발 실행에서는 고지가 없고
+  화면은 그 사실을 표시한다.
+- 원문은 **조각 단위**로 넘긴다. 20MB Chromium 고지도 열람 대상이므로 한 번에 싣지 않고
+  `nextOffset` 으로 이어 읽는다 — 상한을 두고 잘라 버리면 그 원문은 앱에서 열람 불가가 되어
+  요건을 못 지킨다. 조각 경계에서 다중바이트 문자가 잘리지 않도록 불완전한 UTF-8 시퀀스는
+  다음 조각으로 미룬다. (실측: 19.2MB · 77 조각 · 263ms · 원문 완전 복원)
+- 읽기 범위는 `licenses/` 안으로 봉쇄된다(`..`·절대경로·심링크 탈출 거절 — 워크스페이스 파일
+  뷰어와 같은 가드). 고지 열람 창구가 번들 임의 파일 읽기로 번지지 않게 하기 위함이다.
+
+### 5.3 검수
+
+`npm run audit:cleanroom` 이 clean-room(NFR-4 ①)과 고지 완전성·정합성(FR-4.5)을 함께 본다.
+검사 항목·한계·수행 기록은 [clean-room 검수 기록](../reference/clean-room-audit.md).
 
 ## 6. 환경 사실 확정 (2026-08-24 사용자 확인)
 
