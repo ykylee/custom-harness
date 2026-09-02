@@ -13,9 +13,9 @@ import { ChildTrack } from './components/ChildTrack.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Tabs } from './components/Tabs.js';
+import { WorkQueue } from './components/WorkQueue.js';
 import { Conversation } from './views/Conversation.js';
 import { Onboarding } from './views/Onboarding.js';
-import { SessionCreate } from './views/SessionCreate.js';
 import { TerminalView } from './views/TerminalView.js';
 import { FilesView, FileViewer } from './views/FilesView.js';
 import { DiffView } from './views/DiffView.js';
@@ -259,15 +259,12 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
               />
             )}
             {activeTarget === undefined ? (
-              <SessionCreate
-                harnesses={state.harnesses}
-                gateway={state.gateway}
-                workspace={
-                  state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ??
-                  null
-                }
-                onCreate={(params) => controller.createSession(params)}
-                onNewWorkspace={() => controller.navigate('workspace-create')}
+              <WorkQueue
+                workspaces={state.workspaces}
+                sessions={state.sessions}
+                activeWorkspaceId={state.activeWorkspaceId}
+                onOpenSession={(sessionId) => void controller.openSession(sessionId)}
+                onCreateSession={() => controller.showNewSessionView()}
               />
             ) : (
               <div

@@ -1,0 +1,62 @@
+name: Verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run audit:compat
+
+  release-nfr:
+    name: release-nfr
+    # 사내 self-hosted macOS arm64 러너: 번들 조달 캐시와 3개 실물 하네스가 필요하다.
+    # 이 check를 branch protection의 required status check로 지정한다.
+    runs-on: [self-hosted, macos, arm64, custom-harness-nfr]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: node bundle/build-bundle.mjs --target darwin-arm64 --skip-archive
+      - name: NFR-1·2 네트워크·게이트웨이 경유
+        run: >-
+          npm run smoke:nfr1 --
+          --pi-entry "$GITHUB_WORKSPACE/bundle/out/custom-harness-0.1.0-darwin-arm64/harnesses/pi/dist/cli.js"
+          --omp "$GITHUB_WORKSPACE/bundle/out/custom-harness-0.1.0-darwin-arm64/harnesses/omp/omp"
+          --grok "$GITHUB_WORKSPACE/bundle/out/custom-harness-0.1.0-darwin-arm64/harnesses/grok/grok"
+      - name: NFR-3 번들 로컬 노출
+        run: npm run smoke:terminal -- "$GITHUB_WORKSPACE/bundle/out/custom-harness-0.1.0-darwin-arm64"
+      - name: 업데이트·롤백 회귀
+        run: npm run smoke:update
+      - name: NFR-8 설치 원자성
+        run: npm run smoke:nfr8
+      - name: NFR-4 clean-room·고지
+        run: npm run audit:cleanroom

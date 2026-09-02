@@ -80,6 +80,17 @@ async function fetchPinned(url, expectedSha256, cacheName) {
   return cached;
 }
 
+function verifyLocalGrokVersion(binary, expectedVersion) {
+  const output = execFileSync(binary, ['--version'], { encoding: 'utf8', timeout: 30_000 });
+  const actualVersion = output.match(/\bgrok\s+(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/i)?.[1];
+  if (actualVersion !== expectedVersion) {
+    throw new Error(
+      `grok 로컬 바이너리 버전 불일치: ${binary}\n  기대 ${expectedVersion}\n  실제 ${actualVersion ?? output.trim()}`,
+    );
+  }
+  console.log(`[bundle] grok 로컬 버전 확인: ${actualVersion}`);
+}
+
 /**
  * npm 레지스트리 tarball — integrity(sha512 base64)로 검증하고 `package/` 를 벗겨 배치한다.
  * 타깃별 prebuilt 를 호스트에서 조달해야 하므로(3 OS 를 한 머신에서 조립) npm 설치에 기대지 않는다.
@@ -270,6 +281,7 @@ const wrapperEnv = []; // [envName, 번들 상대 경로]
     const source = asset.localFile
       ? asset.localFile.replace(/^~/, homedir())
       : await fetchPinned(asset.url, asset.sha256, `grok-${sources.grok.version}-${target}`);
+    if (asset.localFile) verifyLocalGrokVersion(source, sources.grok.version);
     const grokDir = join(staging, 'harnesses', 'grok');
     await mkdir(grokDir, { recursive: true });
     const binaryPath = join(grokDir, asset.binaryName);
@@ -324,7 +336,7 @@ const templates = {
     '  autoqaConsent: denied',
     '',
   ].join('\n'),
-  // grok: env_key 참조 + 오프라인 3스위치 (1.0.5 실측 — grok-injection 과 동일)
+  // grok: env_key 참조 + 오프라인 3스위치 (1.0.13 재검증 — grok-injection 과 동일)
   'grok/config.toml.tmpl': [
     '[cli]',
     'auto_update = false',
@@ -542,10 +554,11 @@ const manifest = await buildManifest(staging, {
 });
 await writeFile(join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-// ── USER_GUIDE.md — 사용자 가이드 (WBS 3.6.1) ─────────────────────────────
+// ── 사용자·운영 가이드 (WBS 3.6.1·3.6.2) ─────────────────────────────────
 // 저장소 원본을 그대로 동봉한다. 폐쇄망 사용자는 저장소에 닿지 못하므로 번들 안에 없으면
 // 가이드가 없는 것과 같다. INSTALL.md 와 달리 타깃별로 달라질 내용이 없어 생성이 아니라 복사다.
 await cp(join(repoRoot, 'docs', 'USER_GUIDE.md'), join(staging, 'USER_GUIDE.md'));
+await cp(join(repoRoot, 'docs', 'OPERATIONS.md'), join(staging, 'OPERATIONS.md'));
 
 // ── INSTALL.md — 스크립트 안내 (수동 절차는 폴백) ─────────────────────────
 await writeFile(
@@ -564,6 +577,7 @@ await writeFile(
 4. 최초 실행(zero-config): 앱 온보딩에서 게이트웨이 주소·API 키 입력 → 연결 확인 → 완료.
 
 일상 사용(온보딩·워크스페이스·세션·CLI·FAQ)은 같은 디렉토리의 \`USER_GUIDE.md\` 참조.
+반입·배포·갱신·롤백 운영은 같은 디렉토리의 \`OPERATIONS.md\` 참조.
 
 수동 설치(폴백): 해제본을 \`~/.custom-harness/versions/${bundleName}\` 로 옮기고
 \`ln -sfn\` (Windows: junction) 으로 \`current\` 전환 후 \`bin/custom-harness\` 실행.

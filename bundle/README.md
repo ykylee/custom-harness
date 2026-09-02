@@ -1,6 +1,6 @@
 # bundle/ — 3 OS 오프라인 번들 파이프라인 (FR-4)
 
-- `build-bundle.mjs` — 번들 조립 (WBS 2.5.3·2.5.4): `node bundle/build-bundle.mjs [--target darwin-arm64|linux-x64|win32-x64] [--verify]`. 선행: `npm run typecheck` + renderer `npm run build`
+- `build-bundle.mjs` — 번들 조립 (WBS 2.5.3·2.5.4): `node bundle/build-bundle.mjs [--target darwin-arm64|linux-x64|win32-x64] [--verify]`. 선행: `npm run typecheck` + `npm run -w @custom-harness/renderer build`
 - `sources.json` — 조달 소스 + 고정 해시 (버전 세트 불변성). grok linux 는 x.ai CDN 미러 절차([packaging §6-1](../docs/design/packaging.md))로 자체 해시 고정
 - `lib/manifest.mjs`, `tools/` — manifest 생성·검증, 오프라인 프리셋 주입 (설치기가 호출)
 - `install.sh` / `install.ps1` — 설치기 (WBS 2.5.2, FR-4.3.1~3)

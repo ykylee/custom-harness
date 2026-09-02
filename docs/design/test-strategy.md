@@ -32,11 +32,12 @@
 |---|---|---|
 | typecheck + lint + protocol 순수성 | M1 1.1.1 | 필수 |
 | 계약 테스트 (mock) | M1 1.3.4 | 필수 |
-| NFR-1 스모크 (pi) | M1 1.7.2 | 필수 |
+| NFR-1/2 스모크 (3 하네스) | M2 2.7.1 | 필수 — 사내 self-hosted macOS arm64 러너의 `release-nfr` |
 | 어댑터 실통합 (3종) + NFR-1 확장 | M2 2.7.1 | 필수 |
-| NFR-3 바인드·토큰 검사 | M2 | 필수 |
+| NFR-3 바인드·토큰 검사 | M2 | 필수 — `release-nfr`의 번들 터미널 스모크 |
 | E2E (Electron) | M2 후반 | 경고 → M3 필수 |
-| COMPAT 만료 스캔 | M1 부터 | 경고 (만료분은 필수) |
-| 설치 원자성(중단 주입) | M3 3.1.3 | 필수 |
+| COMPAT 만료 스캔 | M1 부터 | 매주 + PR 필수 (`npm run audit:compat`) |
+| 설치 원자성(중단 주입) | M3 3.1.3 | 필수 — `release-nfr` |
+| clean-room·고지 검수 | M3 3.3.2 | 필수 — `release-nfr` (`npm run audit:cleanroom`) |
 
-- CI 환경: 사외 개발 환경 (폐쇄망 모사 = 목 게이트웨이 + 이그레스 차단). 실 게이트웨이 검증은 파일럿(M3)에서.
+- CI 환경: 일반 품질 게이트는 GitHub-hosted Linux, 실물 하네스·번들 NFR 게이트는 번들 조달 캐시를 가진 사내 self-hosted macOS arm64 러너(`custom-harness-nfr`)에서 실행한다. `release-nfr`은 branch protection의 required status check로 설정한다. 폐쇄망 모사는 목 게이트웨이 + 이그레스 차단이며, 실 게이트웨이 검증은 파일럿(M3)에서 한다.

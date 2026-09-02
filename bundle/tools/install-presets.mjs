@@ -25,16 +25,34 @@ async function writeIfAbsent(path, content) {
 await mkdir(join(dataDir, 'omp-home'), { recursive: true });
 await writeIfAbsent(
   join(dataDir, 'omp-home', 'config.yml'),
-  ['startup:', '  checkUpdate: false', 'marketplace:', '  autoUpdate: false', 'dev:', '  autoqa: false', '  autoqaConsent: denied', ''].join('\n'),
+  [
+    'startup:',
+    '  checkUpdate: false',
+    'marketplace:',
+    '  autoUpdate: false',
+    'dev:',
+    '  autoqa: false',
+    '  autoqaConsent: denied',
+    '',
+  ].join('\n'),
 );
 
-// grok — config.toml 오프라인 3스위치 (1.0.5 현행 구문, gateway/grok-injection 과 동일 키)
+// grok — config.toml 오프라인 3스위치 (1.0.13 재검증 구문, gateway/grok-injection 과 동일 키)
 // Windows 번들은 grok 제외 확정(2026-08-25, windows-support.md) — 격리 홈 프리셋도 만들지 않는다
 if (process.platform !== 'win32') {
   await mkdir(join(dataDir, 'grok-home'), { recursive: true });
   await writeIfAbsent(
     join(dataDir, 'grok-home', 'config.toml'),
-    ['[cli]', 'auto_update = false', '', '[features]', 'telemetry = false', 'remote_fetch = false', 'managed_config = false', ''].join('\n'),
+    [
+      '[cli]',
+      'auto_update = false',
+      '',
+      '[features]',
+      'telemetry = false',
+      'remote_fetch = false',
+      'managed_config = false',
+      '',
+    ].join('\n'),
   );
 }
 

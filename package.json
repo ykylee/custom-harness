@@ -21,7 +21,9 @@
     "smoke:m7": "node scripts/m7-acceptance.mjs",
     "smoke:update": "node scripts/update-smoke.mjs",
     "smoke:nfr8": "node scripts/nfr8-smoke.mjs",
-    "audit:cleanroom": "node scripts/cleanroom-audit.mjs"
+    "audit:cleanroom": "node scripts/cleanroom-audit.mjs",
+    "audit:compat": "node scripts/compat-audit.mjs",
+    "preview:network": "npm run -w @custom-harness/renderer build && node scripts/serve-web-preview.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

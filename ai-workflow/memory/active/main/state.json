@@ -27,37 +27,46 @@
     "runtime_checks": null
   },
   "session": {
-    "current_baseline": "(2026-09-02 28차 갱신) **M3 3.3.2 고지 열람·clean-room 검수 + 3.6.1 사용자 가이드 완료.** 결정 넷. ① **고지의 SSOT 는 번들 자신이다** — 앱이 동봉물 목록을 들고 있으면 번들과 어긋난 고지를 띄우는 날이 온다. 빌드가 `NOTICE.md` 와 **같은 `noticeRows` 에서** `licenses/notices.json`(기계 판독)을 함께 만들고 앱은 그것을 그대로 그린다. 검수 스크립트도 목록을 갖지 않고 **번들에서 역산**한다(manifest 하네스 + Electron + `app/node_modules`) — 손 목록은 두 번째 SSOT 가 되고, 빠진 항목은 목록에도 없어 영영 안 잡힌다. ② **원문은 조각 단위로 넘긴다.** Chromium 고지가 20MB 다. 상한을 두고 자르면 그 원문은 앱에서 *열람 불가* 가 되어 FR-4.5 요건 자체를 못 지킨다 → `nextOffset` 이어 읽기, 조각 경계의 불완전 UTF-8 은 다음 조각으로 미룸. 실물 번들 종단 확인 19.2MB·77조각·263ms·**원문 완전 복원**. (이때 e2e 가 한 번 FAIL 했는데 원인은 코드가 아니라 **그 파일이 원본에 U+FFFD 를 97개 품고 있어서**였다 — \"깨진 문자 없음\"이 잘못된 판정 기준이었고 올바른 불변식은 \"원문 복원\"이다.) 읽기는 `licenses/` 안으로 봉쇄하되 워크스페이스 뷰어와 **같은 가드**로 통합했다(`safe-path.ts`) — 가드가 두 벌이면 한쪽만 고쳐진다. ③ **검수를 산문이 아니라 명령으로.** NFR-4 의 두 갈래(clean-room·고지 의무)는 모두 조용히 깨진다 — 의존성 한 줄이면 고지가 빠지고, 파일 하나 옮겨 붙이면 clean-room 이 깨진다. 릴리스 직전 육안으로는 못 막는다 → `npm run audit:cleanroom` 4종, 번들 3종 전부 PASS. **한계를 스크립트 출력과 기록 양쪽에 명시**했다: ④ 는 manifest↔고지 대조라 실물 드리프트(grok 1.0.5 vs 1.0.13)를 못 잡는다 — PASS 를 \"고지가 실물과 같다\"로 읽으면 안 된다. ④ **가이드는 번들 안에 있어야 가이드다** — 폐쇄망 사용자는 저장소에 닿지 못하므로 저장소 링크 없는 자족 문서로 쓰고 번들 루트에 동봉했다. 격리 루트 실설치로 레이아웃·`doctor` 9행·`rollback --list`·CLI 를 대조해 문구를 교정(설정 위치를 \"사이드바 하단\"이라 썼는데 실제는 위쪽 버튼 줄). 그 과정에서 **doctor 는 grok 드리프트를 실행해서 잡는다**는 것을 확인 — audit ④ 가 못 보는 지점을 doctor 가 본다(역할 분담이 의도대로). 테스트 704건·게이트 4종·audit 그린, 번들 3종 재조립·검증 통과. → 다음은 **3.5.1 NFR 자동화 게이트 정리**(smoke 4종 + audit:cleanroom 을 CI 필수로) 또는 **3.6.2 운영 문서**.",
-    "current_axis": "(2026-09-02 28차 갱신) **M3 3.3.2 고지 열람·clean-room 검수 + 3.6.1 사용자 가이드 완료.** 결정 넷. ① **고지의 SSOT 는 번들 자신이다** — 앱이 동봉물 목록을 들고 있으면 번들과 어긋난 고지를 띄우는 날이 온다. 빌드가 `NOTICE.md` 와 **같은 `noticeRows` 에서** `licenses/notices.json`(기계 판독)을 함께 만들고 앱은 그것을 그대로 그린다. 검수 스크립트도 목록을 갖지 않고 **번들에서 역산**한다(manifest 하네스 + Electron + `app/node_modules`) — 손 목록은 두 번째 SSOT 가 되고, 빠진 항목은 목록에도 없어 영영 안 잡힌다. ② **원문은 조각 단위로 넘긴다.** Chromium 고지가 20MB 다. 상한을 두고 자르면 그 원문은 앱에서 *열람 불가* 가 되어 FR-4.5 요건 자체를 못 지킨다 → `nextOffset` 이어 읽기, 조각 경계의 불완전 UTF-8 은 다음 조각으로 미룸. 실물 번들 종단 확인 19.2MB·77조각·263ms·**원문 완전 복원**. (이때 e2e 가 한 번 FAIL 했는데 원인은 코드가 아니라 **그 파일이 원본에 U+FFFD 를 97개 품고 있어서**였다 — \"깨진 문자 없음\"이 잘못된 판정 기준이었고 올바른 불변식은 \"원문 복원\"이다.) 읽기는 `licenses/` 안으로 봉쇄하되 워크스페이스 뷰어와 **같은 가드**로 통합했다(`safe-path.ts`) — 가드가 두 벌이면 한쪽만 고쳐진다. ③ **검수를 산문이 아니라 명령으로.** NFR-4 의 두 갈래(clean-room·고지 의무)는 모두 조용히 깨진다 — 의존성 한 줄이면 고지가 빠지고, 파일 하나 옮겨 붙이면 clean-room 이 깨진다. 릴리스 직전 육안으로는 못 막는다 → `npm run audit:cleanroom` 4종, 번들 3종 전부 PASS. **한계를 스크립트 출력과 기록 양쪽에 명시**했다: ④ 는 manifest↔고지 대조라 실물 드리프트(grok 1.0.5 vs 1.0.13)를 못 잡는다 — PASS 를 \"고지가 실물과 같다\"로 읽으면 안 된다. ④ **가이드는 번들 안에 있어야 가이드다** — 폐쇄망 사용자는 저장소에 닿지 못하므로 저장소 링크 없는 자족 문서로 쓰고 번들 루트에 동봉했다. 격리 루트 실설치로 레이아웃·`doctor` 9행·`rollback --list`·CLI 를 대조해 문구를 교정(설정 위치를 \"사이드바 하단\"이라 썼는데 실제는 위쪽 버튼 줄). 그 과정에서 **doctor 는 grok 드리프트를 실행해서 잡는다**는 것을 확인 — audit ④ 가 못 보는 지점을 doctor 가 본다(역할 분담이 의도대로). 테스트 704건·게이트 4종·audit 그린, 번들 3종 재조립·검증 통과. → 다음은 **3.5.1 NFR 자동화 게이트 정리**(smoke 4종 + audit:cleanroom 을 CI 필수로) 또는 **3.6.2 운영 문서**.",
-    "current_focus": null,
-    "in_progress_items": [],
+    "current_baseline": "(2026-09-02 29차 갱신) **M3 shadcn 기반 UI 재설계가 진행 중이다.** 현재 앱 화면을 캡처해 세 방향을 검토한 뒤 운영 큐(cockpit) 방향을 선택했다. `tailwindcss`·shadcn 스타일 Button·Lucide 기반을 도입했고, 정적 웹 시안은 `?preview=work-queue`로 분리해 사내망(`192.168.0.101:5180`)·Tailscale(`100.119.181.116:5180`)에서 본다. 원격 노출은 Vite 개발 서버가 아니라 빌드 산출물만 제공하는 `npm run preview:network`이며, loopback·사설 LAN·Tailscale 대역만 허용한다. 첫 실제 전환으로 Electron 기본 화면은 `session.list`/`workspace.list` read-model을 소비하는 `WorkQueue`가 됐다 — `requiresAttention`/`attentionReason`을 재해석하지 않고 그대로 표시하고, 행 선택은 기존 대화 탭으로 연결한다. TDD RED(미구현 import 실패)→GREEN(2건)과 전체 테스트 **706 passed, 2 skipped**를 확인했다. 다음은 대화·승인·터미널 상세를 같은 visual system으로 옮기고, live 원격 조회는 별도 인증 경계가 확정되기 전까지 열지 않는 것이다.",
+    "current_axis": "(2026-09-02 29차 갱신) **M3 shadcn 기반 UI 재설계가 진행 중이다.** 현재 앱 화면을 캡처해 세 방향을 검토한 뒤 운영 큐(cockpit) 방향을 선택했다. `tailwindcss`·shadcn 스타일 Button·Lucide 기반을 도입했고, 정적 웹 시안은 `?preview=work-queue`로 분리해 사내망(`192.168.0.101:5180`)·Tailscale(`100.119.181.116:5180`)에서 본다. 원격 노출은 Vite 개발 서버가 아니라 빌드 산출물만 제공하는 `npm run preview:network`이며, loopback·사설 LAN·Tailscale 대역만 허용한다. 첫 실제 전환으로 Electron 기본 화면은 `session.list`/`workspace.list` read-model을 소비하는 `WorkQueue`가 됐다 — `requiresAttention`/`attentionReason`을 재해석하지 않고 그대로 표시하고, 행 선택은 기존 대화 탭으로 연결한다. TDD RED(미구현 import 실패)→GREEN(2건)과 전체 테스트 **706 passed, 2 skipped**를 확인했다. 다음은 대화·승인·터미널 상세를 같은 visual system으로 옮기고, live 원격 조회는 별도 인증 경계가 확정되기 전까지 열지 않는 것이다.",
+    "current_focus": "TASK-2026-09-02-main-007 M3 shadcn 기반 UI 재설계(WorkQueue 실제 read-model 전환 완료, 세션 상세 전환 계속)",
+    "in_progress_items": [
+      "TASK-2026-09-02-main-007 M3 shadcn 기반 UI 재설계(WorkQueue 실제 read-model 전환 완료, 세션 상세 전환 계속)"
+    ],
     "blocked_items": [],
     "planned_items": [
       "TASK-2026-08-31-main-002"
     ],
     "recent_done_items": [
+      "TASK-2026-09-02-main-006 — M3 shadcn/ui 도입 적합성 조사",
+      "TASK-2026-09-02-main-005 — M3 macOS 번들 현장 실행 확인",
+      "TASK-2026-09-02-main-004 — M3 FR-4.7 Grok Build 1.0.13 동기화",
+      "TASK-2026-09-02-main-003 — M3 3.6.2 운영 문서 — 빌드·반입·배포·갱신·롤백",
+      "TASK-2026-09-02-main-002 — M3 3.5.1 NFR 자동화 게이트 정리",
       "TASK-2026-09-02-main-001 — M3 3.6.1 사용자 가이드 — 설치·온보딩·기본 사용·FAQ",
       "TASK-2026-09-01-main-016 — M3 3.3.2 앱 정보 화면 고지 열람 + clean-room 최종 검수",
       "TASK-2026-09-01-main-015 — M3 3.1.3 설치·업데이트 실패 주입 테스트 (NFR-8 원자성)",
       "TASK-2026-09-01-main-014 — M3 3.1.2 롤백 — current 전환 단일 조작 + 세션 데이터 무영향",
-      "TASK-2026-09-01-main-013 — M3 3.1.1 업데이트 흐름 — 실행 중 안내·동의 + 버전 보존 정책",
-      "TASK-2026-09-01-main-012 — M7 완료 선언 — 수용 검증 + 결함 2건 수정",
-      "TASK-2026-09-01-main-011 — M7 7.6.1 세션 제목 자동 생성 — 비 LLM 기본, LLM opt-in",
-      "TASK-2026-09-01-main-010 — M7 7.5.3 CLI 기계 판독 출력(JSON) 일관화",
-      "TASK-2026-09-01-main-009 — M7 7.5.2 CLI 워크스페이스 명령 — 목록·생성·아카이브",
-      "TASK-2026-09-01-main-008 — M7 7.5.1 CLI 세션 명령 — 생성·목록·프롬프트·스트리밍·중단·승인"
+      "TASK-2026-09-01-main-013 — M3 3.1.1 업데이트 흐름 — 실행 중 안내·동의 + 버전 보존 정책"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-02.md",
-    "task_count": 2,
-    "in_progress_items": [],
+    "task_count": 8,
+    "in_progress_items": [
+      "TASK-2026-09-02-main-007 — M3 shadcn 기반 UI 재설계"
+    ],
     "blocked_items": [],
     "done_items": [
       "TASK-2026-09-01-main-016 — M3 3.3.2 앱 정보 화면 고지 열람 + clean-room 최종 검수",
-      "TASK-2026-09-02-main-001 — M3 3.6.1 사용자 가이드 — 설치·온보딩·기본 사용·FAQ"
+      "TASK-2026-09-02-main-001 — M3 3.6.1 사용자 가이드 — 설치·온보딩·기본 사용·FAQ",
+      "TASK-2026-09-02-main-002 — M3 3.5.1 NFR 자동화 게이트 정리",
+      "TASK-2026-09-02-main-003 — M3 3.6.2 운영 문서 — 빌드·반입·배포·갱신·롤백",
+      "TASK-2026-09-02-main-004 — M3 FR-4.7 Grok Build 1.0.13 동기화",
+      "TASK-2026-09-02-main-005 — M3 macOS 번들 현장 실행 확인",
+      "TASK-2026-09-02-main-006 — M3 shadcn/ui 도입 적합성 조사"
     ]
   },
   "next_documents": [

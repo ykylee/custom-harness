@@ -1,0 +1,143 @@
+import { useMemo, useState } from 'react';
+import { CircleAlert, CirclePlay, Clock3, Plus, Search } from 'lucide-react';
+import type { SessionSummary, Workspace } from '@custom-harness/protocol';
+import { Button } from './ui/button.js';
+
+type QueueFilter = 'all' | 'attention' | 'running' | 'idle' | 'closed';
+
+const filterLabel: Record<QueueFilter, string> = {
+  all: '전체',
+  attention: '확인 필요',
+  running: '실행 중',
+  idle: '대기',
+  closed: '완료',
+};
+
+function queueStatus(session: SessionSummary): { label: string; tone: QueueFilter } {
+  if (session.requiresAttention) {
+    return {
+      label: session.attentionReason === 'permission' ? '승인 대기' : '확인 필요',
+      tone: 'attention',
+    };
+  }
+  if (session.status === 'running') return { label: '실행 중', tone: 'running' };
+  if (session.status === 'closed') return { label: '완료', tone: 'closed' };
+  return { label: '대기', tone: 'idle' };
+}
+
+function titleOf(session: SessionSummary): string {
+  return session.title ?? session.cwd.split('/').filter(Boolean).at(-1) ?? session.sessionId;
+}
+
+export function WorkQueue({
+  workspaces,
+  sessions,
+  activeWorkspaceId,
+  onOpenSession,
+  onCreateSession,
+}: {
+  workspaces: Workspace[];
+  sessions: SessionSummary[];
+  activeWorkspaceId: string | null;
+  onOpenSession(sessionId: string): void;
+  onCreateSession(): void;
+}): React.JSX.Element {
+  const [filter, setFilter] = useState<QueueFilter>('all');
+  const [query, setQuery] = useState('');
+  const workspaceName = new Map(
+    workspaces.map((workspace) => [workspace.id, workspace.displayName]),
+  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const visible = useMemo(
+    () =>
+      sessions.filter((session) => {
+        const status = queueStatus(session);
+        const filterMatches = filter === 'all' || status.tone === filter;
+        const text =
+          `${titleOf(session)} ${session.harness} ${session.cwd} ${workspaceName.get(session.workspaceId ?? '') ?? ''}`.toLowerCase();
+        return filterMatches && (normalizedQuery === '' || text.includes(normalizedQuery));
+      }),
+    [filter, normalizedQuery, sessions, workspaceName],
+  );
+
+  return (
+    <section className="work-queue" aria-label="세션 작업 큐">
+      <header className="work-queue-heading">
+        <div>
+          <p className="work-queue-eyebrow">OPERATIONS</p>
+          <h1>워크 큐</h1>
+          <p>실행 중인 세션과 사용자의 확인이 필요한 작업을 관리합니다.</p>
+        </div>
+        <Button onClick={onCreateSession}>
+          <Plus size={16} /> 새 세션
+        </Button>
+      </header>
+
+      <div className="work-queue-toolbar">
+        <div className="work-queue-filters" aria-label="세션 상태 필터">
+          {(Object.keys(filterLabel) as QueueFilter[]).map((item) => (
+            <button
+              key={item}
+              className={filter === item ? 'is-selected' : ''}
+              onClick={() => setFilter(item)}
+            >
+              {filterLabel[item]}
+            </button>
+          ))}
+        </div>
+        <label className="work-queue-search">
+          <Search size={16} />
+          <span className="sr-only">세션 검색</span>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="세션, 하네스, 워크스페이스 검색"
+          />
+        </label>
+      </div>
+
+      <div className="work-queue-summary">
+        <span>{visible.length}개 세션</span>
+        {activeWorkspaceId !== null && (
+          <span>{workspaceName.get(activeWorkspaceId) ?? '선택된 워크스페이스'}</span>
+        )}
+      </div>
+
+      <div className="work-queue-table" role="list">
+        {visible.map((session) => {
+          const status = queueStatus(session);
+          return (
+            <div key={session.sessionId} role="listitem">
+              <button
+                className="work-queue-row"
+                onClick={() => onOpenSession(session.sessionId)}
+                aria-label={`${titleOf(session)} ${status.label}`}
+              >
+                <span className={`work-queue-status is-${status.tone}`}>
+                  {status.tone === 'attention' ? (
+                    <CircleAlert size={16} />
+                  ) : (
+                    <CirclePlay size={16} />
+                  )}
+                  {status.label}
+                </span>
+                <span className="work-queue-session">
+                  <strong>{titleOf(session)}</strong>
+                  <small>{workspaceName.get(session.workspaceId ?? '') ?? session.cwd}</small>
+                </span>
+                <span className={`work-queue-harness harness-${session.harness}`}>
+                  {session.harness}
+                </span>
+                <span className="work-queue-meta">
+                  <Clock3 size={15} />{' '}
+                  {session.updatedAt ? new Date(session.updatedAt).toLocaleString() : '방금 전'}
+                </span>
+              </button>
+            </div>
+          );
+        })}
+        {visible.length === 0 && <p className="work-queue-empty">표시할 세션이 없습니다.</p>}
+      </div>
+    </section>
+  );
+}
