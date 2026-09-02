@@ -112,5 +112,20 @@ export function TerminalView({
     };
   }, [terminalId, transport, onError]);
 
-  return <div className="terminal-view" data-testid={`terminal-${terminalId}`} ref={hostRef} />;
+  return (
+    <section className="terminal-cockpit" aria-label="터미널 상세">
+      <header className="terminal-cockpit-header">
+        <div className="terminal-context">
+          <span className="terminal-eyebrow">LIVE SHELL</span>
+          <strong>터미널</strong>
+        </div>
+        <code className="terminal-id">{terminalId}</code>
+      </header>
+      <div
+        className="terminal-view terminal-host"
+        data-testid={`terminal-${terminalId}`}
+        ref={hostRef}
+      />
+    </section>
+  );
 }

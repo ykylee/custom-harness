@@ -92,37 +92,47 @@ export function Conversation({
 
   return (
     <div className="conversation">
-      <div className="conversation-status" data-testid="session-status">
-        <span className={`status-chip status-${view.status}`}>{view.status}</span>
-        {running && (
-          <button className="interrupt" onClick={() => actions.interrupt()}>
-            중단
-          </button>
-        )}
-        {view.lastError && <span className="session-error">{view.lastError}</span>}
-        {view.totalTokens !== undefined && (
-          <span className="usage" data-testid="session-usage">
-            누적 {view.totalTokens.toLocaleString()} 토큰
-          </span>
-        )}
-        {actions.setAutoApprove && (
-          <label className="auto-approve" data-testid="auto-approve">
-            <input
-              type="checkbox"
-              checked={autoApprove}
-              onChange={(event) => {
-                // 위험 고지 (FR-3.4.3) — 켤 때만 확인
-                if (event.target.checked && !window.confirm(AUTO_APPROVE_WARNING)) return;
-                actions.setAutoApprove?.(event.target.checked);
-              }}
-            />
-            자동 승인
-            {autoApprove && <span className="auto-approve-on">⚠ 이 세션 자동 허용 중</span>}
-          </label>
-        )}
+      <div className="conversation-cockpit">
+        <div className="conversation-context">
+          <span className="conversation-eyebrow">SESSION</span>
+          <strong>실행 타임라인</strong>
+        </div>
+        <div className="conversation-status" data-testid="session-status">
+          <span className={`status-chip status-${view.status}`}>{view.status}</span>
+          {running && (
+            <button className="interrupt" onClick={() => actions.interrupt()}>
+              중단
+            </button>
+          )}
+          {view.lastError && <span className="session-error">{view.lastError}</span>}
+          {view.totalTokens !== undefined && (
+            <span className="usage" data-testid="session-usage">
+              누적 {view.totalTokens.toLocaleString()} 토큰
+            </span>
+          )}
+          {actions.setAutoApprove && (
+            <label className="auto-approve" data-testid="auto-approve">
+              <input
+                type="checkbox"
+                checked={autoApprove}
+                onChange={(event) => {
+                  // 위험 고지 (FR-3.4.3) — 켤 때만 확인
+                  if (event.target.checked && !window.confirm(AUTO_APPROVE_WARNING)) return;
+                  actions.setAutoApprove?.(event.target.checked);
+                }}
+              />
+              자동 승인
+              {autoApprove && <span className="auto-approve-on">⚠ 이 세션 자동 허용 중</span>}
+            </label>
+          )}
+        </div>
       </div>
 
-      <div className="conversation-scroll" ref={scrollRef} onScroll={onScroll}>
+      <div
+        className="conversation-scroll conversation-timeline"
+        ref={scrollRef}
+        onScroll={onScroll}
+      >
         {view.items.map((item, index) => {
           switch (item.kind) {
             case 'user':

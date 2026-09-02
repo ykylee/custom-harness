@@ -6,10 +6,12 @@
 - Scope: current focus, task status, key changes, next actions, risks
 - Audience: AI agents, maintainers
 - Status: draft
-- Updated: 2026-09-02
+- Updated: 2026-09-03
 - Related docs: [Project Profile](../../docs/PROJECT_PROFILE.md), [Work Backlog](./work_backlog.md)
 
 ## Current Focus
+
+- (2026-09-03 30차 갱신) **UI 재설계는 진행 중이다.** WorkQueue·대화·승인·터미널과 정적 GUI 미러(`?preview=gui`)를 만들었지만, 사용자 검토에서 실제 앱 프레임은 선택 시안(`DesignPreview`)의 구조와 다르다는 것이 확인됐다. 이번 세션의 Sidebar 스타일 보정도 그 구조 차이를 해소하지 못했다. 다음 작업은 색상 보정이 아니라 실제 `App` 레이아웃을 **상단 전역 바 → 좌측 워크스페이스 탐색 → 운영 큐 테이블 → 선택 세션 상세 패널**로 전환하는 일이다. 확인용 웹은 fixture만 사용하며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.
 
 - (2026-09-02 29차 갱신) **M3 shadcn 기반 UI 재설계가 진행 중이다.** 현재 앱 화면을 캡처해 세 방향을 검토한 뒤 운영 큐(cockpit) 방향을 선택했다. `tailwindcss`·shadcn 스타일 Button·Lucide 기반을 도입했고, 정적 웹 시안은 `?preview=work-queue`로 분리해 사내망(`192.168.0.101:5180`)·Tailscale(`100.119.181.116:5180`)에서 본다. 원격 노출은 Vite 개발 서버가 아니라 빌드 산출물만 제공하는 `npm run preview:network`이며, loopback·사설 LAN·Tailscale 대역만 허용한다. 첫 실제 전환으로 Electron 기본 화면은 `session.list`/`workspace.list` read-model을 소비하는 `WorkQueue`가 됐다 — `requiresAttention`/`attentionReason`을 재해석하지 않고 그대로 표시하고, 행 선택은 기존 대화 탭으로 연결한다. TDD RED(미구현 import 실패)→GREEN(2건)과 전체 테스트 **706 passed, 2 skipped**를 확인했다. 다음은 대화·승인·터미널 상세를 같은 visual system으로 옮기고, live 원격 조회는 별도 인증 경계가 확정되기 전까지 열지 않는 것이다.
 
@@ -58,11 +60,9 @@
 
 ## Work Status
 
-- TASK-2026-09-02-main-007 M3 shadcn 기반 UI 재설계(WorkQueue 실제 read-model 전환 완료, 세션 상세 전환 계속): in_progress
+- TASK-2026-09-02-main-010 확인용 웹 전체 GUI 미러 및 실제 App 프레임의 DesignPreview 구조 전환: in_progress
 - 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정, **업데이트·롤백 경로와 junction 전환 추가**), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
-- M3 잔여(사외 가능분) — 3.5.1 NFR 자동화 게이트 정리(smoke:nfr1·nfr8·update·m7 + audit:cleanroom 이 이미 명령으로 존재), 3.6.2 운영 문서: planned
 - M3 조건부·사내 의존 — 3.2 저장소 연동(M0 0.5.2 결과 대기), 3.4 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
-- TASK-2026-08-31-main-002 번들 grok darwin 버전 세트 불변성 결함(manifest 1.0.5 vs 실물 1.0.13): planned
 - TASK-2026-09-02-main-001 M3 3.6.1 사용자 가이드(설치·온보딩·기본 사용·FAQ, 번들 동봉): done
 - TASK-2026-09-01-main-016 M3 3.3.2 앱 정보 화면 고지 열람 + clean-room 최종 검수: done
 - TASK-2026-09-01-main-015 M3 3.1.3 설치·업데이트 실패 주입 테스트(NFR-8 원자성): done
@@ -134,10 +134,7 @@
 > 완료 항목은 여기 쌓지 않는다 — 이력의 SSOT 는 `backlog/tasks/` 와 `docs/roadmap/PROGRESS.md` 다.
 > (2026-09-02 세션에서 M3 3.3.2 · 3.6.1 done. 직전 세션: M7 WBS 전 항목 + M7 완료 선언 + M3 WP 3.1 전 항목)
 
-- [ ] **M3 다음(사외 가능)**: **3.5.1 NFR 자동화 게이트 정리**(M — `smoke:nfr1`·`nfr8`·`update`·`m7`·`audit:cleanroom` 5종이 이미 명령으로 존재하니 CI 필수 게이트로 묶고 NFR-5 COMPAT 스캔을 정기화하는 일) → **3.6.2 운영 문서**(사외 빌드→반입→배포 절차, 번들 갱신 주기, 롤백 대응)
-- [ ] **TASK-2026-09-02-main-007 UI 재설계 계속**: WorkQueue의 다음 화면군(세션 상세·승인·터미널)을 selected cockpit 방향으로 옮긴다. 원격은 static preview만 유지하며 daemon live data에는 인증·권한 경계 설계 전 연결하지 않는다.
-- [ ] 7.1 잔여(작음): 트레이 배지·자동 승인이 주의 상태를 **직접** 소비하도록 셸 트랙 배선, `attentionTimestamp` 기반 "오래 기다린 순" 정렬 UI
-- [ ] TASK-2026-08-31-main-002 번들 grok 버전 대조 경고 추가 (FR-4.7 회복)
+- [ ] **TASK-2026-09-02-main-010 계속**: `DesignPreview`를 시각적 정본으로 실제 `App` 프레임·Sidebar·WorkQueue를 상단 전역 바·좌측 탐색·운영 큐 테이블·선택 세션 상세 패널의 4단 구조로 전환하고, `?preview=gui`에서 같은 구성요소를 검증한다. 원격은 fixture만 사용한다.
 - [ ] M7 이월 5건 — 토큰 예산 상한·`autoApprove` 와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리. 상세는 [m7-orchestration.md §완료 선언 §잔여](../../../docs/roadmap/m7-orchestration.md)
 - [ ] **C-1 실 게이트웨이 실측 회신** → 1.7.3 M1 수용 시나리오 → M1 완료 선언 (M2 완료 선언의 선행)
 - [ ] **C-5 실기기 실측 요청** — linux/win 매트릭스(m2-smoke-matrix.md 절차), install.ps1·uninstall.ps1 검증. 추가 확인: **업데이트·롤백 경로**(junction 전환·`custom-harness-rollback.cmd` 미실행 검증), 디스크 부족 주입(램디스크 경로는 darwin 만 구현), Windows junction 환경의 git `--show-prefix` 경로 유도

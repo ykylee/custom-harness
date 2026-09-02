@@ -38,6 +38,17 @@ export function bucketOf(session: SessionSummary): Bucket {
   return 'idle'; // idle · initializing
 }
 
+/** 주의 세션은 오래 기다린 순, 나머지는 서버가 준 목록 순서를 보존한다. */
+function compareSidebarSessions(a: SessionSummary, b: SessionSummary): number {
+  const aAttention = a.requiresAttention === true;
+  const bAttention = b.requiresAttention === true;
+  if (aAttention !== bAttention) return aAttention ? -1 : 1;
+  if (aAttention && bAttention) {
+    return (a.attentionTimestamp ?? '').localeCompare(b.attentionTimestamp ?? '');
+  }
+  return 0;
+}
+
 export interface SidebarActions {
   renameWorkspace(workspaceId: string, displayName: string): void;
   setWorkspaceLabels(workspaceId: string, labels: Record<string, string>): void;
@@ -346,8 +357,11 @@ export function Sidebar({
     const bucket = bucketOf(session);
     counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
   }
-  const visible =
-    filter === 'all' ? sessions : sessions.filter((session) => bucketOf(session) === filter);
+  const visible = (
+    filter === 'all' ? sessions : sessions.filter((session) => bucketOf(session) === filter)
+  )
+    .slice()
+    .sort(compareSidebarSessions);
 
   // 워크스페이스에 귀속되지 않은 세션(백필 실패 등)도 잃어버리지 않는다
   const orphans = visible.filter(
@@ -358,29 +372,42 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
+      <div className="sidebar-brand">
+        <span className="sidebar-mark">CH</span>
+        <span>
+          <strong>Custom Harness</strong>
+          <small>OPERATIONS CONSOLE</small>
+        </span>
+      </div>
       <div className="sidebar-actions">
         <button className="new-session" onClick={() => actions.newSession()}>
           + 새 세션
         </button>
-        <button className="new-workspace" onClick={() => actions.newWorkspace()}>
-          + 워크스페이스
-        </button>
-        <button
-          className="new-terminal"
-          data-testid="new-terminal"
-          onClick={() => actions.newTerminal()}
-        >
-          + 터미널
-        </button>
-        <button className="open-files" data-testid="open-files" onClick={() => actions.openFiles()}>
-          파일
-        </button>
-        <button className="open-diff" data-testid="open-diff" onClick={() => actions.openDiff()}>
-          변경사항
-        </button>
-        <button className="settings-link" onClick={() => actions.openSettings()}>
-          설정
-        </button>
+        <div className="sidebar-utilities">
+          <button className="new-workspace" onClick={() => actions.newWorkspace()}>
+            워크스페이스
+          </button>
+          <button
+            className="new-terminal"
+            data-testid="new-terminal"
+            onClick={() => actions.newTerminal()}
+          >
+            터미널
+          </button>
+          <button
+            className="open-files"
+            data-testid="open-files"
+            onClick={() => actions.openFiles()}
+          >
+            파일
+          </button>
+          <button className="open-diff" data-testid="open-diff" onClick={() => actions.openDiff()}>
+            변경
+          </button>
+          <button className="settings-link" onClick={() => actions.openSettings()}>
+            설정
+          </button>
+        </div>
       </div>
 
       <div className="bucket-filter" data-testid="bucket-filter">

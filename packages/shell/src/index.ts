@@ -70,11 +70,20 @@ async function showWindow(): Promise<void> {
 }
 
 /** 트레이 메뉴용 세션 요약 — 데몬 WS 1회 질의 (hello → session.list) */
-async function querySessions(): Promise<{ harness: string; cwd: string; status: string }[]> {
+type TraySession = {
+  harness: string;
+  cwd: string;
+  status: string;
+  requiresAttention?: boolean;
+  attentionReason?: 'permission' | 'error' | 'finished';
+  attentionTimestamp?: string;
+};
+
+async function querySessions(): Promise<TraySession[]> {
   if (!daemonInfo) return [];
   const { port, token } = daemonInfo;
   return new Promise((resolve) => {
-    const sessions: { harness: string; cwd: string; status: string }[] = [];
+    const sessions: TraySession[] = [];
     const ws = new WebSocket(`ws://127.0.0.1:${port}`, [token]);
     const finish = (): void => {
       try {
@@ -89,7 +98,7 @@ async function querySessions(): Promise<{ harness: string; cwd: string; status: 
     ws.on('message', (data) => {
       const message = JSON.parse(String(data)) as {
         type: string;
-        result?: { sessions?: { harness: string; cwd: string; status: string }[] };
+        result?: { sessions?: TraySession[] };
       };
       if (message.type === 'hello.response') {
         ws.send(JSON.stringify({ type: 'session.list.request', requestId: 'tray', params: {} }));
@@ -109,11 +118,14 @@ async function querySessions(): Promise<{ harness: string; cwd: string; status: 
 async function rebuildTrayMenu(): Promise<void> {
   if (!tray) return;
   const sessions = await querySessions();
+  const attention = sessions
+    .filter((session) => session.requiresAttention === true)
+    .sort((a, b) => (a.attentionTimestamp ?? '').localeCompare(b.attentionTimestamp ?? ''));
   const running = sessions.filter((s) => s.status === 'running');
   const summaryItems =
-    running.length > 0
-      ? running.slice(0, 5).map((s) => ({
-          label: `● ${s.harness} · ${s.cwd.split('/').pop() ?? s.cwd}`,
+    attention.length > 0
+      ? attention.slice(0, 5).map((s) => ({
+          label: `! ${s.attentionReason === 'permission' ? '승인 대기' : '확인 필요'} · ${s.harness} · ${s.cwd.split('/').pop() ?? s.cwd}`,
           click: () => void showWindow(),
         }))
       : [{ label: '실행 중 세션 없음', enabled: false }];
@@ -121,7 +133,10 @@ async function rebuildTrayMenu(): Promise<void> {
     Menu.buildFromTemplate([
       { label: '열기', click: () => void showWindow() },
       { type: 'separator' },
-      { label: `실행 중 ${running.length} / 전체 ${sessions.length}`, enabled: false },
+      {
+        label: `확인 필요 ${attention.length} / 실행 중 ${running.length} / 전체 ${sessions.length}`,
+        enabled: false,
+      },
       ...summaryItems,
       { type: 'separator' },
       {

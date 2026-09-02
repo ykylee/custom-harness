@@ -21,9 +21,18 @@ export function PermissionCard({
 }): React.JSX.Element {
   const { request } = item;
   return (
-    <div className="permission-card" data-testid="permission-card" data-seq={item.seq}>
+    <div
+      className={`permission-card is-${item.status}`}
+      data-testid="permission-card"
+      data-seq={item.seq}
+    >
       <div className="permission-header">
+        <span className="permission-state">
+          {item.status === 'pending' ? '결정 필요' : '응답 완료'}
+        </span>
         <strong>{KIND_LABEL[request.kind]}</strong>
+      </div>
+      <div className="permission-body">
         <span className="permission-summary">{request.summary}</span>
       </div>
       {request.detail !== undefined && (

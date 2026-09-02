@@ -4,11 +4,17 @@ import { App } from './App.js';
 import { AppController } from './store/app-store.js';
 import { DaemonClient } from './ws/client.js';
 import { DesignPreview } from './views/DesignPreview.js';
+import { SessionDetailPreview } from './views/SessionDetailPreview.js';
+import { GuiMirrorPreview } from './views/GuiMirrorPreview.js';
 import './styles.css';
 
 const params = new URLSearchParams(location.search);
 if (params.get('preview') === 'work-queue') {
   createRoot(document.getElementById('root')!).render(<DesignPreview />);
+} else if (params.get('preview') === 'gui') {
+  createRoot(document.getElementById('root')!).render(<GuiMirrorPreview />);
+} else if (params.get('preview') === 'session-detail') {
+  createRoot(document.getElementById('root')!).render(<SessionDetailPreview />);
 } else {
   const port = params.get('port') ?? '9700';
   const token = params.get('token') ?? '';

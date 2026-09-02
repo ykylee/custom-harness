@@ -41,7 +41,9 @@ const noopActions = { prompt: vi.fn(), interrupt: vi.fn(), respondPermission: vi
 
 describe('Conversation (FR-3.2)', () => {
   it('renders user message, markdown text, collapsed reasoning, and tool summary', () => {
-    render(<Conversation view={runningView()} actions={noopActions} />);
+    const { container } = render(<Conversation view={runningView()} actions={noopActions} />);
+    expect(container.querySelector('.conversation-cockpit')).toBeTruthy();
+    expect(container.querySelector('.conversation-timeline')).toBeTruthy();
     expect(screen.getByTestId('user-message').textContent).toBe('버그 고쳐줘');
     // 마크다운 렌더 — **진행** 이 <strong> 으로
     expect(screen.getByText('진행').tagName).toBe('STRONG');
@@ -80,6 +82,8 @@ describe('Conversation (FR-3.2)', () => {
     ]);
     render(<Conversation view={view} actions={actions} />);
     expect(screen.getByTestId('permission-card').textContent).toContain('rm -rf 실행');
+    expect(screen.getByTestId('permission-card').className).toContain('is-pending');
+    expect(screen.getByText('결정 필요')).toBeTruthy();
     fireEvent.click(screen.getByText('허용'));
     expect(actions.respondPermission).toHaveBeenCalledWith('p-1', { optionId: 'allow' });
   });

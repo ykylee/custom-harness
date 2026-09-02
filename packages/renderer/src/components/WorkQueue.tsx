@@ -29,6 +29,17 @@ function titleOf(session: SessionSummary): string {
   return session.title ?? session.cwd.split('/').filter(Boolean).at(-1) ?? session.sessionId;
 }
 
+/** 데몬의 attentionTimestamp 를 그대로 써서 오래 기다린 주의 작업을 먼저 놓는다. */
+export function compareQueueSessions(a: SessionSummary, b: SessionSummary): number {
+  const aAttention = a.requiresAttention === true;
+  const bAttention = b.requiresAttention === true;
+  if (aAttention !== bAttention) return aAttention ? -1 : 1;
+  if (aAttention && bAttention) {
+    return (a.attentionTimestamp ?? '').localeCompare(b.attentionTimestamp ?? '');
+  }
+  return 0;
+}
+
 export function WorkQueue({
   workspaces,
   sessions,
@@ -50,13 +61,15 @@ export function WorkQueue({
   const normalizedQuery = query.trim().toLowerCase();
   const visible = useMemo(
     () =>
-      sessions.filter((session) => {
-        const status = queueStatus(session);
-        const filterMatches = filter === 'all' || status.tone === filter;
-        const text =
-          `${titleOf(session)} ${session.harness} ${session.cwd} ${workspaceName.get(session.workspaceId ?? '') ?? ''}`.toLowerCase();
-        return filterMatches && (normalizedQuery === '' || text.includes(normalizedQuery));
-      }),
+      sessions
+        .filter((session) => {
+          const status = queueStatus(session);
+          const filterMatches = filter === 'all' || status.tone === filter;
+          const text =
+            `${titleOf(session)} ${session.harness} ${session.cwd} ${workspaceName.get(session.workspaceId ?? '') ?? ''}`.toLowerCase();
+          return filterMatches && (normalizedQuery === '' || text.includes(normalizedQuery));
+        })
+        .sort(compareQueueSessions),
     [filter, normalizedQuery, sessions, workspaceName],
   );
 

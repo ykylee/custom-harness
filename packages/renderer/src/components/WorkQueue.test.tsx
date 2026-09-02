@@ -77,4 +77,32 @@ describe('WorkQueue', () => {
     fireEvent.click(screen.getByRole('button', { name: /배포 전 검토/ }));
     expect(onOpenSession).toHaveBeenCalledWith('approval_1');
   });
+
+  it('주의 세션은 오래 기다린 순으로 일반 세션보다 먼저 표시한다', () => {
+    const attentionSessions: SessionSummary[] = [
+      sessions[0]!,
+      { ...sessions[1]!, title: '최근 승인', attentionTimestamp: '2026-09-02T12:05:00.000Z' },
+      {
+        ...sessions[1]!,
+        sessionId: 'approval_old',
+        title: '오래된 승인',
+        attentionTimestamp: '2026-09-02T12:00:00.000Z',
+      },
+    ];
+    render(
+      <WorkQueue
+        workspaces={[workspace]}
+        sessions={attentionSessions}
+        activeWorkspaceId={workspace.id}
+        onOpenSession={vi.fn()}
+        onCreateSession={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      expect.stringContaining('오래된 승인'),
+      expect.stringContaining('최근 승인'),
+      expect.stringContaining('API 검증 흐름'),
+    ]);
+  });
 });
