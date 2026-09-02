@@ -103,6 +103,12 @@ describe('역방향 툴 설정 (WBS 7.2.4)', () => {
     expect(opened.store.resolve('toolsMaxFanout')).toMatchObject({ value: 4, source: 'file' });
   });
 
+  it('서브에이전트 토큰 상한은 기본 비활성(0)이며 양수로 설정한다', async () => {
+    expect((await makeStore()).store.resolve('toolsMaxSubagentTokens').value).toBe(0);
+    const { store } = await makeStore({ tools: { maxSubagentTokens: 12000 } });
+    expect(store.resolve('toolsMaxSubagentTokens')).toMatchObject({ value: 12000, source: 'file' });
+  });
+
   it('env 로도 켤 수 있다', async () => {
     const { store } = await makeStore({}, { CUSTOM_HARNESS_REVERSE_TOOLS: 'true' });
     expect(store.resolve('toolsReverseExposure')).toMatchObject({ value: true, source: 'env' });

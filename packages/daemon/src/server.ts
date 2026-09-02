@@ -63,6 +63,7 @@ export interface DaemonServerOptions {
     isEnabled(): boolean;
     maxSessionDepth(): number;
     maxFanout(): number;
+    maxSubagentTokens(): number;
   };
   onShutdownRequest?: () => void;
 }
@@ -605,9 +606,17 @@ export class DaemonServer {
             isEnabled: () => reverse.isEnabled(),
             maxSessionDepth: () => reverse.maxSessionDepth(),
             maxFanout: () => reverse.maxFanout(),
+            maxSubagentTokens: () => reverse.maxSubagentTokens(),
             // 게이트와 `session_usage` 가 **같은 함수**로 센다 — 기준이 갈라지면 모델은
             // 여유가 있다고 보는데 게이트는 막는 상태가 된다
             activeChildCount: async (id) => (await manager.usageTree(id)).activeChildCount,
+            subagentUsage: async (id) => {
+              const usage = await manager.usageTree(id);
+              return {
+                ...(usage.subagentTokens !== undefined ? { tokens: usage.subagentTokens } : {}),
+                complete: usage.subagentUsageComplete,
+              };
+            },
             resolveCaller: async (callerPid) => {
               if (callerPid === undefined) return { depth: 0 };
               const entry = await reverse.supervisor.findByPid(callerPid);

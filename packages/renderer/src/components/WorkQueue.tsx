@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { CircleAlert, CirclePlay, Clock3, Plus, Search } from 'lucide-react';
+import {
+  ArrowUpRight,
+  CircleAlert,
+  CirclePlay,
+  Clock3,
+  GitBranch,
+  Info,
+  Plus,
+  Search,
+} from 'lucide-react';
 import type { SessionSummary, Workspace } from '@custom-harness/protocol';
 import { Button } from './ui/button.js';
 
@@ -55,6 +64,7 @@ export function WorkQueue({
 }): React.JSX.Element {
   const [filter, setFilter] = useState<QueueFilter>('all');
   const [query, setQuery] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const workspaceName = new Map(
     workspaces.map((workspace) => [workspace.id, workspace.displayName]),
   );
@@ -72,6 +82,8 @@ export function WorkQueue({
         .sort(compareQueueSessions),
     [filter, normalizedQuery, sessions, workspaceName],
   );
+  const selected =
+    visible.find((session) => session.sessionId === selectedSessionId) ?? visible.at(0) ?? null;
 
   return (
     <section className="work-queue" aria-label="세션 작업 큐">
@@ -116,15 +128,25 @@ export function WorkQueue({
         )}
       </div>
 
-      <div className="work-queue-table" role="list">
+      <div className="work-queue-table" role="list" aria-label="세션 작업 목록">
+        <div className="work-queue-table-head" aria-hidden="true">
+          <span>상태</span>
+          <span>세션</span>
+          <span>하네스</span>
+          <span>최근 변경</span>
+        </div>
         {visible.map((session) => {
           const status = queueStatus(session);
           return (
             <div key={session.sessionId} role="listitem">
               <button
-                className="work-queue-row"
-                onClick={() => onOpenSession(session.sessionId)}
+                className={`work-queue-row ${selected?.sessionId === session.sessionId ? 'is-selected' : ''}`}
+                onClick={() => {
+                  setSelectedSessionId(session.sessionId);
+                  onOpenSession(session.sessionId);
+                }}
                 aria-label={`${titleOf(session)} ${status.label}`}
+                aria-pressed={selected?.sessionId === session.sessionId}
               >
                 <span className={`work-queue-status is-${status.tone}`}>
                   {status.tone === 'attention' ? (
@@ -151,6 +173,46 @@ export function WorkQueue({
         })}
         {visible.length === 0 && <p className="work-queue-empty">표시할 세션이 없습니다.</p>}
       </div>
+      {selected !== null && (
+        <section className="work-queue-detail" aria-label={`선택한 세션 ${titleOf(selected)} 상세`}>
+          <header>
+            <div>
+              <p className="work-queue-detail-kicker">SELECTED SESSION</p>
+              <h2>{titleOf(selected)}</h2>
+              <span className={`work-queue-status is-${queueStatus(selected).tone}`}>
+                상태 · {queueStatus(selected).label}
+              </span>
+            </div>
+            <button className="work-queue-open" onClick={() => onOpenSession(selected.sessionId)}>
+              세션 열기 <ArrowUpRight size={15} aria-hidden="true" />
+            </button>
+          </header>
+          <div className="work-queue-detail-grid">
+            <div>
+              <Info size={15} aria-hidden="true" />
+              <span>세션 ID</span>
+              <code>{selected.sessionId}</code>
+            </div>
+            <div>
+              <GitBranch size={15} aria-hidden="true" />
+              <span>워크스페이스</span>
+              <strong>{workspaceName.get(selected.workspaceId ?? '') ?? selected.cwd}</strong>
+            </div>
+            <div>
+              <CirclePlay size={15} aria-hidden="true" />
+              <span>하네스</span>
+              <strong>{selected.harness}</strong>
+            </div>
+            <div>
+              <Clock3 size={15} aria-hidden="true" />
+              <span>최근 변경</span>
+              <strong>
+                {selected.updatedAt ? new Date(selected.updatedAt).toLocaleString() : '방금 전'}
+              </strong>
+            </div>
+          </div>
+        </section>
+      )}
     </section>
   );
 }

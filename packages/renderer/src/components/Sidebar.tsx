@@ -372,12 +372,11 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-brand">
-        <span className="sidebar-mark">CH</span>
-        <span>
-          <strong>Custom Harness</strong>
-          <small>OPERATIONS CONSOLE</small>
-        </span>
+      <div className="sidebar-context">
+        <span>WORKSPACES</span>
+        <button aria-label="새 워크스페이스" onClick={() => actions.newWorkspace()}>
+          +
+        </button>
       </div>
       <div className="sidebar-actions">
         <button className="new-session" onClick={() => actions.newSession()}>
@@ -479,6 +478,7 @@ export function Sidebar({
           </ul>
         </section>
       )}
+      <div className="sidebar-health">● 로컬 시스템 정상</div>
     </aside>
   );
 }

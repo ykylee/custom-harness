@@ -81,6 +81,7 @@ export interface SettingValues {
   toolsReverseExposure: boolean;
   toolsMaxSessionDepth: number;
   toolsMaxFanout: number;
+  toolsMaxSubagentTokens: number;
   sessionTitleMode: 'off' | 'heuristic' | 'llm';
   sessionTitleModel: string;
 }
@@ -176,6 +177,18 @@ export const SETTINGS: { [K in SettingKey]: SettingDescriptor<SettingValues[K]> 
     defaultValue: 1,
     scope: 'live',
     parse: parseNonNegativeInt(32),
+  },
+  /**
+   * 한 위임 트리가 쓸 수 있는 자식·자손 토큰 상한. 0은 기존 동작을 보존하는 비활성 값이다.
+   * 실제 비용 보고가 없는 가지는 0으로 보지 않는다 — 상한을 켠 사용자는 모르는 비용을
+   * 허용으로 오판하지 않는 쪽을 선택한다.
+   */
+  toolsMaxSubagentTokens: {
+    key: 'tools.maxSubagentTokens',
+    env: 'CUSTOM_HARNESS_TOOLS_MAX_SUBAGENT_TOKENS',
+    defaultValue: 0,
+    scope: 'live',
+    parse: parseNonNegativeInt(10_000_000),
   },
   /**
    * 세션 제목 생성 방식 (M7 7.6.1, FR-9.5) — 기본은 **비 LLM**.

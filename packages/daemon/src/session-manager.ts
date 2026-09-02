@@ -523,6 +523,10 @@ export class SessionManager {
   async usageTree(sessionId: string): Promise<{
     own: Usage;
     subtree: Usage;
+    /** 자식·자손만의 totalTokens. 미보고 가지가 있으면 undefined. */
+    subagentTokens?: number;
+    /** 자식·자손 모두가 totalTokens를 보고했는가. */
+    subagentUsageComplete: boolean;
     childCount: number;
     activeChildCount: number;
     children: {
@@ -566,12 +570,33 @@ export class SessionManager {
       subtree: subtreeOf(child.meta.sessionId),
     }));
     const own = this.sessions.get(sessionId)?.meta.usageTotals ?? {};
+    const descendantUsage = (
+      id: string,
+      visited = new Set<string>(),
+    ): { tokens: number; complete: boolean } => {
+      if (visited.has(id)) return { tokens: 0, complete: true };
+      visited.add(id);
+      let tokens = 0;
+      let complete = true;
+      for (const child of byParent.get(id) ?? []) {
+        const reported = child.meta.usageTotals?.totalTokens;
+        if (reported === undefined) complete = false;
+        else tokens += reported;
+        const nested = descendantUsage(child.meta.sessionId, visited);
+        tokens += nested.tokens;
+        complete &&= nested.complete;
+      }
+      return { tokens, complete };
+    };
+    const descendants = descendantUsage(sessionId);
     return {
       own,
       subtree: subtreeOf(sessionId),
       childCount: children.length,
       // 닫힌 자식은 더 이상 프롬프트를 받지 못하므로 예산을 쓰지 않는다 (팬아웃 상한과 같은 기준)
       activeChildCount: children.filter((child) => child.status !== 'closed').length,
+      ...(descendants.complete ? { subagentTokens: descendants.tokens } : {}),
+      subagentUsageComplete: descendants.complete,
       children,
     };
   }

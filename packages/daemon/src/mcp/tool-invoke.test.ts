@@ -66,6 +66,7 @@ describe('tool.invoke 배선', () => {
         isEnabled: () => enabled,
         maxSessionDepth: () => maxDepth,
         maxFanout: () => maxFanout,
+        maxSubagentTokens: () => 0,
       },
     });
     const { port } = await server.start();

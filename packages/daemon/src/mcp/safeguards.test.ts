@@ -59,7 +59,9 @@ function harness(
     isEnabled: () => true,
     maxSessionDepth: () => 1,
     maxFanout: () => 1,
+    maxSubagentTokens: () => 0,
     activeChildCount: async () => 0,
+    subagentUsage: async () => ({ tokens: 0, complete: true }),
     resolveCaller: async () => ({ sessionId: 'parent', harness: 'mock', depth: 0 }),
     requestApproval: async ({ sessionId, spec }) => {
       approvals.push({ sessionId, summary: spec.name });
@@ -261,6 +263,48 @@ describe('팬아웃 상한 (M7 7.3.2)', () => {
     });
     expect(result.isError).toBe(false);
     expect(counted).toBe(0);
+  });
+});
+
+describe('서브에이전트 토큰 예산 상한', () => {
+  it('사용량이 상한에 닿으면 새 세션 생성도 거부한다', async () => {
+    const h = harness({
+      maxSubagentTokens: () => 100,
+      subagentUsage: async () => ({ tokens: 100, complete: true }),
+    });
+    const result = await invokeReverseTool(h.runtime, {
+      name: 'session_new',
+      args: { harness: 'mock', cwd: '/tmp' },
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('토큰 예산');
+  });
+
+  it('사용량이 상한에 닿으면 session_say를 승인보다 먼저 거부한다', async () => {
+    const h = harness({
+      maxSubagentTokens: () => 100,
+      subagentUsage: async () => ({ tokens: 100, complete: true }),
+    });
+    const result = await invokeReverseTool(h.runtime, {
+      name: 'session_say',
+      args: { sessionId: 'child', prompt: '계속' },
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('토큰 예산');
+    expect(h.approvals).toHaveLength(0);
+  });
+
+  it('미보고 가지를 0으로 보지 않고 session_say를 거부한다', async () => {
+    const h = harness({
+      maxSubagentTokens: () => 100,
+      subagentUsage: async () => ({ complete: false }),
+    });
+    const result = await invokeReverseTool(h.runtime, {
+      name: 'session_say',
+      args: { sessionId: 'child', prompt: '계속' },
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('완결 보고');
   });
 });
 

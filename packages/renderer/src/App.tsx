@@ -3,6 +3,7 @@
 //   Mod+N 새 세션 뷰 · Mod+W 탭 닫기 · Mod+1~9 탭 선택 · Mod+. 활성 세션 중단
 //   Mod+K 커맨드 팔레트 (M7 7.4.2, FR-9.4)
 import { useEffect } from 'react';
+import { Bell, ChevronDown, CircleDot, Settings2 } from 'lucide-react';
 import type { AppController } from './store/app-store.js';
 import type { TabTarget } from './workbench/tabs.js';
 import { targetOf } from './workbench/tabs.js';
@@ -157,14 +158,63 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
 
   return (
     <div className="app">
-      {state.connection !== 'connected' && (
-        <div className="connection-banner" data-testid="connection-banner">
-          {CONNECTION_LABEL[state.connection] ?? state.connection}
+      <header className="global-topbar">
+        <button className="global-brand" onClick={() => controller.navigate('main')}>
+          <span className="global-mark">CH</span>
+          <span>Custom Harness</span>
+        </button>
+        <nav className="global-nav" aria-label="주요 탐색">
+          <button
+            className={state.route === 'main' ? 'is-active' : ''}
+            onClick={() => controller.navigate('main')}
+          >
+            워크스페이스
+          </button>
+          <button
+            className={state.route === 'main' ? 'is-active' : ''}
+            onClick={() => controller.navigate('main')}
+          >
+            세션
+          </button>
+          <button onClick={() => controller.openTarget({ kind: 'files' })}>아티팩트</button>
+          <button onClick={() => controller.navigate('settings')}>
+            알림 <Bell size={13} aria-hidden="true" />
+          </button>
+        </nav>
+        <div className="global-actions">
+          <button
+            className="global-model"
+            title="기본 모델 설정"
+            onClick={() => controller.navigate('settings')}
+          >
+            {state.gateway?.models?.[0]?.id ?? '기본 모델'}{' '}
+            <ChevronDown size={14} aria-hidden="true" />
+          </button>
+          <span className={`global-connection is-${state.connection}`}>
+            <CircleDot size={13} aria-hidden="true" />
+            {state.connection === 'connected' ? '로컬 연결' : '연결 확인 중'}
+          </span>
+          <button
+            className="global-avatar"
+            aria-label="설정"
+            onClick={() => controller.navigate('settings')}
+          >
+            <Settings2 size={15} aria-hidden="true" />
+          </button>
         </div>
-      )}
-      {state.lastError && (
-        <div className="error-banner" onClick={() => controller.clearError()}>
-          {state.lastError}
+      </header>
+      {(state.connection !== 'connected' || state.lastError) && (
+        <div className="app-alerts">
+          {state.connection !== 'connected' && (
+            <div className="connection-banner" data-testid="connection-banner">
+              {CONNECTION_LABEL[state.connection] ?? state.connection}
+            </div>
+          )}
+          {state.lastError && (
+            <button className="error-banner" onClick={() => controller.clearError()}>
+              {state.lastError}
+            </button>
+          )}
         </div>
       )}
       {state.palette.open && (

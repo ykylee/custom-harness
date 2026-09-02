@@ -10,7 +10,7 @@
     "daily_backlog_dir": "ai-workflow/memory/active/main/backlog",
     "tasks_dir": "ai-workflow/memory/active/main/backlog/tasks",
     "sessions_dir": "ai-workflow/memory/active/main/sessions",
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-02.md",
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-03.md",
     "repository_assessment_path": null
   },
   "project": {
@@ -27,15 +27,15 @@
     "runtime_checks": null
   },
   "session": {
-    "current_baseline": "(2026-09-03 30차 갱신) **UI 재설계는 진행 중이다.** WorkQueue·대화·승인·터미널과 정적 GUI 미러(`?preview=gui`)를 만들었지만, 사용자 검토에서 실제 앱 프레임은 선택 시안(`DesignPreview`)의 구조와 다르다는 것이 확인됐다. 이번 세션의 Sidebar 스타일 보정도 그 구조 차이를 해소하지 못했다. 다음 작업은 색상 보정이 아니라 실제 `App` 레이아웃을 **상단 전역 바 → 좌측 워크스페이스 탐색 → 운영 큐 테이블 → 선택 세션 상세 패널**로 전환하는 일이다. 확인용 웹은 fixture만 사용하며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.",
-    "current_axis": "(2026-09-03 30차 갱신) **UI 재설계는 진행 중이다.** WorkQueue·대화·승인·터미널과 정적 GUI 미러(`?preview=gui`)를 만들었지만, 사용자 검토에서 실제 앱 프레임은 선택 시안(`DesignPreview`)의 구조와 다르다는 것이 확인됐다. 이번 세션의 Sidebar 스타일 보정도 그 구조 차이를 해소하지 못했다. 다음 작업은 색상 보정이 아니라 실제 `App` 레이아웃을 **상단 전역 바 → 좌측 워크스페이스 탐색 → 운영 큐 테이블 → 선택 세션 상세 패널**로 전환하는 일이다. 확인용 웹은 fixture만 사용하며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.",
-    "current_focus": "TASK-2026-09-02-main-010 확인용 웹 전체 GUI 미러 및 실제 App 프레임의 DesignPreview 구조 전환",
-    "in_progress_items": [
-      "TASK-2026-09-02-main-010 확인용 웹 전체 GUI 미러 및 실제 App 프레임의 DesignPreview 구조 전환"
-    ],
+    "current_baseline": "(2026-09-03 32차 갱신) **UI 재설계 TASK-010과 서브에이전트 토큰 예산 상한 TASK-001 완료.** 실제 `App`과 정적 GUI 미러(`?preview=gui`)를 `DesignPreview`의 4단 운영 콘솔 구조로 정렬했고, `tools.maxSubagentTokens`(기본 0=비활성)가 자식·자손 비용으로 `session_new`·`session_say`를 차단한다. 미보고 가지는 허용으로 보지 않는다. 다음 후보는 `autoApprove`와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리이며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.",
+    "current_axis": "(2026-09-03 32차 갱신) **UI 재설계 TASK-010과 서브에이전트 토큰 예산 상한 TASK-001 완료.** 실제 `App`과 정적 GUI 미러(`?preview=gui`)를 `DesignPreview`의 4단 운영 콘솔 구조로 정렬했고, `tools.maxSubagentTokens`(기본 0=비활성)가 자식·자손 비용으로 `session_new`·`session_say`를 차단한다. 미보고 가지는 허용으로 보지 않는다. 다음 후보는 `autoApprove`와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리이며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.",
+    "current_focus": null,
+    "in_progress_items": [],
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
+      "TASK-2026-09-03-main-001 — M7 이월 — 서브에이전트 토큰 예산 상한",
+      "TASK-2026-09-02-main-010 — 확인용 웹 전체 GUI 미러 및 실제 App 프레임의 DesignPreview 구조 전환",
       "TASK-2026-09-02-main-009 — 정적 세션 상세 확인용 웹 미리보기",
       "TASK-2026-09-02-main-008 — M7 7.1 주의 상태 소비 정리",
       "TASK-2026-09-02-main-007 — M3 shadcn 기반 UI 재설계",
@@ -43,38 +43,24 @@
       "TASK-2026-09-02-main-005 — M3 macOS 번들 현장 실행 확인",
       "TASK-2026-09-02-main-004 — M3 FR-4.7 Grok Build 1.0.13 동기화",
       "TASK-2026-09-02-main-003 — M3 3.6.2 운영 문서 — 빌드·반입·배포·갱신·롤백",
-      "TASK-2026-09-02-main-002 — M3 3.5.1 NFR 자동화 게이트 정리",
-      "TASK-2026-09-02-main-001 — M3 3.6.1 사용자 가이드 — 설치·온보딩·기본 사용·FAQ",
-      "TASK-2026-09-01-main-016 — M3 3.3.2 앱 정보 화면 고지 열람 + clean-room 최종 검수"
+      "TASK-2026-09-02-main-002 — M3 3.5.1 NFR 자동화 게이트 정리"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-02.md",
-    "task_count": 12,
-    "in_progress_items": [
-      "TASK-2026-09-02-main-010 — 확인용 웹 전체 GUI 미러"
-    ],
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-03.md",
+    "task_count": 1,
+    "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
-      "TASK-2026-09-01-main-016 — M3 3.3.2 앱 정보 화면 고지 열람 + clean-room 최종 검수",
-      "TASK-2026-09-02-main-001 — M3 3.6.1 사용자 가이드 — 설치·온보딩·기본 사용·FAQ",
-      "TASK-2026-09-02-main-002 — M3 3.5.1 NFR 자동화 게이트 정리",
-      "TASK-2026-09-02-main-003 — M3 3.6.2 운영 문서 — 빌드·반입·배포·갱신·롤백",
-      "TASK-2026-09-02-main-004 — M3 FR-4.7 Grok Build 1.0.13 동기화",
-      "TASK-2026-09-02-main-005 — M3 macOS 번들 현장 실행 확인",
-      "TASK-2026-09-02-main-006 — M3 shadcn/ui 도입 적합성 조사",
-      "TASK-2026-09-02-main-007 — M3 shadcn 기반 UI 재설계",
-      "TASK-2026-08-31-main-002 — 번들 grok darwin 버전 세트 불변성 결함 (manifest 1.0.5 vs 실물 1.0.13)",
-      "TASK-2026-09-02-main-008 — M7 7.1 주의 상태 소비 정리",
-      "TASK-2026-09-02-main-009 — 정적 세션 상세 확인용 웹 미리보기"
+      "TASK-2026-09-03-main-001 — M7 이월 — 서브에이전트 토큰 예산 상한"
     ]
   },
   "next_documents": [
     "docs/PROJECT_PROFILE.md",
     "ai-workflow/memory/active/main/session_handoff.md",
-    "ai-workflow/memory/active/main/backlog/2026-09-02.md",
+    "ai-workflow/memory/active/main/backlog/2026-09-03.md",
     "ai-workflow/memory/active/main/work_backlog.md",
     "docs/reference/harness-mcp-support.md"
   ],

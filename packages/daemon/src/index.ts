@@ -362,6 +362,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
       isEnabled: () => settings.resolve('toolsReverseExposure').value,
       maxSessionDepth: () => settings.resolve('toolsMaxSessionDepth').value,
       maxFanout: () => settings.resolve('toolsMaxFanout').value,
+      maxSubagentTokens: () => settings.resolve('toolsMaxSubagentTokens').value,
     },
     ...(options.port !== undefined ? { port: options.port } : {}),
     onShutdownRequest: () => void stop(),

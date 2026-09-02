@@ -1,5 +1,6 @@
 // 확인용 전체 GUI 미러 — 실제 renderer 구성요소에 정적 fixture만 주입한다.
 import { useState } from 'react';
+import { Bell, ChevronDown, CircleDot, Settings2 } from 'lucide-react';
 import type { Project, SessionSummary, Terminal, Workspace } from '@custom-harness/protocol';
 import { Conversation } from './Conversation.js';
 import type { SessionView } from '../timeline.js';
@@ -145,6 +146,47 @@ export function GuiMirrorPreview(): React.JSX.Element {
 
   return (
     <div className="app gui-mirror" data-testid="gui-mirror">
+      <header className="global-topbar" data-testid="gui-mirror-topbar">
+        <button className="global-brand" onClick={() => setLayout(emptyLayout)}>
+          <span className="global-mark">CH</span>
+          <span>Custom Harness</span>
+        </button>
+        <nav className="global-nav" aria-label="주요 탐색">
+          <button
+            className={activeTarget === undefined ? 'is-active' : ''}
+            onClick={() => setLayout(emptyLayout)}
+          >
+            워크스페이스
+          </button>
+          <button
+            className={activeTarget?.kind === 'session' ? 'is-active' : ''}
+            onClick={() => openSession('session-running')}
+          >
+            세션
+          </button>
+          <button onClick={() => setLayout((current) => openTab(current, { kind: 'files' }))}>
+            아티팩트
+          </button>
+          <button onClick={() => openSession('session-approval')}>
+            알림 <Bell size={13} aria-hidden="true" />
+          </button>
+        </nav>
+        <div className="global-actions">
+          <button className="global-model">
+            mock-model <ChevronDown size={14} aria-hidden="true" />
+          </button>
+          <span className="global-connection">
+            <CircleDot size={13} aria-hidden="true" /> 로컬 fixture
+          </span>
+          <button
+            className="global-avatar"
+            aria-label="미러 설정"
+            onClick={() => setLayout(emptyLayout)}
+          >
+            <Settings2 size={15} aria-hidden="true" />
+          </button>
+        </div>
+      </header>
       <Sidebar
         projects={[project]}
         workspaces={[workspace]}

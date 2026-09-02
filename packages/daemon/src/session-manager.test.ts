@@ -198,6 +198,8 @@ describe('SessionManager', () => {
       expect(usage.children[0]).toMatchObject({ sessionId: childA });
       expect(usage.children[0]!.subtree.totalTokens).toBe(25);
       expect(usage.children[0]!.usage?.totalTokens).toBe(20);
+      expect(usage.subagentTokens).toBe(25);
+      expect(usage.subagentUsageComplete).toBe(true);
     });
 
     it('닫힌 자식은 활성 수에서 빠지되 합산에는 남는다 — 쓴 토큰은 사라지지 않는다', async () => {
@@ -260,6 +262,8 @@ describe('SessionManager', () => {
       expect(usage.children[0]!.usage).toBeUndefined();
       expect(usage.subtree.outputTokens).toBeUndefined(); // 아무도 보고한 적 없다
       expect(usage.subtree.totalTokens).toBe(10);
+      expect(usage.subagentTokens).toBeUndefined();
+      expect(usage.subagentUsageComplete).toBe(false);
       await settled();
     });
   });

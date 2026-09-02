@@ -78,7 +78,9 @@ body {
 }
 .app {
   display: grid;
-  grid-template-columns: 276px 1fr;
+  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-rows: 52px auto minmax(0, 1fr);
+  background: #0b0f14;
 }
 .app-loading {
   display: grid;
@@ -109,10 +111,128 @@ body {
   outline-offset: 1px;
 }
 
+/* ── 전역 콘솔 프레임 ───────────────────────────────────────────────────── */
+.global-topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: stretch;
+  gap: 28px;
+  min-width: 0;
+  padding: 0 18px;
+  border-bottom: 1px solid #202936;
+  background: #0d1218;
+}
+.global-brand,
+.global-nav button,
+.global-model,
+.global-avatar {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.global-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 192px;
+  color: #f1f5fa;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+.global-mark {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 6px;
+  background: #3182f6;
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+}
+.global-nav {
+  display: flex;
+  align-items: stretch;
+  gap: 22px;
+}
+.global-nav button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.global-nav button:hover,
+.global-nav button.is-active {
+  color: #edf4ff;
+}
+.global-nav button.is-active::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: #4b92ff;
+  content: '';
+}
+.global-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-left: auto;
+}
+.global-model,
+.global-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #2a3443;
+  border-radius: 6px;
+  color: #b8c3cf;
+  font-size: 11px;
+}
+.global-model:hover {
+  border-color: #506e96;
+  color: #eef4ff;
+}
+.global-connection {
+  color: #69d790;
+}
+.global-connection.is-closed,
+.global-connection.is-reconnecting {
+  color: var(--warn);
+}
+.global-avatar {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid #3a4657;
+  border-radius: 50%;
+}
+.global-avatar:hover {
+  color: #eef4ff;
+  background: #17202c;
+}
+.app-alerts {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 /* ── 배너 ───────────────────────────────────────────────────────────────── */
 .connection-banner,
 .error-banner {
-  grid-column: 1 / -1;
+  display: block;
+  width: 100%;
+  border: 0;
   padding: 6px 14px;
   font-size: 12px;
   background: var(--warn-tint);
@@ -127,10 +247,39 @@ body {
 
 /* ── 사이드바 ───────────────────────────────────────────────────────────── */
 .sidebar {
+  grid-column: 1;
+  grid-row: 3;
   border-right: 1px solid var(--border-subtle);
-  background: linear-gradient(180deg, #141922 0%, var(--bg-panel) 42%, #12161d 100%);
+  background: #0d1218;
   padding: 14px 10px;
   overflow-y: auto;
+}
+.sidebar-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 5px 13px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.sidebar-context button {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.sidebar-context button:hover {
+  color: #fff;
+  border-color: var(--accent);
 }
 .sidebar-brand {
   display: flex;
@@ -209,6 +358,13 @@ body {
 }
 .sidebar-actions .new-session:hover {
   background: var(--accent);
+}
+.sidebar-health {
+  margin-top: 24px;
+  padding: 12px 6px 2px;
+  border-top: 1px solid var(--border-subtle);
+  color: #69d790;
+  font-size: 11px;
 }
 
 .bucket-title {
@@ -464,6 +620,8 @@ body {
 
 /* ── 메인 페인·탭 ───────────────────────────────────────────────────────── */
 .main-pane {
+  grid-column: 2;
+  grid-row: 3;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2138,9 +2296,10 @@ button.link:hover {
 /* 운영 큐 — 선택된 cockpit 방향을 기존 세션 read-model에 연결하는 첫 화면. */
 .work-queue {
   min-height: 100%;
-  padding: 44px clamp(24px, 5vw, 72px);
+  overflow: auto;
+  padding: 28px clamp(24px, 4vw, 58px) 40px;
   color: #dde6f5;
-  background: #0a1020;
+  background: #0b0f14;
 }
 .work-queue-heading,
 .work-queue-toolbar,
@@ -2152,7 +2311,7 @@ button.link:hover {
 .work-queue-heading {
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 .work-queue-eyebrow {
   margin: 0 0 6px;
@@ -2163,7 +2322,7 @@ button.link:hover {
 }
 .work-queue h1 {
   margin: 0;
-  font-size: clamp(28px, 4vw, 38px);
+  font-size: clamp(24px, 3vw, 32px);
   letter-spacing: -0.04em;
 }
 .work-queue-heading p:not(.work-queue-eyebrow) {
@@ -2225,12 +2384,27 @@ button.link:hover {
   border-radius: 12px;
   background: #0e1729;
 }
+.work-queue-table-head,
 .work-queue-row {
+  display: grid;
+  grid-template-columns: 110px minmax(220px, 1fr) 86px minmax(150px, 0.55fr);
+  gap: 14px;
+  align-items: center;
   width: 100%;
-  gap: 20px;
+}
+.work-queue-table-head {
+  min-height: 38px;
+  padding: 0 18px;
+  border-bottom: 1px solid #26303d;
+  color: #8895a7;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.work-queue-row {
   border: 0;
   border-bottom: 1px solid #1e2c45;
-  padding: 17px 18px;
+  padding: 14px 18px;
   color: inherit;
   text-align: left;
   background: transparent;
@@ -2243,6 +2417,10 @@ button.link:hover {
 .work-queue-row:focus-visible {
   outline: none;
   background: #142441;
+}
+.work-queue-row.is-selected {
+  background: #17283c;
+  box-shadow: inset 2px 0 #4c94ff;
 }
 .work-queue-status {
   display: inline-flex;
@@ -2298,6 +2476,87 @@ button.link:hover {
   color: #8092af;
   text-align: center;
 }
+.work-queue-detail {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid #293442;
+  border-radius: 8px;
+  background: #10161e;
+}
+.work-queue-detail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 74px;
+  padding: 13px 16px;
+  border-bottom: 1px solid #293442;
+}
+.work-queue-detail-kicker {
+  margin: 0 0 2px;
+  color: #75a7ff;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+}
+.work-queue-detail h2 {
+  display: inline;
+  margin: 0 10px 0 0;
+  color: #edf3fa;
+  font-size: 15px;
+}
+.work-queue-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #3c6fb4;
+  border-radius: 6px;
+  padding: 8px 11px;
+  background: #1d477b;
+  color: #edf5ff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+.work-queue-open:hover {
+  background: #2860a1;
+}
+.work-queue-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.work-queue-detail-grid > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-content: start;
+  padding: 16px;
+  border-right: 1px solid #293442;
+  color: #8b99aa;
+}
+.work-queue-detail-grid > div:last-child {
+  border-right: 0;
+}
+.work-queue-detail-grid svg {
+  margin-top: 2px;
+  color: #75a7ff;
+}
+.work-queue-detail-grid span {
+  font-size: 11px;
+}
+.work-queue-detail-grid code,
+.work-queue-detail-grid strong {
+  grid-column: 2;
+  overflow: hidden;
+  margin-top: 5px;
+  color: #ced9e7;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 @media (max-width: 760px) {
   .work-queue {
     padding: 26px 18px;
@@ -2311,8 +2570,8 @@ button.link:hover {
     min-width: 0;
   }
   .work-queue-row {
+    grid-template-columns: 100px minmax(0, 1fr);
     align-items: flex-start;
-    flex-wrap: wrap;
     gap: 10px;
   }
   .work-queue-session {
@@ -2320,5 +2579,25 @@ button.link:hover {
   }
   .work-queue-meta {
     min-width: 0;
+  }
+  .work-queue-table-head {
+    display: none;
+  }
+  .work-queue-row > .work-queue-harness,
+  .work-queue-row > .work-queue-meta {
+    grid-column: 2;
+  }
+  .work-queue-detail > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .work-queue-detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .work-queue-detail-grid > div:nth-child(2) {
+    border-right: 0;
+  }
+  .work-queue-detail-grid > div:nth-child(n + 3) {
+    border-top: 1px solid #293442;
   }
 }

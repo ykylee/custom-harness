@@ -11,7 +11,7 @@
 
 ## Current Focus
 
-- (2026-09-03 30차 갱신) **UI 재설계는 진행 중이다.** WorkQueue·대화·승인·터미널과 정적 GUI 미러(`?preview=gui`)를 만들었지만, 사용자 검토에서 실제 앱 프레임은 선택 시안(`DesignPreview`)의 구조와 다르다는 것이 확인됐다. 이번 세션의 Sidebar 스타일 보정도 그 구조 차이를 해소하지 못했다. 다음 작업은 색상 보정이 아니라 실제 `App` 레이아웃을 **상단 전역 바 → 좌측 워크스페이스 탐색 → 운영 큐 테이블 → 선택 세션 상세 패널**로 전환하는 일이다. 확인용 웹은 fixture만 사용하며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.
+- (2026-09-03 32차 갱신) **UI 재설계 TASK-010과 서브에이전트 토큰 예산 상한 TASK-001 완료.** 실제 `App`과 정적 GUI 미러(`?preview=gui`)를 `DesignPreview`의 4단 운영 콘솔 구조로 정렬했고, `tools.maxSubagentTokens`(기본 0=비활성)가 자식·자손 비용으로 `session_new`·`session_say`를 차단한다. 미보고 가지는 허용으로 보지 않는다. 다음 후보는 `autoApprove`와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리이며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.
 
 - (2026-09-02 29차 갱신) **M3 shadcn 기반 UI 재설계가 진행 중이다.** 현재 앱 화면을 캡처해 세 방향을 검토한 뒤 운영 큐(cockpit) 방향을 선택했다. `tailwindcss`·shadcn 스타일 Button·Lucide 기반을 도입했고, 정적 웹 시안은 `?preview=work-queue`로 분리해 사내망(`192.168.0.101:5180`)·Tailscale(`100.119.181.116:5180`)에서 본다. 원격 노출은 Vite 개발 서버가 아니라 빌드 산출물만 제공하는 `npm run preview:network`이며, loopback·사설 LAN·Tailscale 대역만 허용한다. 첫 실제 전환으로 Electron 기본 화면은 `session.list`/`workspace.list` read-model을 소비하는 `WorkQueue`가 됐다 — `requiresAttention`/`attentionReason`을 재해석하지 않고 그대로 표시하고, 행 선택은 기존 대화 탭으로 연결한다. TDD RED(미구현 import 실패)→GREEN(2건)과 전체 테스트 **706 passed, 2 skipped**를 확인했다. 다음은 대화·승인·터미널 상세를 같은 visual system으로 옮기고, live 원격 조회는 별도 인증 경계가 확정되기 전까지 열지 않는 것이다.
 
@@ -60,7 +60,6 @@
 
 ## Work Status
 
-- TASK-2026-09-02-main-010 확인용 웹 전체 GUI 미러 및 실제 App 프레임의 DesignPreview 구조 전환: in_progress
 - 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정, **업데이트·롤백 경로와 junction 전환 추가**), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
 - M3 조건부·사내 의존 — 3.2 저장소 연동(M0 0.5.2 결과 대기), 3.4 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
 - TASK-2026-09-02-main-001 M3 3.6.1 사용자 가이드(설치·온보딩·기본 사용·FAQ, 번들 동봉): done
@@ -75,6 +74,8 @@
 - TASK-2026-09-01-main-008 M7 7.5.1 CLI 세션 명령(생성·목록·프롬프트·스트리밍·중단·승인): done
 
 ## Key Changes
+
+- (2026-09-03) **TASK-010 UI 운영 콘솔 프레임**: 실제 `App`과 `?preview=gui`를 상단 전역 바·좌측 워크스페이스 탐색·운영 큐 테이블·선택 세션 상세 패널의 4단 구조로 전환했다. 미러는 fixture만 쓰며 live daemon 연결은 추가하지 않았다. `typecheck`·WorkQueue 3건·renderer build·`git diff --check` 통과. `app.test.tsx`의 팔레트 1건은 mock `search.files`가 `paths`를 생략하는 기존 독립 결함이다.
 
 - (2026-09-02) **M3 3.6.1 사용자 가이드**: `docs/USER_GUIDE.md` + **번들 루트 동봉**(build-bundle 이 복사, INSTALL.md 상호 참조). 저장소 링크 없는 자족 문서 — 폐쇄망 사용자는 저장소에 닿지 못한다. 격리 루트 실설치 대조로 작성(레이아웃·doctor·rollback·workspace new·session list --json·logs). 설정 키 표·CLI 전 명령·FAQ 10문 포함.
 
@@ -134,8 +135,7 @@
 > 완료 항목은 여기 쌓지 않는다 — 이력의 SSOT 는 `backlog/tasks/` 와 `docs/roadmap/PROGRESS.md` 다.
 > (2026-09-02 세션에서 M3 3.3.2 · 3.6.1 done. 직전 세션: M7 WBS 전 항목 + M7 완료 선언 + M3 WP 3.1 전 항목)
 
-- [ ] **TASK-2026-09-02-main-010 계속**: `DesignPreview`를 시각적 정본으로 실제 `App` 프레임·Sidebar·WorkQueue를 상단 전역 바·좌측 탐색·운영 큐 테이블·선택 세션 상세 패널의 4단 구조로 전환하고, `?preview=gui`에서 같은 구성요소를 검증한다. 원격은 fixture만 사용한다.
-- [ ] M7 이월 5건 — 토큰 예산 상한·`autoApprove` 와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리. 상세는 [m7-orchestration.md §완료 선언 §잔여](../../../docs/roadmap/m7-orchestration.md)
+- [ ] M7 이월 4건 — `autoApprove` 와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리. 상세는 [m7-orchestration.md §완료 선언 §잔여](../../../docs/roadmap/m7-orchestration.md)
 - [ ] **C-1 실 게이트웨이 실측 회신** → 1.7.3 M1 수용 시나리오 → M1 완료 선언 (M2 완료 선언의 선행)
 - [ ] **C-5 실기기 실측 요청** — linux/win 매트릭스(m2-smoke-matrix.md 절차), install.ps1·uninstall.ps1 검증. 추가 확인: **업데이트·롤백 경로**(junction 전환·`custom-harness-rollback.cmd` 미실행 검증), 디스크 부족 주입(램디스크 경로는 darwin 만 구현), Windows junction 환경의 git `--show-prefix` 경로 유도
 
