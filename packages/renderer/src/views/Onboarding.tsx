@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { HarnessInfo } from '@custom-harness/protocol';
 import type { GatewaySettings } from '../store/app-store.js';
+import { FormActions, FormSection, FormShell } from '../components/FormLayout.js';
 
 export interface OnboardingActions {
   saveGateway(settings: Partial<GatewaySettings>): Promise<void>;
@@ -62,7 +63,7 @@ export function Onboarding({
   };
 
   return (
-    <div className="onboarding" data-testid="onboarding">
+    <FormShell className="onboarding" data-testid="onboarding">
       <h1>시작하기</h1>
       <ol className="onboarding-steps">
         <li className={step === 1 ? 'active' : 'done'}>게이트웨이</li>
@@ -71,7 +72,7 @@ export function Onboarding({
       </ol>
 
       {step === 1 && (
-        <div className="onboarding-step">
+        <FormSection className="onboarding-step">
           <label>
             게이트웨이 주소
             <input
@@ -88,14 +89,16 @@ export function Onboarding({
               onChange={(event) => setDefaultModel(event.target.value)}
             />
           </label>
-          <button onClick={() => void saveGateway()} disabled={busy || !baseUrl.trim()}>
-            다음
-          </button>
-        </div>
+          <FormActions>
+            <button onClick={() => void saveGateway()} disabled={busy || !baseUrl.trim()}>
+              다음
+            </button>
+          </FormActions>
+        </FormSection>
       )}
 
       {step === 2 && (
-        <div className="onboarding-step">
+        <FormSection className="onboarding-step">
           <label>
             게이트웨이 API 키
             <input
@@ -104,22 +107,26 @@ export function Onboarding({
               onChange={(event) => setApiKey(event.target.value)}
             />
           </label>
-          <button onClick={() => void submitKey()} disabled={busy || !apiKey.trim()}>
-            {busy ? '연결 확인 중…' : '키 저장 + 연결 확인'}
-          </button>
-        </div>
+          <FormActions>
+            <button onClick={() => void submitKey()} disabled={busy || !apiKey.trim()}>
+              {busy ? '연결 확인 중…' : '키 저장 + 연결 확인'}
+            </button>
+          </FormActions>
+        </FormSection>
       )}
 
       {step === 3 && (
-        <div className="onboarding-step">
+        <FormSection className="onboarding-step">
           <p>연결 확인 완료. 사용 가능한 하네스:</p>
           <ul data-testid="harness-list">
             {harnesses.map((harness) => (
               <li key={harness.id}>{harness.id}</li>
             ))}
           </ul>
-          <button onClick={() => actions.finish()}>시작</button>
-        </div>
+          <FormActions>
+            <button onClick={() => actions.finish()}>시작</button>
+          </FormActions>
+        </FormSection>
       )}
 
       {notice && (
@@ -127,6 +134,6 @@ export function Onboarding({
           {notice}
         </div>
       )}
-    </div>
+    </FormShell>
   );
 }

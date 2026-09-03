@@ -805,8 +805,10 @@ export class AppController {
       palette: {
         ...this.store.get().palette,
         resultsFor: trimmed,
-        filePaths: files.paths,
-        hits: timeline.hits,
+        // RPC 경계에서는 응답이 완전하다는 보장이 없다. 보조 UI인 팔레트가
+        // 불완전한 검색 응답 하나로 앱 전체를 무너뜨리면 안 된다.
+        filePaths: Array.isArray(files.paths) ? files.paths : [],
+        hits: Array.isArray(timeline.hits) ? timeline.hits : [],
         loading: false,
       },
     });

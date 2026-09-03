@@ -6,10 +6,12 @@
 - Scope: current focus, task status, key changes, next actions, risks
 - Audience: AI agents, maintainers
 - Status: draft
-- Updated: 2026-09-03
+- Updated: 2026-09-04
 - Related docs: [Project Profile](../../docs/PROJECT_PROFILE.md), [Work Backlog](./work_backlog.md)
 
 ## Current Focus
+
+- (2026-09-04 34차 갱신) **렌더러 폼 시스템 통합·디자인 상호작용 보정·MCP 거부 흐름 정합화를 완료했다.** 설정·세션 생성·워크스페이스 생성·온보딩은 `FormShell / FormSection / FormActions`를 공유한다. 커맨드 팔레트는 불완전한 검색 응답을 빈 결과로 정규화해 크래시하지 않고, 정적 미리보기는 실제 명령을 실행하지 않는다는 고지와 승인 상태 전환을 제공한다. `session_say`의 호출자 미식별 write 거부는 승인 이전의 재귀 안전장치로 e2e 기대값을 정렬했다. **전체 검증은 typecheck·713 tests passed (2 skipped)·lint·format:check 통과.** 다음 작업은 수립한 P0 검증 시나리오를 자동화할지, M7 잔여 UI/격리 작업을 진행할지 우선순위를 정하는 것이다.
 
 - (2026-09-03 33차 갱신) **운영 콘솔 사용성 보정 5건을 완료했다.** autoApprove는 일반 하네스 승인만 자동 처리하고 역방향 툴은 항상 사용자 응답을 기다린다. 앱 창 닫기는 트레이·상주 없이 앱 소유 데몬까지 정리한다. 운영 큐는 단일 새 세션 진입점·균일한 도구 버튼·완료 세션 분리·단일 행 검색으로 정리했고, 새 세션은 다시 하네스·모델 선택 화면으로 연결된다. 워크스페이스 생성 화면에는 전용 여백·카드 규칙을 추가했다. **다음 우선순위는 폼 시스템 통합**이다: 설정·세션 생성·워크스페이스·온보딩이 콘텐츠 폭·여백·섹션 카드·입력 높이·행동 버튼 규칙을 공유하도록 `FormShell / FormSection / FormActions`를 설계·적용한다. 세션 완전 삭제 RPC는 없으므로 완료 이력은 완료 필터에서만 보존한다.
 
@@ -62,6 +64,11 @@
 
 ## Work Status
 
+- TASK-2026-09-04-main-002 동작 시나리오·검증 계획 수립: done
+- TASK-2026-09-04-main-001 MCP 호출자 미식별 거부 메시지 정합성: done
+- TASK-2026-09-03-main-009 커맨드 팔레트·미리보기 상호작용 보정: done
+- TASK-2026-09-03-main-008 디자인·상호작용 점검: done
+- TASK-2026-09-03-main-007 폼 시스템 통합: done
 - TASK-2026-09-03-main-006 작업 큐 검색·세션 정리와 새 세션 진입 복구: done
 - TASK-2026-09-03-main-005 워크스페이스 화면 여백·폼 밀도 정리: done
 - TASK-2026-09-03-main-004 운영 콘솔 버튼 위계·배치 균형 정리: done
@@ -81,6 +88,8 @@
 - TASK-2026-09-01-main-008 M7 7.5.1 CLI 세션 명령(생성·목록·프롬프트·스트리밍·중단·승인): done
 
 ## Key Changes
+
+- (2026-09-04) **폼·상호작용·검증 계획**: `FormShell`·`FormSection`·`FormActions`를 추가해 설정·세션 생성·워크스페이스 생성·온보딩의 레이아웃 규칙을 통일했다. 팔레트 검색은 `files.paths`·`timeline.hits` 누락을 빈 배열로 처리하며, 정적 미리보기는 비실행 고지와 GUI 미러의 승인 상태 전환을 제공한다. MCP e2e는 호출자 세션을 찾지 못한 `session_say` write 호출이 승인 요청이 아니라 재귀 안전장치에서 거부됨을 검증한다. 자동·수동 검증 계획은 설치/온보딩, 승인·MCP 보안, 복구, 오케스트레이션, 배포·롤백의 P0~P2 계층으로 정리했다. 전체 품질 게이트: **713 passed, 2 skipped**.
 
 - (2026-09-03) **TASK-010 UI 운영 콘솔 프레임**: 실제 `App`과 `?preview=gui`를 상단 전역 바·좌측 워크스페이스 탐색·운영 큐 테이블·선택 세션 상세 패널의 4단 구조로 전환했다. 미러는 fixture만 쓰며 live daemon 연결은 추가하지 않았다. `typecheck`·WorkQueue 3건·renderer build·`git diff --check` 통과. `app.test.tsx`의 팔레트 1건은 mock `search.files`가 `paths`를 생략하는 기존 독립 결함이다.
 
@@ -140,9 +149,10 @@
 ## Next Actions
 
 > 완료 항목은 여기 쌓지 않는다 — 이력의 SSOT 는 `backlog/tasks/` 와 `docs/roadmap/PROGRESS.md` 다.
-> (2026-09-02 세션에서 M3 3.3.2 · 3.6.1 done. 직전 세션: M7 WBS 전 항목 + M7 완료 선언 + M3 WP 3.1 전 항목)
+> (2026-09-04 세션에서 폼 시스템 통합·디자인/상호작용 보정·MCP e2e 정합화·검증 계획 수립 done. 전체 품질 게이트 통과.)
 
-- [ ] M7 이월 4건 — `autoApprove` 와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리. 상세는 [m7-orchestration.md §완료 선언 §잔여](../../../docs/roadmap/m7-orchestration.md)
+- [ ] M7 이월 3건 — 제목 수동 편집·파일 검색 캐시·Windows 홈 격리. 상세는 [m7-orchestration.md §완료 선언 §잔여](../../../docs/roadmap/m7-orchestration.md)
+- [ ] P0 검증 계획의 자동화 범위를 확정하고, 설치/온보딩·승인/MCP 보안·데몬 재개 시나리오부터 회귀 스크립트 또는 테스트로 구현
 - [ ] **C-1 실 게이트웨이 실측 회신** → 1.7.3 M1 수용 시나리오 → M1 완료 선언 (M2 완료 선언의 선행)
 - [ ] **C-5 실기기 실측 요청** — linux/win 매트릭스(m2-smoke-matrix.md 절차), install.ps1·uninstall.ps1 검증. 추가 확인: **업데이트·롤백 경로**(junction 전환·`custom-harness-rollback.cmd` 미실행 검증), 디스크 부족 주입(램디스크 경로는 darwin 만 구현), Windows junction 환경의 git `--show-prefix` 경로 유도
 

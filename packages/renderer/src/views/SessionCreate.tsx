@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import type { HarnessId, HarnessInfo, Workspace } from '@custom-harness/protocol';
 import type { GatewaySettings } from '../store/app-store.js';
+import { FormActions, FormSection, FormShell } from '../components/FormLayout.js';
 
 export function SessionCreate({
   harnesses,
@@ -31,13 +32,15 @@ export function SessionCreate({
 
   if (workspace === null) {
     return (
-      <div className="session-create">
+      <FormShell className="session-create">
         <h2>새 세션</h2>
         <p className="hint">
           세션은 워크스페이스 안에서 만들어집니다. 먼저 프로젝트를 열어 워크스페이스를 만드세요.
         </p>
-        <button onClick={() => onNewWorkspace()}>워크스페이스 만들기</button>
-      </div>
+        <FormActions>
+          <button onClick={() => onNewWorkspace()}>워크스페이스 만들기</button>
+        </FormActions>
+      </FormShell>
     );
   }
 
@@ -60,53 +63,57 @@ export function SessionCreate({
   };
 
   return (
-    <div className="session-create">
+    <FormShell className="session-create">
       <h2>새 세션</h2>
-      <div className="session-create-workspace" data-testid="target-workspace">
-        <span className={`isolation-badge isolation-${workspace.isolation}`}>
-          {workspace.isolation === 'worktree' ? 'wt' : 'dir'}
-        </span>
-        <strong>{workspace.displayName}</strong>
-        {workspace.branch !== undefined && (
-          <span className="workspace-branch">{workspace.branch}</span>
+      <FormSection className="session-create-details">
+        <div className="session-create-workspace" data-testid="target-workspace">
+          <span className={`isolation-badge isolation-${workspace.isolation}`}>
+            {workspace.isolation === 'worktree' ? 'wt' : 'dir'}
+          </span>
+          <strong>{workspace.displayName}</strong>
+          {workspace.branch !== undefined && (
+            <span className="workspace-branch">{workspace.branch}</span>
+          )}
+          <code className="workspace-path">{workspace.cwd}</code>
+        </div>
+        {workspace.setupState === 'pending' && (
+          <p className="hint" data-testid="setup-pending-hint">
+            이 프로젝트에는 아직 실행하지 않은 설정 파일(setup)이 있습니다. 사이드바에서 내용을
+            확인하고 실행할 수 있습니다.
+          </p>
         )}
-        <code className="workspace-path">{workspace.cwd}</code>
-      </div>
-      {workspace.setupState === 'pending' && (
-        <p className="hint" data-testid="setup-pending-hint">
-          이 프로젝트에는 아직 실행하지 않은 설정 파일(setup)이 있습니다. 사이드바에서 내용을
-          확인하고 실행할 수 있습니다.
-        </p>
-      )}
-      <label>
-        하네스
-        <select value={harness} onChange={(event) => setHarness(event.target.value as HarnessId)}>
-          {harnesses.map((h) => (
-            <option key={h.id} value={h.id}>
-              {h.id}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        모델
-        <select value={modelId} onChange={(event) => setModelId(event.target.value)}>
-          <option value="">(하네스 기본값)</option>
-          {(gateway?.models ?? []).map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name ?? model.id}
-            </option>
-          ))}
-        </select>
-      </label>
+        <label>
+          하네스
+          <select value={harness} onChange={(event) => setHarness(event.target.value as HarnessId)}>
+            {harnesses.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          모델
+          <select value={modelId} onChange={(event) => setModelId(event.target.value)}>
+            <option value="">(하네스 기본값)</option>
+            {(gateway?.models ?? []).map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name ?? model.id}
+              </option>
+            ))}
+          </select>
+        </label>
+      </FormSection>
       {error && (
         <div className="create-error" data-testid="create-error">
           세션 생성 실패: {error}
         </div>
       )}
-      <button onClick={() => void create()} disabled={creating || !harness}>
-        {creating ? '생성 중…' : '세션 생성'}
-      </button>
-    </div>
+      <FormActions>
+        <button onClick={() => void create()} disabled={creating || !harness}>
+          {creating ? '생성 중…' : '세션 생성'}
+        </button>
+      </FormActions>
+    </FormShell>
   );
 }

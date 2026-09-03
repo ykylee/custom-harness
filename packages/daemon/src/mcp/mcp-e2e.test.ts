@@ -132,7 +132,7 @@ describe('MCP 서버 e2e', () => {
     expect(found).toHaveProperty('status');
   });
 
-  it('승인 대상 write 툴은 호출자 세션을 못 찾으면 거부된다 — 물을 화면이 없다', async () => {
+  it('승인 대상 write 툴은 호출자 세션을 못 찾으면 거부된다 — 재귀 상한을 셀 근거가 없다', async () => {
     await request('initialize', {});
     const called = await request('tools/call', {
       name: 'session_say',
@@ -140,7 +140,9 @@ describe('MCP 서버 e2e', () => {
     });
     const result = called.result as { isError: boolean; content: { text: string }[] };
     expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain('승인');
+    // session_say 는 write 승인보다 재귀 상한 검사를 먼저 통과해야 한다.
+    // 호출자를 찾지 못하면 사용자에게 승인 카드를 띄우기 전 안전하게 거부한다.
+    expect(result.content[0]!.text).toContain('호출자 세션');
   });
 
   it('환각 파라미터는 조용히 무시되지 않는다', async () => {

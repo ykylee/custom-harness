@@ -208,9 +208,9 @@ describe('App — 커맨드 팔레트 배선 (M7 7.4.2)', () => {
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     fireEvent.change(screen.getByLabelText('커맨드 팔레트'), { target: { value: 'parent-1' } });
     await vi.waitFor(() => {
-      expect(screen.getByText('parent-1')).toBeTruthy();
+      expect(screen.getByRole('option', { name: /parent-1/ })).toBeTruthy();
     });
-    fireEvent.mouseDown(screen.getByText('parent-1'));
+    fireEvent.mouseDown(screen.getByRole('option', { name: /parent-1/ }));
     expect(screen.queryByTestId('command-palette')).toBeNull();
     await vi.waitFor(() => {
       expect(controller.layout.active).toBe('session:parent-1');

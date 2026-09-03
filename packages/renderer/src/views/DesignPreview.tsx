@@ -96,6 +96,9 @@ export function DesignPreview(): React.JSX.Element {
 
   return (
     <div className="preview-shell">
+      <p className="preview-static-notice" role="note">
+        정적 디자인 미리보기 — 데이터 변경이나 외부 동작은 실행하지 않습니다.
+      </p>
       <header className="preview-topbar">
         <div className="preview-brand">
           <span className="preview-mark">CH</span>

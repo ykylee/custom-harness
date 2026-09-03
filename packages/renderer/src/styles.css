@@ -1328,11 +1328,9 @@ body {
   }
 }
 
-/* ── 폼 화면 (온보딩·세션 생성·설정) ────────────────────────────────────── */
-.session-create,
-.settings,
-.about,
-.onboarding {
+/* ── 폼 시스템 (설정·세션 생성·워크스페이스·온보딩) ────────────────────── */
+.form-shell,
+.about {
   max-width: 520px;
   margin: 56px auto;
   display: flex;
@@ -1342,23 +1340,7 @@ body {
   width: 100%;
   overflow-y: auto;
 }
-/* 워크스페이스는 선택지가 많은 작업 화면이라, 좁은 폼 폭과 안전 여백을 별도로 둔다. */
-.workspace-create {
-  width: min(100%, 760px);
-  min-height: 100%;
-  margin: 0 auto;
-  padding: 42px clamp(32px, 6vw, 76px) 56px;
-  overflow-y: auto;
-}
-.workspace-create > h2 {
-  margin: 0 0 24px;
-  color: var(--text-1);
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-}
-.workspace-create-open,
-.workspace-create-add {
+.form-section {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1366,6 +1348,45 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-m);
   background: var(--bg-panel);
+}
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.form-actions > button {
+  min-height: 36px;
+  padding-inline: 15px;
+}
+.form-shell > h2 {
+  margin: 0;
+  color: var(--text-1);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.form-shell .hint {
+  margin: -8px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.form-shell label {
+  gap: 7px;
+}
+.form-shell input,
+.form-shell select {
+  min-height: 38px;
+}
+/* 워크스페이스는 선택지가 많은 작업 화면이라 넓은 변형을 사용한다. */
+.form-shell.workspace-create {
+  width: min(100%, 760px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 42px clamp(32px, 6vw, 76px) 56px;
+}
+.workspace-create-open,
+.workspace-create-add {
+  /* 공통 FormSection을 쓰되, 화면 의미를 위한 훅을 유지한다. */
 }
 .workspace-create-add {
   margin-top: 16px;
@@ -1376,35 +1397,19 @@ body {
   font-size: 15px;
   font-weight: 650;
 }
-.workspace-create .hint {
-  margin: -8px 0 0;
-  color: var(--text-3);
-  font-size: 12px;
-}
-.workspace-create label {
-  gap: 7px;
-}
-.workspace-create input,
-.workspace-create select {
-  min-height: 38px;
-}
-.workspace-create-open > button,
-.workspace-create-add > button {
-  align-self: flex-start;
-  min-height: 36px;
-  padding-inline: 15px;
-}
 .workspace-create > .create-error {
   margin-top: 14px;
 }
-.workspace-create > .cancel {
-  min-height: 36px;
+.workspace-create .form-actions:has(.cancel) {
   margin-top: 16px;
+}
+.workspace-create .cancel {
+  min-height: 36px;
   border-color: var(--border);
   background: transparent;
   color: var(--text-2);
 }
-.workspace-create > .cancel:hover {
+.workspace-create .cancel:hover {
   border-color: #475569;
   background: var(--bg-hover);
   color: var(--text-1);
@@ -1485,7 +1490,7 @@ button.settings-link:hover {
 }
 
 @media (max-width: 760px) {
-  .workspace-create {
+  .form-shell.workspace-create {
     width: 100%;
     padding: 28px 20px 40px;
   }
@@ -1503,6 +1508,25 @@ button.settings-link:hover {
   margin: 0 0 6px;
   font-size: 12.5px;
   color: var(--text-3);
+}
+.session-create-workspace {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-s);
+  background: var(--bg-inset);
+}
+.workspace-path {
+  width: 100%;
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .onboarding-steps .active {
   font-weight: 700;
@@ -1833,6 +1857,20 @@ button.link:hover {
   grid-template-columns: 244px minmax(0, 1fr);
   grid-template-rows: 50px minmax(0, 1fr);
   font-size: 14px;
+}
+.preview-static-notice {
+  position: fixed;
+  z-index: 10;
+  right: 16px;
+  bottom: 16px;
+  max-width: 360px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--bg-panel) 92%, var(--warn));
+  color: var(--text-2);
+  font-size: 11px;
 }
 .preview-topbar {
   grid-column: 1 / -1;

@@ -120,7 +120,14 @@ const approvalView: SessionView = {
 
 export function GuiMirrorPreview(): React.JSX.Element {
   const [layout, setLayout] = useState(emptyLayout);
+  const [permissionPending, setPermissionPending] = useState(true);
   const activeTarget = targetOf(layout, layout.active);
+  const previewView: SessionView = {
+    ...approvalView,
+    items: permissionPending
+      ? approvalView.items
+      : approvalView.items.filter((item) => item.kind !== 'permission'),
+  };
   const openSession = (sessionId: string): void =>
     setLayout((current) => openTab(current, { kind: 'session', sessionId }));
   const actions: SidebarActions = {
@@ -146,6 +153,9 @@ export function GuiMirrorPreview(): React.JSX.Element {
 
   return (
     <div className="app gui-mirror" data-testid="gui-mirror">
+      <p className="preview-static-notice" role="note">
+        정적 상호작용 미리보기 — 승인 상태만 화면에서 전환하며 실제 명령은 실행하지 않습니다.
+      </p>
       <header className="global-topbar" data-testid="gui-mirror-topbar">
         <button className="global-brand" onClick={() => setLayout(emptyLayout)}>
           <span className="global-mark">CH</span>
@@ -219,11 +229,11 @@ export function GuiMirrorPreview(): React.JSX.Element {
           </section>
         ) : activeTarget.kind === 'session' ? (
           <Conversation
-            view={approvalView}
+            view={previewView}
             actions={{
               prompt: () => undefined,
               interrupt: () => undefined,
-              respondPermission: () => undefined,
+              respondPermission: () => setPermissionPending(false),
             }}
           />
         ) : (

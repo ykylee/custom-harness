@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { HarnessId, HarnessInfo, ProbeResult } from '@custom-harness/protocol';
 import type { GatewaySettings, KeyState } from '../store/app-store.js';
 import { HarnessBadge } from '../components/Sidebar.js';
+import { FormActions, FormSection, FormShell } from '../components/FormLayout.js';
 
 export interface SettingsActions {
   setKey(apiKey: string): Promise<{ valid: boolean; detail?: string }>;
@@ -63,9 +64,9 @@ export function Settings({
   const catalog = harnesses.find((h) => h.models?.length)?.models ?? gateway?.models ?? [];
 
   return (
-    <div className="settings">
+    <FormShell className="settings">
       <h2>설정</h2>
-      <section>
+      <FormSection>
         <h3>게이트웨이</h3>
         <p>
           주소: <code>{gateway?.baseUrl ?? '미설정'}</code>
@@ -95,9 +96,9 @@ export function Settings({
             ))}
           </select>
         </label>
-      </section>
+      </FormSection>
 
-      <section>
+      <FormSection>
         <h3>API 키</h3>
         <p>
           상태: {keyState?.present ? '등록됨' : '미등록'}
@@ -116,13 +117,15 @@ export function Settings({
             onChange={(event) => setApiKey(event.target.value)}
           />
         </label>
-        <button onClick={() => void submitKey()} disabled={busy || !apiKey.trim()}>
-          {busy ? '확인 중…' : '저장 + 연결 확인'}
-        </button>
+        <FormActions>
+          <button onClick={() => void submitKey()} disabled={busy || !apiKey.trim()}>
+            {busy ? '확인 중…' : '저장 + 연결 확인'}
+          </button>
+        </FormActions>
         {notice && <div className="settings-notice">{notice}</div>}
-      </section>
+      </FormSection>
 
-      <section data-testid="harness-panel">
+      <FormSection data-testid="harness-panel">
         <h3>하네스 상태 (FR-3.6.3)</h3>
         <table className="harness-table">
           <thead>
@@ -164,9 +167,9 @@ export function Settings({
             })}
           </tbody>
         </table>
-      </section>
+      </FormSection>
 
-      <section>
+      <FormSection>
         <h3>알림·승인 정책 (FR-3.6.4)</h3>
         <label className="notifications-toggle">
           <input
@@ -180,19 +183,23 @@ export function Settings({
           자동 승인: {autoApproveCount > 0 ? `⚠ ${autoApproveCount}개 세션에서 활성` : '비활성'} —
           세션 한정 opt-in 이며 앱 재시작 시 해제됩니다.
         </p>
-      </section>
+      </FormSection>
 
-      <section>
+      <FormSection>
         <h3>앱 정보</h3>
         <p>버전·동봉 오픈소스 고지(FR-4.5)를 여기서 확인합니다.</p>
-        <button data-testid="open-about" onClick={() => actions.openAbout()}>
-          앱 정보 · 오픈소스 고지
-        </button>
-      </section>
+        <FormActions>
+          <button data-testid="open-about" onClick={() => actions.openAbout()}>
+            앱 정보 · 오픈소스 고지
+          </button>
+        </FormActions>
+      </FormSection>
 
-      <button className="back" onClick={() => actions.back()}>
-        돌아가기
-      </button>
-    </div>
+      <FormActions>
+        <button className="back" onClick={() => actions.back()}>
+          돌아가기
+        </button>
+      </FormActions>
+    </FormShell>
   );
 }

@@ -9,6 +9,7 @@ import { WorkspaceCreate } from './WorkspaceCreate.js';
 import { FilesView, FileViewer } from './FilesView.js';
 import { DiffView } from './DiffView.js';
 import { SessionCreate } from './SessionCreate.js';
+import { GuiMirrorPreview } from './GuiMirrorPreview.js';
 
 afterEach(cleanup);
 
@@ -251,6 +252,16 @@ describe('Onboarding (FR-3.8)', () => {
     expect((await screen.findByTestId('harness-list')).textContent).toContain('pi');
     fireEvent.click(screen.getByText('시작'));
     expect(actions.finish).toHaveBeenCalled();
+  });
+});
+
+describe('GuiMirrorPreview', () => {
+  it('승인 버튼은 정적 미리보기 안에서 처리 상태를 반영한다', () => {
+    render(<GuiMirrorPreview />);
+    fireEvent.click(screen.getByRole('button', { name: '배포 전 검토 승인 대기' }));
+    fireEvent.click(screen.getByRole('button', { name: '허용' }));
+    expect(screen.queryByRole('button', { name: '허용' })).toBeNull();
+    expect(screen.getByRole('note').textContent).toContain('실제 명령은 실행하지 않습니다');
   });
 });
 
