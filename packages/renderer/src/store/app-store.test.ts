@@ -229,7 +229,11 @@ describe('AppController 자동 승인 (FR-3.4.3)', () => {
     controller.setNotificationsEnabled(false); // 알림 경로 제외
     controller.setAutoApprove('s-1', true);
 
-    const permissionEvent = (sessionId: string, requestId: string): SessionEvent =>
+    const permissionEvent = (
+      sessionId: string,
+      requestId: string,
+      origin?: 'harness' | 'reverse_tool',
+    ): SessionEvent =>
       ({
         type: 'permission_requested',
         sessionId,
@@ -242,6 +246,7 @@ describe('AppController 자동 승인 (FR-3.4.3)', () => {
             { optionId: 'ok', label: '허용', kind: 'allow_once' },
             { optionId: 'no', label: '거부', kind: 'reject_once' },
           ],
+          ...(origin === undefined ? {} : { origin }),
         },
       }) as unknown as SessionEvent;
 
@@ -261,6 +266,15 @@ describe('AppController 자동 승인 (FR-3.4.3)', () => {
     pushEvent(permissionEvent('s-2', 'p-2')); // opt-in 안 된 세션 — 자동 응답 금지
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(calls.filter((c) => c.type === 'session.permission.respond').length).toBe(before);
+
+    pushEvent(permissionEvent('s-1', 'p-3', 'reverse_tool'));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(calls.filter((c) => c.type === 'session.permission.respond').length).toBe(before);
+
+    pushEvent(permissionEvent('s-1', 'p-4', 'harness'));
+    await vi.waitFor(() => {
+      expect(calls.filter((c) => c.type === 'session.permission.respond').length).toBe(before + 1);
+    });
   });
 });
 

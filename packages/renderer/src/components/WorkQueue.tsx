@@ -6,16 +6,14 @@ import {
   Clock3,
   GitBranch,
   Info,
-  Plus,
   Search,
 } from 'lucide-react';
 import type { SessionSummary, Workspace } from '@custom-harness/protocol';
-import { Button } from './ui/button.js';
 
 type QueueFilter = 'all' | 'attention' | 'running' | 'idle' | 'closed';
 
 const filterLabel: Record<QueueFilter, string> = {
-  all: '전체',
+  all: '진행 중',
   attention: '확인 필요',
   running: '실행 중',
   idle: '대기',
@@ -54,13 +52,11 @@ export function WorkQueue({
   sessions,
   activeWorkspaceId,
   onOpenSession,
-  onCreateSession,
 }: {
   workspaces: Workspace[];
   sessions: SessionSummary[];
   activeWorkspaceId: string | null;
   onOpenSession(sessionId: string): void;
-  onCreateSession(): void;
 }): React.JSX.Element {
   const [filter, setFilter] = useState<QueueFilter>('all');
   const [query, setQuery] = useState('');
@@ -74,7 +70,9 @@ export function WorkQueue({
       sessions
         .filter((session) => {
           const status = queueStatus(session);
-          const filterMatches = filter === 'all' || status.tone === filter;
+          // 완료 세션은 기본 큐에서 분리한다. 이력은 완료 필터에서 그대로 확인할 수 있다.
+          const filterMatches =
+            filter === 'all' ? status.tone !== 'closed' : status.tone === filter;
           const text =
             `${titleOf(session)} ${session.harness} ${session.cwd} ${workspaceName.get(session.workspaceId ?? '') ?? ''}`.toLowerCase();
           return filterMatches && (normalizedQuery === '' || text.includes(normalizedQuery));
@@ -93,9 +91,6 @@ export function WorkQueue({
           <h1>워크 큐</h1>
           <p>실행 중인 세션과 사용자의 확인이 필요한 작업을 관리합니다.</p>
         </div>
-        <Button onClick={onCreateSession}>
-          <Plus size={16} /> 새 세션
-        </Button>
       </header>
 
       <div className="work-queue-toolbar">

@@ -3,6 +3,7 @@
 // 상태 버킷(승인 대기·실행 중·…)은 계층을 대체하지 않고 **횡단 필터**로 남는다.
 // 버킷으로만 묶으면 "지금 무엇이 급한가"는 보이지만 "어디서 일하고 있는가"가 사라진다.
 import { useEffect, useState } from 'react';
+import { Files, FolderPlus, GitCompareArrows, Plus, Terminal } from 'lucide-react';
 import type { Project, SessionSummary, Workspace } from '@custom-harness/protocol';
 
 /** 하네스 아이콘 — 폐쇄망 자산 없이 텍스트 배지 (색상은 styles.css harness-*) */
@@ -374,37 +375,31 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-context">
         <span>WORKSPACES</span>
-        <button aria-label="새 워크스페이스" onClick={() => actions.newWorkspace()}>
-          +
-        </button>
       </div>
       <div className="sidebar-actions">
         <button className="new-session" onClick={() => actions.newSession()}>
-          + 새 세션
+          <Plus size={16} aria-hidden="true" /> 새 세션
         </button>
         <div className="sidebar-utilities">
           <button className="new-workspace" onClick={() => actions.newWorkspace()}>
-            워크스페이스
+            <FolderPlus size={14} aria-hidden="true" /> 워크스페이스
           </button>
           <button
             className="new-terminal"
             data-testid="new-terminal"
             onClick={() => actions.newTerminal()}
           >
-            터미널
+            <Terminal size={14} aria-hidden="true" /> 터미널
           </button>
           <button
             className="open-files"
             data-testid="open-files"
             onClick={() => actions.openFiles()}
           >
-            파일
+            <Files size={14} aria-hidden="true" /> 파일
           </button>
           <button className="open-diff" data-testid="open-diff" onClick={() => actions.openDiff()}>
-            변경
-          </button>
-          <button className="settings-link" onClick={() => actions.openSettings()}>
-            설정
+            <GitCompareArrows size={14} aria-hidden="true" /> 변경
           </button>
         </div>
       </div>

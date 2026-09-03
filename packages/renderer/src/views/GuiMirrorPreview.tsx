@@ -1,6 +1,6 @@
 // 확인용 전체 GUI 미러 — 실제 renderer 구성요소에 정적 fixture만 주입한다.
 import { useState } from 'react';
-import { Bell, ChevronDown, CircleDot, Settings2 } from 'lucide-react';
+import { ChevronDown, CircleDot, Settings2 } from 'lucide-react';
 import type { Project, SessionSummary, Terminal, Workspace } from '@custom-harness/protocol';
 import { Conversation } from './Conversation.js';
 import type { SessionView } from '../timeline.js';
@@ -156,19 +156,13 @@ export function GuiMirrorPreview(): React.JSX.Element {
             className={activeTarget === undefined ? 'is-active' : ''}
             onClick={() => setLayout(emptyLayout)}
           >
-            워크스페이스
-          </button>
-          <button
-            className={activeTarget?.kind === 'session' ? 'is-active' : ''}
-            onClick={() => openSession('session-running')}
-          >
-            세션
+            작업 큐
           </button>
           <button onClick={() => setLayout((current) => openTab(current, { kind: 'files' }))}>
-            아티팩트
+            파일
           </button>
-          <button onClick={() => openSession('session-approval')}>
-            알림 <Bell size={13} aria-hidden="true" />
+          <button onClick={() => setLayout(emptyLayout)}>
+            <Settings2 size={13} aria-hidden="true" /> 설정
           </button>
         </nav>
         <div className="global-actions">
@@ -178,13 +172,6 @@ export function GuiMirrorPreview(): React.JSX.Element {
           <span className="global-connection">
             <CircleDot size={13} aria-hidden="true" /> 로컬 fixture
           </span>
-          <button
-            className="global-avatar"
-            aria-label="미러 설정"
-            onClick={() => setLayout(emptyLayout)}
-          >
-            <Settings2 size={15} aria-hidden="true" />
-          </button>
         </div>
       </header>
       <Sidebar
@@ -214,7 +201,6 @@ export function GuiMirrorPreview(): React.JSX.Element {
             sessions={sessions}
             activeWorkspaceId={workspace.id}
             onOpenSession={openSession}
-            onCreateSession={() => openSession('session-running')}
           />
         ) : activeTarget.kind === 'terminal' ? (
           <section className="terminal-cockpit" aria-label="터미널 상세">

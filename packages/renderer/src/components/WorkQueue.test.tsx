@@ -52,7 +52,6 @@ describe('WorkQueue', () => {
         sessions={sessions}
         activeWorkspaceId={workspace.id}
         onOpenSession={vi.fn()}
-        onCreateSession={vi.fn()}
       />,
     );
 
@@ -70,7 +69,6 @@ describe('WorkQueue', () => {
         sessions={sessions}
         activeWorkspaceId={workspace.id}
         onOpenSession={onOpenSession}
-        onCreateSession={vi.fn()}
       />,
     );
 
@@ -95,7 +93,6 @@ describe('WorkQueue', () => {
         sessions={attentionSessions}
         activeWorkspaceId={workspace.id}
         onOpenSession={vi.fn()}
-        onCreateSession={vi.fn()}
       />,
     );
 

@@ -1,21 +1,14 @@
-// Electron 셸 (WBS 1.6.1·2.4.6, FR-1.1.5·FR-3.5) — 렌더러 코드 없음, 데몬·창·트레이 수명주기만.
-// 데몬은 detached spawn — 창을 닫아도 세션 유지. 창 닫기 = 숨김(트레이 상주, FR-3.5.1),
-// 앱 종료는 트레이 메뉴의 명시적 조작. 네이티브 알림은 렌더러의 Notification API 가 담당(FR-3.5.2).
+// Electron 셸 (WBS 1.6.1·2.4.6, FR-1.1.5·FR-3.5) — 렌더러 코드 없음, 데몬·창 수명주기만.
+// 창을 닫으면 앱도 종료한다. 셸이 기동한 detached 데몬도 함께 정리하며, CLI 소유 데몬은 건드리지 않는다.
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { BrowserWindow, Menu, Tray, app, nativeImage, safeStorage } from 'electron';
-import { WebSocket } from 'ws';
-import { launchDetachedDaemon, resolvePaths } from '@custom-harness/daemon';
+import { BrowserWindow, Menu, app, safeStorage } from 'electron';
+import { launchDetachedDaemon, resolvePaths, stopDaemon } from '@custom-harness/daemon';
 
 const require = createRequire(import.meta.url);
 
-/** 16x16 흑백 링 도트 — 폐쇄망 자산 없이 코드 내장 (macOS 템플릿 이미지) */
-const TRAY_ICON_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAAANElEQVR4nGNgoC74D4V4JXEoQhfCUIJp7H9Uzn88LCQOsv3kKcBpBUFHEuFNggGFqoiqAACj/z/BBrKR5AAAAABJRU5ErkJggg==';
-
-let daemonInfo: { port: number; token: string } | undefined;
+let daemonInfo: { port: number; token: string; managedBy: 'app' | 'cli' | string } | undefined;
 let mainWindow: BrowserWindow | undefined;
-let tray: Tray | undefined;
 let quitting = false;
 
 function rendererIndexPath(): string {
@@ -33,7 +26,7 @@ async function ensureDaemon(): Promise<{ port: number; token: string }> {
     managedBy: 'app',
   });
   if (info.port === null) throw new Error('데몬 포트 미확인 — daemon.pid 에 port 없음');
-  daemonInfo = { port: info.port, token };
+  daemonInfo = { port: info.port, token, managedBy: info.managedBy };
   return daemonInfo;
 }
 
@@ -55,11 +48,11 @@ async function showWindow(): Promise<void> {
     },
   });
   mainWindow = window;
-  // 창 닫기 = 숨김 — 트레이 상주 (FR-3.5.1). 종료는 트레이 메뉴에서만
+  // 창 닫기는 곧 앱 종료다. 숨김·트레이 상주로 바꾸지 않는다.
   window.on('close', (event) => {
     if (quitting) return;
     event.preventDefault();
-    window.hide();
+    void shutdown();
   });
   const search = `?port=${port}&token=${encodeURIComponent(token)}`;
   if (process.env.CUSTOM_HARNESS_DEV === '1') {
@@ -69,96 +62,14 @@ async function showWindow(): Promise<void> {
   }
 }
 
-/** 트레이 메뉴용 세션 요약 — 데몬 WS 1회 질의 (hello → session.list) */
-type TraySession = {
-  harness: string;
-  cwd: string;
-  status: string;
-  requiresAttention?: boolean;
-  attentionReason?: 'permission' | 'error' | 'finished';
-  attentionTimestamp?: string;
-};
-
-async function querySessions(): Promise<TraySession[]> {
-  if (!daemonInfo) return [];
-  const { port, token } = daemonInfo;
-  return new Promise((resolve) => {
-    const sessions: TraySession[] = [];
-    const ws = new WebSocket(`ws://127.0.0.1:${port}`, [token]);
-    const finish = (): void => {
-      try {
-        ws.close();
-      } catch {
-        /* 무시 */
-      }
-      resolve(sessions);
-    };
-    const timer = setTimeout(finish, 1500);
-    ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', protocolVersion: 1 })));
-    ws.on('message', (data) => {
-      const message = JSON.parse(String(data)) as {
-        type: string;
-        result?: { sessions?: TraySession[] };
-      };
-      if (message.type === 'hello.response') {
-        ws.send(JSON.stringify({ type: 'session.list.request', requestId: 'tray', params: {} }));
-      } else if (message.type === 'session.list.response') {
-        sessions.push(...(message.result?.sessions ?? []));
-        clearTimeout(timer);
-        finish();
-      }
-    });
-    ws.on('error', () => {
-      clearTimeout(timer);
-      finish();
-    });
-  });
-}
-
-async function rebuildTrayMenu(): Promise<void> {
-  if (!tray) return;
-  const sessions = await querySessions();
-  const attention = sessions
-    .filter((session) => session.requiresAttention === true)
-    .sort((a, b) => (a.attentionTimestamp ?? '').localeCompare(b.attentionTimestamp ?? ''));
-  const running = sessions.filter((s) => s.status === 'running');
-  const summaryItems =
-    attention.length > 0
-      ? attention.slice(0, 5).map((s) => ({
-          label: `! ${s.attentionReason === 'permission' ? '승인 대기' : '확인 필요'} · ${s.harness} · ${s.cwd.split('/').pop() ?? s.cwd}`,
-          click: () => void showWindow(),
-        }))
-      : [{ label: '실행 중 세션 없음', enabled: false }];
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: '열기', click: () => void showWindow() },
-      { type: 'separator' },
-      {
-        label: `확인 필요 ${attention.length} / 실행 중 ${running.length} / 전체 ${sessions.length}`,
-        enabled: false,
-      },
-      ...summaryItems,
-      { type: 'separator' },
-      {
-        label: '종료',
-        click: () => {
-          quitting = true;
-          app.quit();
-        },
-      },
-    ]),
-  );
-}
-
-function createTray(): void {
-  const icon = nativeImage.createFromBuffer(Buffer.from(TRAY_ICON_BASE64, 'base64'));
-  icon.setTemplateImage(true); // macOS 메뉴바 다크/라이트 자동 반전
-  tray = new Tray(icon);
-  tray.setToolTip('Custom Harness');
-  // 메뉴를 열 때마다 세션 요약 갱신 (FR-3.5.1)
-  tray.on('click', () => void rebuildTrayMenu().then(() => tray?.popUpContextMenu()));
-  tray.on('right-click', () => void rebuildTrayMenu().then(() => tray?.popUpContextMenu()));
-  void rebuildTrayMenu();
+async function shutdown(): Promise<void> {
+  if (quitting) return;
+  quitting = true;
+  if (daemonInfo?.managedBy === 'app') {
+    const result = await stopDaemon(resolvePaths());
+    if (!result.stopped) console.warn('[shell] 앱 소유 데몬을 정상 종료하지 못했습니다.');
+  }
+  app.quit();
 }
 
 app.whenReady().then(async () => {
@@ -168,7 +79,6 @@ app.whenReady().then(async () => {
   // safeStorage 실측 (credential-injection-design §1): 셸에선 가용, 데몬(RUN_AS_NODE)은 불가 —
   // M1 키 저장은 0600 폴백, safeStorage 위임(IPC)은 M2 개정 포인트.
   console.log('[shell] safeStorage available:', safeStorage.isEncryptionAvailable());
-  createTray();
   await showWindow();
 
   app.on('activate', () => {
@@ -176,11 +86,8 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('before-quit', () => {
-  quitting = true;
-});
-
-// 창 전부 닫혀도(숨김) 앱은 트레이에 상주 — 데몬은 detached 라 세션 유지 (FR-1.1.5/FR-3.5.1)
-app.on('window-all-closed', () => {
-  /* 종료하지 않는다 — 트레이 메뉴의 '종료'가 유일한 앱 종료 경로 */
+app.on('before-quit', (event) => {
+  if (quitting) return;
+  event.preventDefault();
+  void shutdown();
 });

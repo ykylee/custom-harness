@@ -3,7 +3,7 @@
 //   Mod+N 새 세션 뷰 · Mod+W 탭 닫기 · Mod+1~9 탭 선택 · Mod+. 활성 세션 중단
 //   Mod+K 커맨드 팔레트 (M7 7.4.2, FR-9.4)
 import { useEffect } from 'react';
-import { Bell, ChevronDown, CircleDot, Settings2 } from 'lucide-react';
+import { ChevronDown, CircleDot, Settings2 } from 'lucide-react';
 import type { AppController } from './store/app-store.js';
 import type { TabTarget } from './workbench/tabs.js';
 import { targetOf } from './workbench/tabs.js';
@@ -17,6 +17,7 @@ import { Tabs } from './components/Tabs.js';
 import { WorkQueue } from './components/WorkQueue.js';
 import { Conversation } from './views/Conversation.js';
 import { Onboarding } from './views/Onboarding.js';
+import { SessionCreate } from './views/SessionCreate.js';
 import { TerminalView } from './views/TerminalView.js';
 import { FilesView, FileViewer } from './views/FilesView.js';
 import { DiffView } from './views/DiffView.js';
@@ -168,17 +169,14 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
             className={state.route === 'main' ? 'is-active' : ''}
             onClick={() => controller.navigate('main')}
           >
-            워크스페이스
+            작업 큐
           </button>
+          <button onClick={() => controller.openTarget({ kind: 'files' })}>파일</button>
           <button
-            className={state.route === 'main' ? 'is-active' : ''}
-            onClick={() => controller.navigate('main')}
+            className={state.route === 'settings' ? 'is-active' : ''}
+            onClick={() => controller.navigate('settings')}
           >
-            세션
-          </button>
-          <button onClick={() => controller.openTarget({ kind: 'files' })}>아티팩트</button>
-          <button onClick={() => controller.navigate('settings')}>
-            알림 <Bell size={13} aria-hidden="true" />
+            <Settings2 size={13} aria-hidden="true" /> 설정
           </button>
         </nav>
         <div className="global-actions">
@@ -194,13 +192,6 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
             <CircleDot size={13} aria-hidden="true" />
             {state.connection === 'connected' ? '로컬 연결' : '연결 확인 중'}
           </span>
-          <button
-            className="global-avatar"
-            aria-label="설정"
-            onClick={() => controller.navigate('settings')}
-          >
-            <Settings2 size={15} aria-hidden="true" />
-          </button>
         </div>
       </header>
       {(state.connection !== 'connected' || state.lastError) && (
@@ -259,7 +250,17 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
         }}
       />
       <main className="main-pane">
-        {state.route === 'workspace-create' ? (
+        {state.route === 'session-create' ? (
+          <SessionCreate
+            harnesses={state.harnesses}
+            gateway={state.gateway}
+            workspace={
+              state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ?? null
+            }
+            onCreate={(params) => controller.createSession(params)}
+            onNewWorkspace={() => controller.navigate('workspace-create')}
+          />
+        ) : state.route === 'workspace-create' ? (
           <WorkspaceCreate
             projects={state.projects}
             actions={{
@@ -314,7 +315,6 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
                 sessions={state.sessions}
                 activeWorkspaceId={state.activeWorkspaceId}
                 onOpenSession={(sessionId) => void controller.openSession(sessionId)}
-                onCreateSession={() => controller.showNewSessionView()}
               />
             ) : (
               <div

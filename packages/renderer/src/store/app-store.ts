@@ -38,7 +38,8 @@ import {
 import { applyEvent, applyEvents, emptySessionView, type SessionView } from '../timeline.js';
 import { Store } from './store.js';
 
-export type Route = 'onboarding' | 'main' | 'settings' | 'workspace-create' | 'about';
+export type Route =
+  'onboarding' | 'main' | 'settings' | 'workspace-create' | 'session-create' | 'about';
 
 /** 앱 정보 화면의 데이터 (WBS 3.3.2, FR-4.5) — 전부 데몬이 번들에서 읽어 온 것이다 */
 export interface AboutInfo {
@@ -916,9 +917,9 @@ export class AppController {
     void this.loadTabContent(tabId);
   }
 
-  /** 새 세션 뷰 — 활성 탭 해제 (탭은 유지) */
+  /** 새 세션 화면 — 하네스와 모델을 고른 뒤 생성한다. */
   showNewSessionView(): void {
-    this.store.set({ route: 'main' });
+    this.store.set({ route: 'session-create' });
     this.setLayout((layout) => ({ ...layout, active: null }));
   }
 
@@ -970,6 +971,7 @@ export class AppController {
     const session = result.session;
     this.store.set((prev) => ({
       ...prev,
+      route: 'main',
       views: {
         ...prev.views,
         [session.sessionId]: prev.views[session.sessionId] ?? emptySessionView(session.status),
@@ -1007,9 +1009,20 @@ export class AppController {
 
   private onPermissionRequested(
     sessionId: string,
-    event: { request: { requestId: string; options: { optionId: string; kind: string }[] } },
+    event: {
+      request: {
+        requestId: string;
+        options: { optionId: string; kind: string }[];
+        origin?: 'harness' | 'reverse_tool' | undefined;
+      };
+    },
   ): void {
-    if (this.store.get().autoApprove[sessionId] === true) {
+    // 역방향 툴은 다른 세션·터미널을 제어할 수 있으므로, 세션의 하네스 자동 승인 범위에
+    // 넣지 않는다. origin 생략은 이전 하네스와의 호환을 위해 harness 로 해석한다.
+    if (
+      event.request.origin !== 'reverse_tool' &&
+      this.store.get().autoApprove[sessionId] === true
+    ) {
       const allow = event.request.options.find((o) => o.kind === 'allow_once');
       if (allow) {
         void this.respondPermission(sessionId, event.request.requestId, {

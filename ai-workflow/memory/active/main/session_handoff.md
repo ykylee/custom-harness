@@ -11,6 +11,8 @@
 
 ## Current Focus
 
+- (2026-09-03 33차 갱신) **운영 콘솔 사용성 보정 5건을 완료했다.** autoApprove는 일반 하네스 승인만 자동 처리하고 역방향 툴은 항상 사용자 응답을 기다린다. 앱 창 닫기는 트레이·상주 없이 앱 소유 데몬까지 정리한다. 운영 큐는 단일 새 세션 진입점·균일한 도구 버튼·완료 세션 분리·단일 행 검색으로 정리했고, 새 세션은 다시 하네스·모델 선택 화면으로 연결된다. 워크스페이스 생성 화면에는 전용 여백·카드 규칙을 추가했다. **다음 우선순위는 폼 시스템 통합**이다: 설정·세션 생성·워크스페이스·온보딩이 콘텐츠 폭·여백·섹션 카드·입력 높이·행동 버튼 규칙을 공유하도록 `FormShell / FormSection / FormActions`를 설계·적용한다. 세션 완전 삭제 RPC는 없으므로 완료 이력은 완료 필터에서만 보존한다.
+
 - (2026-09-03 32차 갱신) **UI 재설계 TASK-010과 서브에이전트 토큰 예산 상한 TASK-001 완료.** 실제 `App`과 정적 GUI 미러(`?preview=gui`)를 `DesignPreview`의 4단 운영 콘솔 구조로 정렬했고, `tools.maxSubagentTokens`(기본 0=비활성)가 자식·자손 비용으로 `session_new`·`session_say`를 차단한다. 미보고 가지는 허용으로 보지 않는다. 다음 후보는 `autoApprove`와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리이며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.
 
 - (2026-09-02 29차 갱신) **M3 shadcn 기반 UI 재설계가 진행 중이다.** 현재 앱 화면을 캡처해 세 방향을 검토한 뒤 운영 큐(cockpit) 방향을 선택했다. `tailwindcss`·shadcn 스타일 Button·Lucide 기반을 도입했고, 정적 웹 시안은 `?preview=work-queue`로 분리해 사내망(`192.168.0.101:5180`)·Tailscale(`100.119.181.116:5180`)에서 본다. 원격 노출은 Vite 개발 서버가 아니라 빌드 산출물만 제공하는 `npm run preview:network`이며, loopback·사설 LAN·Tailscale 대역만 허용한다. 첫 실제 전환으로 Electron 기본 화면은 `session.list`/`workspace.list` read-model을 소비하는 `WorkQueue`가 됐다 — `requiresAttention`/`attentionReason`을 재해석하지 않고 그대로 표시하고, 행 선택은 기존 대화 탭으로 연결한다. TDD RED(미구현 import 실패)→GREEN(2건)과 전체 테스트 **706 passed, 2 skipped**를 확인했다. 다음은 대화·승인·터미널 상세를 같은 visual system으로 옮기고, live 원격 조회는 별도 인증 경계가 확정되기 전까지 열지 않는 것이다.
@@ -60,6 +62,11 @@
 
 ## Work Status
 
+- TASK-2026-09-03-main-006 작업 큐 검색·세션 정리와 새 세션 진입 복구: done
+- TASK-2026-09-03-main-005 워크스페이스 화면 여백·폼 밀도 정리: done
+- TASK-2026-09-03-main-004 운영 콘솔 버튼 위계·배치 균형 정리: done
+- TASK-2026-09-03-main-003 셸 종료 시 트레이·데몬 상주 제거: done
+- TASK-2026-09-03-main-002 autoApprove와 역방향 툴 승인 분리: done
 - 사내 확인 C-1 게이트웨이 실측 → 1.7.3 M1 수용 시나리오, C-5 실기기(linux/win 매트릭스·install.ps1/uninstall.ps1·pi Windows 조건부 판정, **업데이트·롤백 경로와 junction 전환 추가**), C-2 저장소·C-3 서명 (docs/roadmap/m0-internal-checklist.md, m2-smoke-matrix.md): blocked
 - M3 조건부·사내 의존 — 3.2 저장소 연동(M0 0.5.2 결과 대기), 3.4 서명(C-3), M2 개정 포인트 누적분(safeStorage 셸 IPC 위임, UDP/DNS 캡처, pi 승인 확장 훅, mcpServers 재개 재주입, grok compat): planned
 - TASK-2026-09-02-main-001 M3 3.6.1 사용자 가이드(설치·온보딩·기본 사용·FAQ, 번들 동봉): done

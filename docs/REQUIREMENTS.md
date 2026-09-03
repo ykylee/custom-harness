@@ -18,7 +18,7 @@
 |---|---|---|---|
 | **FR-1** 하네스 실행·세션 관리 | [fr1-harness-sessions.md](./requirements/fr1-harness-sessions.md) | 프로세스 수명주기·PID 원장, 공통 세션 계약 + pi/omp/grok 어댑터(전송·버전 검증·청킹), 세션 영속화·재개, 스트리밍 이벤트 정규화, 승인 흐름, 중단, 멀티 세션 | M1–M2 |
 | **FR-2** 게이트웨이 연결 통제 | [fr2-gateway.md](./requirements/fr2-gateway.md) | 하네스별 설정 주입(경로·필드 상세, 사용자 설정 보존), 오프라인 스위치 프리셋, API 키 온보딩·저장(OS 자격증명 저장소 검토), 모델 목록, 트래픽 경계 검사 | M1–M2 |
-| **FR-3** UI (데스크톱 앱) | [fr3-ui.md](./requirements/fr3-ui.md) | 세션 생성, 대화 뷰(스트리밍·툴 카드·diff), 멀티 세션(탭/페인/상태 버킷), 승인 UI, 트레이·알림, 설정, 사용량 표시, 온보딩 마법사 | M1–M2 |
+| **FR-3** UI (데스크톱 앱) | [fr3-ui.md](./requirements/fr3-ui.md) | 세션 생성, 대화 뷰(스트리밍·툴 카드·diff), 멀티 세션(탭/페인/상태 버킷), 승인 UI, 앱 종료·알림, 설정, 사용량 표시, 온보딩 마법사 | M1–M2 |
 | **FR-4** 패키징·설치·업데이트 | [fr4-packaging.md](./requirements/fr4-packaging.md) | 번들 레이아웃, manifest 스키마, 설치/제거 스크립트(원자적 심링크 전환), 전체 교체 업데이트·롤백, NOTICE, 저장소 연동(선택), 빌드 파이프라인 | M1–M3 |
 | **FR-5** 관리 CLI | [fr5-cli.md](./requirements/fr5-cli.md) | daemon start/stop/status/version, 소유권 구분, doctor 진단, logs. 에이전트 조작은 범위 외 | M1–M2 |
 | **FR-6** 확장 (후순위) | [fr6-extensions.md](./requirements/fr6-extensions.md) | opencode(사전 캐시 전제), claude/codex(변환 계층·재배포 재확인), 조직 공용 스킬/MCP 세트(정본 번들 + 복사 동기화) | M4 |

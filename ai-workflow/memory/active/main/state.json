@@ -27,34 +27,39 @@
     "runtime_checks": null
   },
   "session": {
-    "current_baseline": "(2026-09-03 32차 갱신) **UI 재설계 TASK-010과 서브에이전트 토큰 예산 상한 TASK-001 완료.** 실제 `App`과 정적 GUI 미러(`?preview=gui`)를 `DesignPreview`의 4단 운영 콘솔 구조로 정렬했고, `tools.maxSubagentTokens`(기본 0=비활성)가 자식·자손 비용으로 `session_new`·`session_say`를 차단한다. 미보고 가지는 허용으로 보지 않는다. 다음 후보는 `autoApprove`와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리이며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.",
-    "current_axis": "(2026-09-03 32차 갱신) **UI 재설계 TASK-010과 서브에이전트 토큰 예산 상한 TASK-001 완료.** 실제 `App`과 정적 GUI 미러(`?preview=gui`)를 `DesignPreview`의 4단 운영 콘솔 구조로 정렬했고, `tools.maxSubagentTokens`(기본 0=비활성)가 자식·자손 비용으로 `session_new`·`session_say`를 차단한다. 미보고 가지는 허용으로 보지 않는다. 다음 후보는 `autoApprove`와 역방향 툴 정책·제목 수동 편집·파일 검색 캐시·Windows 홈 격리이며 daemon live 연결은 인증·권한 경계 설계 전까지 추가하지 않는다.",
+    "current_baseline": "(2026-09-03 33차 갱신) **운영 콘솔 사용성 보정 5건을 완료했다.** autoApprove는 일반 하네스 승인만 자동 처리하고 역방향 툴은 항상 사용자 응답을 기다린다. 앱 창 닫기는 트레이·상주 없이 앱 소유 데몬까지 정리한다. 운영 큐는 단일 새 세션 진입점·균일한 도구 버튼·완료 세션 분리·단일 행 검색으로 정리했고, 새 세션은 다시 하네스·모델 선택 화면으로 연결된다. 워크스페이스 생성 화면에는 전용 여백·카드 규칙을 추가했다. **다음 우선순위는 폼 시스템 통합**이다: 설정·세션 생성·워크스페이스·온보딩이 콘텐츠 폭·여백·섹션 카드·입력 높이·행동 버튼 규칙을 공유하도록 `FormShell / FormSection / FormActions`를 설계·적용한다. 세션 완전 삭제 RPC는 없으므로 완료 이력은 완료 필터에서만 보존한다.",
+    "current_axis": "(2026-09-03 33차 갱신) **운영 콘솔 사용성 보정 5건을 완료했다.** autoApprove는 일반 하네스 승인만 자동 처리하고 역방향 툴은 항상 사용자 응답을 기다린다. 앱 창 닫기는 트레이·상주 없이 앱 소유 데몬까지 정리한다. 운영 큐는 단일 새 세션 진입점·균일한 도구 버튼·완료 세션 분리·단일 행 검색으로 정리했고, 새 세션은 다시 하네스·모델 선택 화면으로 연결된다. 워크스페이스 생성 화면에는 전용 여백·카드 규칙을 추가했다. **다음 우선순위는 폼 시스템 통합**이다: 설정·세션 생성·워크스페이스·온보딩이 콘텐츠 폭·여백·섹션 카드·입력 높이·행동 버튼 규칙을 공유하도록 `FormShell / FormSection / FormActions`를 설계·적용한다. 세션 완전 삭제 RPC는 없으므로 완료 이력은 완료 필터에서만 보존한다.",
     "current_focus": null,
     "in_progress_items": [],
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
+      "TASK-2026-09-03-main-006 — 작업 큐 검색·세션 정리와 새 세션 진입 복구",
+      "TASK-2026-09-03-main-005 — 워크스페이스 화면 여백·폼 밀도 정리",
+      "TASK-2026-09-03-main-004 — 운영 콘솔 버튼 위계·배치 균형 정리",
+      "TASK-2026-09-03-main-003 — 셸 종료 시 트레이·데몬 상주 제거",
+      "TASK-2026-09-03-main-002 — FR-1.5 후속 — autoApprove와 역방향 툴 승인 분리",
       "TASK-2026-09-03-main-001 — M7 이월 — 서브에이전트 토큰 예산 상한",
       "TASK-2026-09-02-main-010 — 확인용 웹 전체 GUI 미러 및 실제 App 프레임의 DesignPreview 구조 전환",
       "TASK-2026-09-02-main-009 — 정적 세션 상세 확인용 웹 미리보기",
       "TASK-2026-09-02-main-008 — M7 7.1 주의 상태 소비 정리",
-      "TASK-2026-09-02-main-007 — M3 shadcn 기반 UI 재설계",
-      "TASK-2026-09-02-main-006 — M3 shadcn/ui 도입 적합성 조사",
-      "TASK-2026-09-02-main-005 — M3 macOS 번들 현장 실행 확인",
-      "TASK-2026-09-02-main-004 — M3 FR-4.7 Grok Build 1.0.13 동기화",
-      "TASK-2026-09-02-main-003 — M3 3.6.2 운영 문서 — 빌드·반입·배포·갱신·롤백",
-      "TASK-2026-09-02-main-002 — M3 3.5.1 NFR 자동화 게이트 정리"
+      "TASK-2026-09-02-main-007 — M3 shadcn 기반 UI 재설계"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
     "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-03.md",
-    "task_count": 1,
+    "task_count": 6,
     "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
-      "TASK-2026-09-03-main-001 — M7 이월 — 서브에이전트 토큰 예산 상한"
+      "TASK-2026-09-03-main-001 — M7 이월 — 서브에이전트 토큰 예산 상한",
+      "TASK-2026-09-03-main-002 — FR-1.5 후속 — autoApprove와 역방향 툴 승인 분리",
+      "TASK-2026-09-03-main-003 — 셸 종료 시 트레이·데몬 상주 제거",
+      "TASK-2026-09-03-main-004 — 운영 콘솔 버튼 위계·배치 균형 정리",
+      "TASK-2026-09-03-main-005 — 워크스페이스 화면 여백·폼 밀도 정리",
+      "TASK-2026-09-03-main-006 — 작업 큐 검색·세션 정리와 새 세션 진입 복구"
     ]
   },
   "next_documents": [
