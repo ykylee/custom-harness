@@ -6,10 +6,12 @@
 - Scope: current focus, task status, key changes, next actions, risks
 - Audience: AI agents, maintainers
 - Status: draft
-- Updated: 2026-09-04
+- Updated: 2026-09-07
 - Related docs: [Project Profile](../../docs/PROJECT_PROFILE.md), [Work Backlog](./work_backlog.md)
 
 ## Current Focus
+
+- (2026-09-07 35차 갱신) **세션 종료 기준선만 갱신했다.** 원격 `main`을 `11eadbe`까지 fast-forward 동기화했으며, 이 세션에서는 코드·문서·백로그 작업을 추가로 수행하지 않았다. 등록된 작업은 모두 `done`이고, 다음 실행 우선순위는 P0 검증 자동화 범위 확정 후 설치/온보딩·승인/MCP 보안·데몬 재개 시나리오를 회귀화하는 것이다. M7 이월 3건과 C-1/C-5 외부 의존 항목은 계속 열려 있다.
 
 - (2026-09-04 34차 갱신) **렌더러 폼 시스템 통합·디자인 상호작용 보정·MCP 거부 흐름 정합화를 완료했다.** 설정·세션 생성·워크스페이스 생성·온보딩은 `FormShell / FormSection / FormActions`를 공유한다. 커맨드 팔레트는 불완전한 검색 응답을 빈 결과로 정규화해 크래시하지 않고, 정적 미리보기는 실제 명령을 실행하지 않는다는 고지와 승인 상태 전환을 제공한다. `session_say`의 호출자 미식별 write 거부는 승인 이전의 재귀 안전장치로 e2e 기대값을 정렬했다. **전체 검증은 typecheck·713 tests passed (2 skipped)·lint·format:check 통과.** 다음 작업은 수립한 P0 검증 시나리오를 자동화할지, M7 잔여 UI/격리 작업을 진행할지 우선순위를 정하는 것이다.
 
