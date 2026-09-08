@@ -87,6 +87,17 @@ export class GatewayService {
     };
   }
 
+  /**
+   * Pi 는 model 선택에 `provider/model` 형식을 요구한다. UI와 설정에는 게이트웨이의
+   * 원시 모델 ID를 유지하되, 실제 Pi 실행 직전에 관리 프로바이더를 명시해 다른 인증된
+   * 프로바이더와 이름이 겹쳐도 모호해지지 않게 한다.
+   */
+  async modelIdForHarness(harness: HarnessId, modelId: string | undefined): Promise<string | undefined> {
+    if (harness !== 'pi' || modelId === undefined || modelId.includes('/')) return modelId;
+    const config = await this.getConfig();
+    return config === undefined ? modelId : `${config.providerName}/${modelId}`;
+  }
+
   /** 설정 갱신 후 pi 주입 동기화 — 명시 조작이므로 드리프트가 있어도 갱신(force) */
   async setConfig(partial: Partial<GatewayConfig>): Promise<GatewayConfig> {
     const settings = await this.readSettings();

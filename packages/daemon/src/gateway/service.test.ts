@@ -98,6 +98,15 @@ describe('GatewayService (WBS 1.4)', () => {
     expect(await service.ensurePiInjection()).toBeUndefined();
   });
 
+  it('qualifies unprefixed Pi models with the managed gateway provider', async () => {
+    await configure();
+
+    expect(await service.modelIdForHarness('pi', 'grok-4.6')).toBe('gateway/grok-4.6');
+    expect(await service.modelIdForHarness('pi', 'gateway/grok-4.6')).toBe('gateway/grok-4.6');
+    expect(await service.modelIdForHarness('omp', 'grok-4.6')).toBe('grok-4.6');
+    expect(await service.modelIdForHarness('pi', undefined)).toBeUndefined();
+  });
+
   it('builds the pi spawn env overlay: 격리 홈 + 오프라인 + 키 (FR-2.1.4, FR-2.2)', async () => {
     await configure();
     await keyStore.set('sk-valid');

@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-09-07",
+  "generated_at": "2026-09-08",
   "purpose_digest": "폐쇄망(사내망)에서 여러 오픈소스 코딩 에이전트 하네스를 하나의 데스크톱 UI 로 선택·사용할 수 있게 하는 오케스트레이션 도구를 만든다. 에이전트 루프는 [[harness-wrapping|래핑된 하네스]]가 소유하고, 이 도구는 하네스의 실행·상태·UI 를 소유한다.",
   "purpose_digest_rev": "2026-08-24",
   "source_of_truth": {
@@ -10,7 +10,7 @@
     "daily_backlog_dir": "ai-workflow/memory/active/main/backlog",
     "tasks_dir": "ai-workflow/memory/active/main/backlog/tasks",
     "sessions_dir": "ai-workflow/memory/active/main/sessions",
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-03.md",
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-08.md",
     "repository_assessment_path": null
   },
   "project": {
@@ -34,43 +34,35 @@
     "blocked_items": [],
     "planned_items": [],
     "recent_done_items": [
+      "TASK-2026-09-08-main-003 — Pi 게이트웨이 모델 별칭 보정",
+      "TASK-2026-09-08-main-002 — 로컬 실사용 기동 준비",
+      "TASK-2026-09-08-main-001 — 하네스 역방향 툴 사용 가능성 평가",
+      "TASK-2026-09-07-main-002 — 하네스 툴 구현 현황 분석",
+      "TASK-2026-09-07-main-001 — 워크플로우 진입점 부트스트랩 갱신",
       "TASK-2026-09-04-main-002 — 동작 시나리오·검증 계획 수립",
       "TASK-2026-09-04-main-001 — MCP 호출자 미식별 거부 메시지 정합성",
       "TASK-2026-09-03-main-009 — 커맨드 팔레트·미리보기 상호작용 보정",
       "TASK-2026-09-03-main-008 — 디자인·상호작용 점검",
-      "TASK-2026-09-03-main-007 — 폼 시스템 통합",
-      "TASK-2026-09-03-main-006 — 작업 큐 검색·세션 정리와 새 세션 진입 복구",
-      "TASK-2026-09-03-main-005 — 워크스페이스 화면 여백·폼 밀도 정리",
-      "TASK-2026-09-03-main-004 — 운영 콘솔 버튼 위계·배치 균형 정리",
-      "TASK-2026-09-03-main-003 — 셸 종료 시 트레이·데몬 상주 제거",
-      "TASK-2026-09-03-main-002 — FR-1.5 후속 — autoApprove와 역방향 툴 승인 분리"
+      "TASK-2026-09-03-main-007 — 폼 시스템 통합"
     ],
     "unknown_status_items": [],
     "environment_constraints": []
   },
   "backlog": {
-    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-03.md",
-    "task_count": 11,
+    "latest_backlog_path": "ai-workflow/memory/active/main/backlog/2026-09-08.md",
+    "task_count": 3,
     "in_progress_items": [],
     "blocked_items": [],
     "done_items": [
-      "TASK-2026-09-03-main-001 — M7 이월 — 서브에이전트 토큰 예산 상한",
-      "TASK-2026-09-03-main-002 — FR-1.5 후속 — autoApprove와 역방향 툴 승인 분리",
-      "TASK-2026-09-03-main-003 — 셸 종료 시 트레이·데몬 상주 제거",
-      "TASK-2026-09-03-main-004 — 운영 콘솔 버튼 위계·배치 균형 정리",
-      "TASK-2026-09-03-main-005 — 워크스페이스 화면 여백·폼 밀도 정리",
-      "TASK-2026-09-03-main-006 — 작업 큐 검색·세션 정리와 새 세션 진입 복구",
-      "TASK-2026-09-03-main-007 — 폼 시스템 통합",
-      "TASK-2026-09-03-main-008 — 디자인·상호작용 점검",
-      "TASK-2026-09-03-main-009 — 커맨드 팔레트·미리보기 상호작용 보정",
-      "TASK-2026-09-04-main-001 — MCP 호출자 미식별 거부 메시지 정합성",
-      "TASK-2026-09-04-main-002 — 동작 시나리오·검증 계획 수립"
+      "TASK-2026-09-08-main-001 — 하네스 역방향 툴 사용 가능성 평가",
+      "TASK-2026-09-08-main-002 — 로컬 실사용 기동 준비",
+      "TASK-2026-09-08-main-003 — Pi 게이트웨이 모델 별칭 보정"
     ]
   },
   "next_documents": [
     "docs/PROJECT_PROFILE.md",
     "ai-workflow/memory/active/main/session_handoff.md",
-    "ai-workflow/memory/active/main/backlog/2026-09-03.md",
+    "ai-workflow/memory/active/main/backlog/2026-09-08.md",
     "ai-workflow/memory/active/main/work_backlog.md",
     "docs/reference/harness-mcp-support.md"
   ],

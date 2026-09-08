@@ -2,7 +2,7 @@
 description: Standard AI workflow session end — update the handoff and backlog, regenerate state.json, and leave the state so the next session resumes directly.
 ---
 
-<!-- standard-ai-workflow-kit: v1.9.1 -->
+<!-- standard-ai-workflow-kit: v1.9.3 -->
 
 # /workflow-session-end
 

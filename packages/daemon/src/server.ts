@@ -453,11 +453,16 @@ export class DaemonServer {
             );
           }
         }
+        const modelId = await this.options.gateway?.modelIdForHarness(
+          message.params.harness,
+          message.params.modelId,
+        );
         return {
           session: await manager.createSession({
             ...message.params,
             cwd,
             ...(workspaceId !== undefined ? { workspaceId } : {}),
+            ...(modelId !== undefined ? { modelId } : {}),
           }),
         };
       }
