@@ -230,6 +230,10 @@ export function GuiMirrorPreview(): React.JSX.Element {
         ) : activeTarget.kind === 'session' ? (
           <Conversation
             view={previewView}
+            {...(() => {
+              const summary = sessions.find((session) => session.sessionId === activeTarget.sessionId);
+              return summary === undefined ? {} : { summary };
+            })()}
             actions={{
               prompt: () => undefined,
               interrupt: () => undefined,

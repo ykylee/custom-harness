@@ -128,6 +128,28 @@ describe('Sidebar (FR-3.3.1)', () => {
     expect(screen.getByText('1,234tk')).toBeTruthy(); // 목록 사용량 요약
   });
 
+  it('세션 행의 삭제는 명시 확인 후에만 실행한다', () => {
+    const actions = { ...sidebarActions(), deleteSession: vi.fn() };
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(
+      <Sidebar
+        projects={[project]}
+        workspaces={[workspace()]}
+        sessions={[{ ...sessions[0]!, workspaceId: 'wsp_1' }]}
+        activeWorkspaceId="wsp_1"
+        activeSessionId={null}
+        actions={actions}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '세션 삭제' }));
+    expect(actions.deleteSession).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: '세션 삭제' }));
+    expect(actions.deleteSession).toHaveBeenCalledWith('run-1');
+    confirm.mockRestore();
+  });
+
   it('상태 버킷은 계층을 대체하지 않고 횡단 필터로 남는다', () => {
     const owned = sessions.map((session) => ({ ...session, workspaceId: 'wsp_1' }));
     render(

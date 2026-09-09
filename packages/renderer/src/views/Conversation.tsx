@@ -1,8 +1,9 @@
 // 대화 뷰 (WBS 1.5.3~1.5.5, FR-3.2) — 스트리밍 델타, 사고 과정 접기(기본 접힘),
 // 툴/승인 카드, 턴 상태·중단, 자동 스크롤 추적(위로 스크롤 시 해제 + 새 메시지 배지).
 import { useEffect, useRef, useState } from 'react';
-import type { PermissionOutcome } from '@custom-harness/protocol';
+import type { PermissionOutcome, SessionSummary } from '@custom-harness/protocol';
 import type { SessionView } from '../timeline.js';
+import { displaySessionStatus } from '../session-status.js';
 import { Composer } from '../components/Composer.js';
 import { Markdown } from '../components/Markdown.js';
 import { PermissionCard } from '../components/PermissionCard.js';
@@ -22,10 +23,13 @@ const AUTO_APPROVE_WARNING =
 
 export function Conversation({
   view,
+  summary,
   autoApprove = false,
   actions,
 }: {
   view: SessionView;
+  /** 세션 실행 조건 — 타임라인과 분리해 언제나 보이는 사용자 계약이다. */
+  summary?: SessionSummary;
   autoApprove?: boolean;
   actions: ConversationActions;
 }): React.JSX.Element {
@@ -37,6 +41,12 @@ export function Conversation({
   const [tracking, setTracking] = useState(true);
   const [unseen, setUnseen] = useState(0);
   const running = view.status === 'running';
+  const pendingPermissions = view.items.filter(
+    (item) => item.kind === 'permission' && item.status === 'pending',
+  ).length;
+  const displayedStatus = displaySessionStatus(view.status, {
+    requiresApproval: pendingPermissions > 0,
+  });
 
   /**
    * 검색 결과에서 찾아온 자리로 이동 (M7 7.4.2). 앵커 seq **이하 중 가장 큰** 항목이
@@ -92,13 +102,42 @@ export function Conversation({
 
   return (
     <div className="conversation">
-      <div className="conversation-cockpit">
+      <header className="conversation-cockpit">
         <div className="conversation-context">
-          <span className="conversation-eyebrow">SESSION</span>
-          <strong>실행 타임라인</strong>
+          <span className="conversation-eyebrow">AGENT SESSION</span>
+          <strong>{summary?.title ?? '실행 타임라인'}</strong>
+          {summary && (
+            <span className="contract-path" title={summary.cwd}>
+              {summary.cwd}
+            </span>
+          )}
         </div>
+        {summary && (
+          <dl className="session-contract" aria-label="현재 세션 실행 설정">
+            <div>
+              <dt>HARNESS</dt>
+              <dd>{summary.harness}</dd>
+            </div>
+            <div>
+              <dt>MODEL</dt>
+              <dd title={summary.modelId}>{summary.modelId ?? '기본 모델'}</dd>
+            </div>
+            <div>
+              <dt>POLICY</dt>
+              <dd className={autoApprove ? 'policy-warning' : undefined}>
+                {autoApprove ? '자동 승인' : '매번 확인'}
+              </dd>
+            </div>
+          </dl>
+        )}
         <div className="conversation-status" data-testid="session-status">
-          <span className={`status-chip status-${view.status}`}>{view.status}</span>
+          <span
+            className={`status-chip status-${displayedStatus.kind}`}
+            role="status"
+            aria-label={`세션 상태: ${displayedStatus.label}`}
+          >
+            {displayedStatus.label}
+          </span>
           {running && (
             <button className="interrupt" onClick={() => actions.interrupt()}>
               중단
@@ -126,7 +165,7 @@ export function Conversation({
             </label>
           )}
         </div>
-      </div>
+      </header>
 
       <div
         className="conversation-scroll conversation-timeline"

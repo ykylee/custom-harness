@@ -439,7 +439,13 @@ export class DaemonServer {
           }
           cwd = workspace.cwd;
         } else if (provisioning) {
+          if (cwd === undefined) {
+            throw new DaemonError('bad_request', 'workspaceId 또는 cwd 가 필요함');
+          }
           workspaceId = (await provisioning.openProject(cwd)).workspace.id;
+        }
+        if (cwd === undefined) {
+          throw new DaemonError('bad_request', 'workspaceId 또는 cwd 가 필요함');
         }
         // 서버명 선점 탐지 (WBS 7.2.4) — 저장소의 프로젝트 스코프 `.mcp.json` 이 우리 서버
         // 이름을 차지하면 모델이 부르는 역방향 툴이 그쪽으로 간다. 세션 생성을 막지는
@@ -478,6 +484,9 @@ export class DaemonServer {
         };
       case 'session.close.request':
         await manager.closeSession(message.params.sessionId);
+        return {};
+      case 'session.delete.request':
+        await manager.deleteSession(message.params.sessionId);
         return {};
       case 'session.prompt.request':
         return await manager.prompt(message.params.sessionId, message.params.prompt);

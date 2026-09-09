@@ -556,7 +556,7 @@ export class AppController {
 
   selectWorkspace(workspaceId: string): void {
     persist(WORKSPACE_KEY, workspaceId);
-    this.store.set({ activeWorkspaceId: workspaceId, diffs: {} });
+    this.store.set({ activeWorkspaceId: workspaceId, diffs: {}, route: 'main' });
     void this.subscribeDiff(); // 변경사항 구독을 새 워크스페이스로 옮긴다
   }
 
@@ -911,6 +911,8 @@ export class AppController {
 
   /** 임의 타깃을 탭으로 연다 (WBS 6.2.1) */
   openTarget(target: TabTarget): void {
+    // 사이드바·팔레트는 어떤 보조 화면에서도 보인다. 타깃을 열면 반드시 캔버스로 돌아간다.
+    this.store.set({ route: 'main' });
     this.setLayout((layout) => openTab(layout, target));
   }
 
@@ -933,6 +935,13 @@ export class AppController {
   /** 명시적 세션 종료 (FR-3.3.3) — 하네스 프로세스 정리, 이력은 유지(재개 가능) */
   async closeSession(sessionId: string): Promise<void> {
     await this.client.rpc('session.close', { sessionId });
+    this.closeTab(`session:${sessionId}`);
+    await this.refreshSessions();
+  }
+
+  /** 사용자가 확인한 세션 이력 영구 삭제. close와 달리 재개할 수 없다. */
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.client.rpc('session.delete', { sessionId });
     this.closeTab(`session:${sessionId}`);
     await this.refreshSessions();
   }

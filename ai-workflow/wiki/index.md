@@ -47,6 +47,10 @@ NFR-1. 허용 목적지는 게이트웨이·내부 저장소·localhost 뿐이�
 
 탭이 세션·터미널·파일·diff 를 담는 작업 캔버스. 탭은 보는 것이지 소유하는 것이 아니다.
 
+### [[concepts/agent-console-ui]] {#agent-console-ui}
+
+에이전트를 위임·감독·회수하는 콘솔 UI: 세션 계약·일관된 상태·위험 비례 승인을 다룬다.
+
 ## Entities
 
 ### [[entities/daemon]] {#daemon}

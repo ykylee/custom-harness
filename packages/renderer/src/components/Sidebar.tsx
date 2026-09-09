@@ -3,8 +3,19 @@
 // 상태 버킷(승인 대기·실행 중·…)은 계층을 대체하지 않고 **횡단 필터**로 남는다.
 // 버킷으로만 묶으면 "지금 무엇이 급한가"는 보이지만 "어디서 일하고 있는가"가 사라진다.
 import { useEffect, useState } from 'react';
-import { Files, FolderPlus, GitCompareArrows, Plus, Terminal } from 'lucide-react';
+import {
+  Archive,
+  Files,
+  FolderPlus,
+  GitCompareArrows,
+  Pencil,
+  Play,
+  Plus,
+  Terminal,
+  Trash2,
+} from 'lucide-react';
 import type { Project, SessionSummary, Workspace } from '@custom-harness/protocol';
+import { displaySessionStatus } from '../session-status.js';
 
 /** 하네스 아이콘 — 폐쇄망 자산 없이 텍스트 배지 (색상은 styles.css harness-*) */
 export function HarnessBadge({ harness }: { harness: string }): React.JSX.Element {
@@ -55,6 +66,7 @@ export interface SidebarActions {
   setWorkspaceLabels(workspaceId: string, labels: Record<string, string>): void;
   open(sessionId: string): void;
   closeSession(sessionId: string): void;
+  deleteSession?(sessionId: string): void;
   newSession(): void;
   openSettings(): void;
   selectWorkspace(workspaceId: string): void;
@@ -85,6 +97,9 @@ function SessionEntry({
   activeSessionId: string | null;
   actions: SidebarActions;
 }): React.JSX.Element {
+  const displayedStatus = displaySessionStatus(session.status, {
+    requiresApproval: (session.pendingPermissions?.length ?? 0) > 0,
+  });
   return (
     <li className={session.sessionId === activeSessionId ? 'selected' : ''}>
       <button
@@ -92,7 +107,10 @@ function SessionEntry({
         data-testid={`session-${session.sessionId}`}
         onClick={() => actions.open(session.sessionId)}
       >
-        <span className={`status-dot status-${session.status}`} />
+        <span
+          className={`status-dot status-${displayedStatus.kind}`}
+          aria-label={`세션 상태: ${displayedStatus.label}`}
+        />
         <HarnessBadge harness={session.harness} />
         <span className="session-cwd" title={session.cwd}>
           {session.title ?? session.cwd.split('/').pop() ?? session.cwd}
@@ -106,15 +124,32 @@ function SessionEntry({
           <span className="session-usage">{session.usage.totalTokens.toLocaleString()}tk</span>
         )}
       </button>
-      {session.status !== 'closed' && (
-        <button
-          className="session-close"
-          title="세션 종료 (이력 유지 — 재개 가능)"
-          onClick={() => actions.closeSession(session.sessionId)}
-        >
-          ⏻
-        </button>
-      )}
+      <div className="session-actions">
+        {session.status !== 'closed' && (
+          <button
+            className="session-close"
+            title="세션 종료 (이력 유지 — 재개 가능)"
+            aria-label="세션 종료"
+            onClick={() => actions.closeSession(session.sessionId)}
+          >
+            ⏻
+          </button>
+        )}
+        {actions.deleteSession !== undefined && (
+          <button
+            className="session-delete"
+            title="세션 삭제 (이력 복구 불가)"
+            aria-label="세션 삭제"
+            onClick={() => {
+              if (window.confirm('이 세션의 대화 이력과 메타데이터를 영구 삭제할까요?')) {
+                actions.deleteSession?.(session.sessionId);
+              }
+            }}
+          >
+            <Trash2 size={13} aria-hidden="true" />
+          </button>
+        )}
+      </div>
     </li>
   );
 }
@@ -271,6 +306,8 @@ function WorkspaceGroup({
           )}
           {pending > 0 && <span className="pending-badge">승인 {pending}</span>}
         </button>
+      </div>
+      <div className="workspace-actions" aria-label="워크스페이스 조작">
         {workspace.setupState === 'pending' && (
           <button
             className="workspace-setup"
@@ -278,7 +315,7 @@ function WorkspaceGroup({
             data-testid={`setup-${workspace.id}`}
             onClick={() => actions.runSetup(workspace.id)}
           >
-            setup
+            <Play size={13} aria-hidden="true" /> 설정
           </button>
         )}
         <button
@@ -287,7 +324,7 @@ function WorkspaceGroup({
           data-testid={`scripts-toggle-${workspace.id}`}
           onClick={() => setShowScripts((previous) => !previous)}
         >
-          ▶
+          <Terminal size={13} aria-hidden="true" /> 스크립트
         </button>
         <button
           className="workspace-edit"
@@ -295,14 +332,14 @@ function WorkspaceGroup({
           data-testid={`edit-${workspace.id}`}
           onClick={() => setEditing((previous) => !previous)}
         >
-          ✎
+          <Pencil size={13} aria-hidden="true" /> 편집
         </button>
         <button
           className="workspace-archive"
           title="워크스페이스 보관 (세션 이력은 유지)"
           onClick={() => actions.archiveWorkspace(workspace.id)}
         >
-          ▤
+          <Archive size={13} aria-hidden="true" /> 보관
         </button>
       </div>
       {showScripts && <ScriptsPanel workspaceId={workspace.id} actions={actions} />}

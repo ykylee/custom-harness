@@ -399,6 +399,9 @@ body {
 .session-list li {
   display: flex;
   align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 2px;
   border-radius: var(--radius-s);
 }
 .project {
@@ -425,15 +428,13 @@ body {
   margin: 4px 0 10px;
 }
 .workspace-head {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+  display: block;
   min-width: 0;
 }
 .workspace-entry {
   display: flex;
   min-width: 0;
-  flex: 1;
+  width: 100%;
   align-items: center;
   gap: 6px;
   border: 0;
@@ -448,6 +449,9 @@ body {
 .workspace-active .workspace-entry {
   background: var(--bg-hover);
   color: var(--text-1);
+}
+.workspace-active .workspace-entry {
+  box-shadow: inset 2px 0 var(--accent);
 }
 .isolation-badge {
   color: var(--text-3);
@@ -470,20 +474,29 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.workspace-head > button:not(.workspace-entry) {
+.workspace-actions {
   display: grid;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  place-items: center;
-  border: 0;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px 2px 0;
+}
+.workspace-actions > button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--border-subtle);
   border-radius: 5px;
-  background: transparent;
+  background: var(--bg-panel);
   color: var(--text-3);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 10px;
+  white-space: nowrap;
 }
-.workspace-head > button:not(.workspace-entry):hover {
+.workspace-actions > button:hover {
+  border-color: var(--border);
   background: var(--bg-hover);
   color: var(--text-1);
 }
@@ -504,8 +517,10 @@ body {
 .session-list li:hover {
   background: var(--bg-hover);
 }
-.session-list button {
-  width: 100%;
+.session-list .session-entry {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
   text-align: left;
   padding: 6px 8px;
   border: 0;
@@ -528,6 +543,8 @@ body {
   min-width: 0;
 }
 .session-cwd {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -536,20 +553,49 @@ body {
 }
 .session-usage {
   margin-left: auto;
+  flex: none;
   font-size: 10.5px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 .session-close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
   border: 0;
   background: none;
   color: var(--text-3);
   cursor: pointer;
-  padding: 2px 7px;
+  padding: 0;
   border-radius: var(--radius-s);
 }
 .session-close:hover {
   color: var(--err);
+}
+.session-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.session-delete {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  border-radius: var(--radius-s);
+}
+.session-delete:hover {
+  color: var(--err);
+  background: var(--err-tint);
 }
 
 .status-dot {
@@ -565,11 +611,16 @@ body {
   background: var(--ok);
   box-shadow: 0 0 5px var(--ok);
 }
+.status-dot.status-approval {
+  background: var(--warn);
+}
 .status-dot.status-error {
   background: var(--err);
 }
 .pending-badge {
   margin-left: 6px;
+  flex: none;
+  white-space: nowrap;
   font-size: 10.5px;
   color: var(--warn);
   font-weight: 600;
@@ -613,15 +664,18 @@ body {
   align-items: center;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-panel);
-  overflow-x: auto;
+  overflow: hidden;
 }
 .tabs {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
 }
 .tab {
   display: flex;
+  flex: none;
   align-items: center;
   border-right: 1px solid var(--border-subtle);
   max-width: 220px;
@@ -666,8 +720,11 @@ body {
 }
 .split-controls {
   display: flex;
+  flex: none;
   gap: 2px;
   padding: 0 8px;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
 }
 .split-controls button {
   border: 1px solid var(--border);
@@ -710,6 +767,11 @@ body {
   flex: 1;
   min-width: 0;
 }
+.pane > .session-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
 
 /* ── 대화 뷰 ────────────────────────────────────────────────────────────── */
 /* 세션 페인 — 자식 트랙(있을 때만) + 대화 (M7 7.3.3) */
@@ -727,8 +789,12 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   position: relative;
   background: var(--bg-app);
+  /* 분할된 페인 폭에 맞춘 반응형 규칙의 기준점 */
+  container-type: inline-size;
 }
 
 /* 자식 세션 트랙 — 한 줄을 넘지 않는다. 넘치면 가로로 스크롤한다 */
@@ -802,8 +868,8 @@ body {
 .conversation-cockpit {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 8px 14px;
+  gap: 14px;
+  padding: 9px 14px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-panel);
 }
@@ -811,6 +877,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  min-width: 0;
   white-space: nowrap;
 }
 .conversation-context strong {
@@ -824,6 +891,45 @@ body {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
+}
+.contract-path {
+  min-width: 0;
+  max-width: 22ch;
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-contract {
+  display: flex;
+  min-width: 0;
+  gap: 10px;
+  margin: 0;
+}
+.session-contract > div {
+  min-width: 0;
+}
+.session-contract dt {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+.session-contract dd {
+  max-width: 16ch;
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-contract .policy-warning {
+  color: var(--warn);
 }
 .conversation-status {
   display: flex;
@@ -844,6 +950,14 @@ body {
 .status-chip.status-running {
   background: var(--ok-tint);
   color: var(--ok);
+}
+.status-chip.status-approval {
+  background: var(--warn-tint);
+  color: var(--warn);
+}
+.status-chip.status-closed,
+.status-chip.status-initializing {
+  color: var(--text-3);
 }
 .status-chip.status-error {
   background: var(--err-tint);
@@ -878,6 +992,7 @@ body {
 
 .conversation-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 18px clamp(18px, 8vw, 132px);
   /* 자동 스크롤은 리액트 effect 가 소유 — 브라우저 스크롤 앵커링과의 이중 개입 방지 */
@@ -1042,6 +1157,9 @@ body {
   border-color: color-mix(in srgb, var(--warn) 45%, var(--border-subtle));
   border-left: 3px solid var(--warn);
 }
+.permission-card.impact-fetch {
+  border-left-color: var(--accent);
+}
 .permission-card.is-resolved {
   border-left-color: var(--text-3);
   background: var(--bg-panel);
@@ -1053,9 +1171,11 @@ body {
   align-items: center;
   font-size: 12px;
 }
-.permission-header strong {
+.permission-card h3 {
+  margin: 7px 0 0;
   color: var(--text-1);
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 650;
 }
 .permission-state {
   border-radius: 999px;
@@ -1067,12 +1187,22 @@ body {
   letter-spacing: 0.04em;
   padding: 2px 7px;
 }
+.permission-impact {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
 .permission-card.is-resolved .permission-state {
   background: var(--bg-hover);
   color: var(--text-3);
 }
 .permission-body {
   margin: 6px 0 0 1px;
+}
+.permission-origin {
+  margin: 7px 0 0;
+  color: var(--text-3);
+  font-size: 11px;
 }
 .permission-summary {
   color: var(--text-1);
@@ -1085,7 +1215,7 @@ body {
   flex-wrap: wrap;
 }
 .permission-option {
-  min-height: 30px;
+  min-height: 36px;
   padding: 4px 13px;
   border-radius: var(--radius-s);
   border: 1px solid var(--border);
@@ -1098,16 +1228,25 @@ body {
   background: var(--bg-hover);
 }
 .permission-option.option-allow_once,
-.permission-option.option-allow_always {
+.permission-option.option-allow_once {
   border-color: color-mix(in srgb, var(--ok) 45%, transparent);
   color: var(--ok);
   background: var(--ok-tint);
 }
+.permission-option.option-allow_always {
+  border-color: color-mix(in srgb, var(--warn) 52%, transparent);
+  color: var(--warn);
+  background: transparent;
+}
 .permission-option.option-reject_once,
 .permission-option.option-reject_always {
-  border-color: color-mix(in srgb, var(--err) 45%, transparent);
-  color: var(--err);
-  background: var(--err-tint);
+  border-color: var(--border);
+  color: var(--text-2);
+  background: transparent;
+}
+.permission-option:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 .permission-option:focus-visible {
   outline-offset: 2px;
@@ -1136,13 +1275,17 @@ body {
 /* ── 컴포저 ─────────────────────────────────────────────────────────────── */
 .composer {
   display: flex;
+  flex: none;
+  min-width: 0;
   gap: 8px;
-  padding: 12px clamp(14px, 8vw, 128px);
+  padding: 12px clamp(12px, 8cqi, 64px);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-panel);
 }
 .composer textarea {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
   min-height: 56px;
   resize: vertical;
   border-radius: var(--radius-m);
@@ -1152,6 +1295,40 @@ body {
   padding: 9px 12px;
   font: inherit;
   transition: border-color 0.12s;
+}
+.composer button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* 뷰포트가 아니라 실제 대화 페인 폭을 기준으로 여백을 줄인다. */
+@container (max-width: 520px) {
+  .conversation-scroll {
+    padding-inline: 18px;
+  }
+  .composer {
+    padding-inline: 12px;
+  }
+  .composer textarea {
+    min-height: 48px;
+  }
+  .composer button {
+    padding-inline: 10px;
+  }
+}
+
+/* 두 분할 페인이 아주 좁아지면 입력과 전송을 세로로 배치해 둘 다 보장한다. */
+@container (max-width: 420px) {
+  .composer {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .composer textarea {
+    width: 100%;
+  }
+  .composer button {
+    align-self: flex-end;
+  }
 }
 
 @media (max-width: 680px) {
@@ -1163,6 +1340,9 @@ body {
   .conversation-status {
     width: 100%;
     flex-wrap: wrap;
+  }
+  .session-contract {
+    width: 100%;
   }
   .usage {
     margin-left: 0;
@@ -2451,6 +2631,7 @@ button.link:hover {
 }
 .work-queue-search {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   min-width: 280px;
@@ -2463,10 +2644,14 @@ button.link:hover {
   background: #111a2d;
   white-space: nowrap;
 }
+.work-queue-search > svg {
+  flex: none;
+}
 .work-queue-search input {
+  flex: 1 1 0;
   min-width: 0;
-  height: 34px;
-  width: 100%;
+  height: auto;
+  width: auto;
   border: 0;
   outline: 0;
   padding: 0;
@@ -2579,6 +2764,9 @@ button.link:hover {
   color: #8092af;
   text-align: center;
 }
+.work-queue-empty p {
+  margin: 0 0 14px;
+}
 .work-queue-detail {
   margin-top: 14px;
   overflow: hidden;
@@ -2664,13 +2852,20 @@ button.link:hover {
   .work-queue {
     padding: 26px 18px;
   }
-  .work-queue-heading,
-  .work-queue-toolbar {
+  .work-queue-heading {
     align-items: stretch;
     flex-direction: column;
   }
+  .work-queue-toolbar {
+    align-items: center;
+  }
+  .work-queue-filters,
   .work-queue-search {
+    flex: 1 1 0;
     min-width: 0;
+  }
+  .work-queue-search {
+    min-height: 34px;
   }
   .work-queue-row {
     grid-template-columns: 100px minmax(0, 1fr);

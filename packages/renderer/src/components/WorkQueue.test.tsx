@@ -76,6 +76,34 @@ describe('WorkQueue', () => {
     expect(onOpenSession).toHaveBeenCalledWith('approval_1');
   });
 
+  it('빈 워크스페이스를 선택하면 이전 워크스페이스 세션 대신 생성 안내를 표시한다', () => {
+    const empty = { ...workspace, id: 'wsp_empty', displayName: 'empty' };
+    const onNewSession = vi.fn();
+    const view = render(
+      <WorkQueue
+        workspaces={[workspace, empty]}
+        sessions={sessions}
+        activeWorkspaceId={workspace.id}
+        onOpenSession={vi.fn()}
+        onNewSession={onNewSession}
+      />,
+    );
+
+    view.rerender(
+      <WorkQueue
+        workspaces={[workspace, empty]}
+        sessions={sessions}
+        activeWorkspaceId={empty.id}
+        onOpenSession={vi.fn()}
+        onNewSession={onNewSession}
+      />,
+    );
+
+    expect(screen.getByText('empty에 세션이 없습니다.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '새 세션 만들기' }));
+    expect(onNewSession).toHaveBeenCalledOnce();
+  });
+
   it('주의 세션은 오래 기다린 순으로 일반 세션보다 먼저 표시한다', () => {
     const attentionSessions: SessionSummary[] = [
       sessions[0]!,

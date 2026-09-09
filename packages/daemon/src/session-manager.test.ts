@@ -587,6 +587,19 @@ describe('SessionManager', () => {
     await expect(manager.prompt(sessionId, 'x')).rejects.toMatchObject({ code: 'bad_request' });
     expect((await manager.timeline(sessionId)).length).toBeGreaterThan(0);
   });
+
+  it('delete closes the runtime then permanently removes its persisted history', async () => {
+    const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    await manager.prompt(sessionId, '삭제 전 기록');
+    await settled();
+
+    await manager.deleteSession(sessionId);
+
+    expect(adapter.sessions[0]!.closed).toBe(true);
+    expect(await manager.listSessions()).toEqual([]);
+    await expect(manager.timeline(sessionId)).rejects.toMatchObject({ code: 'not_found' });
+    expect(await store.readTimeline(sessionId)).toEqual([]);
+  });
 });
 
 describe('빠른 어댑터의 턴 개시 경합 (M7 7.5.1 실측 결함)', () => {

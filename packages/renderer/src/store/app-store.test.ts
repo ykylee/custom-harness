@@ -187,6 +187,18 @@ describe('AppController 탭·분할 (FR-3.3.2/3)', () => {
     expect(controller.layout.tabs).toEqual([]);
   });
 
+  it('leaves the new-session screen when a sidebar session is opened', async () => {
+    const { transport } = makeFakeTransport();
+    const controller = new AppController(transport);
+    await controller.bootstrap();
+    controller.showNewSessionView();
+
+    await controller.openSession('s-1');
+
+    expect(controller.store.get().route).toBe('main');
+    expect(controller.layout.active).toBe('session:s-1');
+  });
+
   it('splits with another tab and clears split when that tab closes', async () => {
     const { transport } = makeFakeTransport();
     const controller = new AppController(transport);

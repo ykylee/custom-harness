@@ -65,6 +65,28 @@ describe('Conversation (FR-3.2)', () => {
     expect(actions.interrupt).toHaveBeenCalled();
   });
 
+  it('keeps the agent session contract and normalized status visible', () => {
+    render(
+      <Conversation
+        view={runningView()}
+        summary={{
+          sessionId: 's-1',
+          harness: 'pi',
+          modelId: 'gateway/MiniMax-M3',
+          cwd: '/work/custom-harness',
+          status: 'running',
+          seq: 0,
+        }}
+        autoApprove
+        actions={noopActions}
+      />,
+    );
+
+    expect(screen.getByLabelText('현재 세션 실행 설정').textContent).toContain('MiniMax-M3');
+    expect(screen.getByText('자동 승인')).toBeTruthy();
+    expect(screen.getByLabelText('세션 상태: 실행 중')).toBeTruthy();
+  });
+
   it('lets the user respond to a pending permission (FR-3.4.1)', () => {
     const actions = { ...noopActions, respondPermission: vi.fn() };
     const view = runningView([
@@ -87,6 +109,9 @@ describe('Conversation (FR-3.2)', () => {
     expect(screen.getByText('결정 필요')).toBeTruthy();
     fireEvent.click(screen.getByText('허용'));
     expect(actions.respondPermission).toHaveBeenCalledWith('p-1', { optionId: 'allow' });
+    expect((screen.getByRole('button', { name: '거부' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
   it('enables the composer after the turn completes and submits with Cmd+Enter', () => {

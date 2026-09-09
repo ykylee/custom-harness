@@ -77,6 +77,15 @@ describe('agent events (FR-1.4)', () => {
 });
 
 describe('rpc (protocol-design §2)', () => {
+  it('accepts a workspace-owned session.create request without cwd (WBS 5.6.4)', () => {
+    const request = {
+      type: 'session.create.request',
+      requestId: 'r-workspace-create',
+      params: { harness: 'pi', workspaceId: 'wsp-1' },
+    };
+    expect(rpc.session.create.request.parse(request)).toEqual(request);
+  });
+
   it('round-trips a session.prompt request/response pair', () => {
     const request = {
       type: 'session.prompt.request',

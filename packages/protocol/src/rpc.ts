@@ -229,7 +229,8 @@ export const rpc = {
          * UI 는 5.6 이후 항상 workspaceId 를 보낸다.
          */
         workspaceId: z.string().optional(),
-        cwd: z.string(),
+        /** workspaceId 경로에서는 서버가 레지스트리에서 결정한다. */
+        cwd: z.string().optional(),
         modelId: z.string().optional(),
         approvalPolicy: z.enum(['mediate', 'auto']).optional(),
         mcpServers: z.array(McpServerConfigSchema).optional(),
@@ -253,6 +254,8 @@ export const rpc = {
       z.looseObject({ sessions: z.array(SessionSummarySchema) }),
     ),
     close: rpcPair('session.close', z.looseObject({ sessionId: z.string() }), z.looseObject({})),
+    /** 사용자가 명시적으로 이력까지 제거한다 — close(재개 가능)와 구분한다. */
+    delete: rpcPair('session.delete', z.looseObject({ sessionId: z.string() }), z.looseObject({})),
     prompt: rpcPair(
       'session.prompt',
       z.looseObject({ sessionId: z.string(), prompt: z.string() }),
@@ -752,6 +755,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.session.resume.request,
   rpc.session.list.request,
   rpc.session.close.request,
+  rpc.session.delete.request,
   rpc.session.prompt.request,
   rpc.session.wait.request,
   rpc.session.interrupt.request,
@@ -808,6 +812,7 @@ export const RpcResponseSchema = z.union([
   rpc.session.resume.response,
   rpc.session.list.response,
   rpc.session.close.response,
+  rpc.session.delete.response,
   rpc.session.prompt.response,
   rpc.session.wait.response,
   rpc.session.interrupt.response,

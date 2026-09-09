@@ -52,11 +52,13 @@ export function WorkQueue({
   sessions,
   activeWorkspaceId,
   onOpenSession,
+  onNewSession,
 }: {
   workspaces: Workspace[];
   sessions: SessionSummary[];
   activeWorkspaceId: string | null;
   onOpenSession(sessionId: string): void;
+  onNewSession?(): void;
 }): React.JSX.Element {
   const [filter, setFilter] = useState<QueueFilter>('all');
   const [query, setQuery] = useState('');
@@ -69,16 +71,18 @@ export function WorkQueue({
     () =>
       sessions
         .filter((session) => {
+          const workspaceMatches =
+            activeWorkspaceId === null || session.workspaceId === activeWorkspaceId;
           const status = queueStatus(session);
           // 완료 세션은 기본 큐에서 분리한다. 이력은 완료 필터에서 그대로 확인할 수 있다.
           const filterMatches =
             filter === 'all' ? status.tone !== 'closed' : status.tone === filter;
           const text =
             `${titleOf(session)} ${session.harness} ${session.cwd} ${workspaceName.get(session.workspaceId ?? '') ?? ''}`.toLowerCase();
-          return filterMatches && (normalizedQuery === '' || text.includes(normalizedQuery));
+          return workspaceMatches && filterMatches && (normalizedQuery === '' || text.includes(normalizedQuery));
         })
         .sort(compareQueueSessions),
-    [filter, normalizedQuery, sessions, workspaceName],
+    [activeWorkspaceId, filter, normalizedQuery, sessions, workspaceName],
   );
   const selected =
     visible.find((session) => session.sessionId === selectedSessionId) ?? visible.at(0) ?? null;
@@ -166,7 +170,18 @@ export function WorkQueue({
             </div>
           );
         })}
-        {visible.length === 0 && <p className="work-queue-empty">표시할 세션이 없습니다.</p>}
+        {visible.length === 0 && (
+          <div className="work-queue-empty">
+            <p>
+              {activeWorkspaceId === null
+                ? '표시할 세션이 없습니다.'
+                : `${workspaceName.get(activeWorkspaceId) ?? '선택된 워크스페이스'}에 세션이 없습니다.`}
+            </p>
+            {activeWorkspaceId !== null && onNewSession !== undefined && (
+              <button onClick={onNewSession}>새 세션 만들기</button>
+            )}
+          </div>
+        )}
       </div>
       {selected !== null && (
         <section className="work-queue-detail" aria-label={`선택한 세션 ${titleOf(selected)} 상세`}>

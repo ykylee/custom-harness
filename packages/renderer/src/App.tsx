@@ -54,6 +54,7 @@ function Pane({
           />
           <Conversation
             view={state.views[sessionId] ?? emptySessionView()}
+            {...(summary !== undefined ? { summary } : {})}
             autoApprove={state.autoApprove[sessionId] === true}
             actions={{
               prompt: (text) => void controller.prompt(sessionId, text),
@@ -229,6 +230,7 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
         actions={{
           open: (sessionId) => void controller.openSession(sessionId),
           closeSession: (sessionId) => void controller.closeSession(sessionId),
+          deleteSession: (sessionId) => void controller.deleteSession(sessionId),
           newSession: () => controller.showNewSessionView(),
           openSettings: () => controller.navigate('settings'),
           selectWorkspace: (workspaceId) => controller.selectWorkspace(workspaceId),
@@ -315,6 +317,7 @@ export function App({ controller }: { controller: AppController }): React.JSX.El
                 sessions={state.sessions}
                 activeWorkspaceId={state.activeWorkspaceId}
                 onOpenSession={(sessionId) => void controller.openSession(sessionId)}
+                onNewSession={() => controller.showNewSessionView()}
               />
             ) : (
               <div

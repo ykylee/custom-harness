@@ -359,6 +359,14 @@ export class SessionManager {
     }
   }
 
+  /** 명시 삭제 — 런타임을 먼저 종료한 뒤 세션 메타·타임라인을 함께 제거한다. */
+  async deleteSession(sessionId: string): Promise<void> {
+    const live = this.requireSession(sessionId);
+    await this.closeSession(sessionId);
+    this.sessions.delete(sessionId);
+    await this.store.deleteSession(live.meta.sessionId);
+  }
+
   async prompt(sessionId: string, text: string): Promise<{ turnId: string }> {
     const live = this.requireSession(sessionId);
     if (!live.runtime) throw new DaemonError('bad_request', '런타임 없음 — 먼저 재개(resume) 필요');

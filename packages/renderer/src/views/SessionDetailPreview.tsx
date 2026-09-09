@@ -60,6 +60,15 @@ export function SessionDetailPreview(): React.JSX.Element {
         <div className="review-preview-conversation">
           <Conversation
             view={previewView}
+            summary={{
+              sessionId: 'session-preview',
+              harness: 'pi',
+              modelId: 'gateway/MiniMax-M3',
+              cwd: '/workspace/custom-harness',
+              status: 'idle',
+              seq: 5,
+              title: '배포 전 검토',
+            }}
             actions={{
               prompt: () => undefined,
               interrupt: () => undefined,
