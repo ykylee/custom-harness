@@ -525,6 +525,8 @@ export class DaemonServer {
         if (!searchIndex) throw new DaemonError('unimplemented', '검색 색인이 배선되지 않음');
         return { hits: searchIndex.search(message.params) };
       }
+      case 'session.commands.list.request':
+        return { commands: manager.listCommands(message.params.sessionId) };
       case 'harness.list.request': {
         // 모델 카탈로그(FR-2.4)·경계 경고(FR-2.5)는 gateway 배선 시에만 — 미배선이면 기본 목록
         const { gateway } = this.options;

@@ -9,6 +9,7 @@ import { RegistryEventSchema } from './workspaces.js';
 
 export * from './base.js';
 export * from './capabilities.js';
+export * from './commands.js';
 export * from './connection.js';
 export * from './events.js';
 export * from './rpc.js';

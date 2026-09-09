@@ -5,6 +5,7 @@ import { AdapterError } from './adapters/contract.js';
 export type DaemonErrorCode =
   | 'not_found'
   | 'busy'
+  | 'queue_full'
   | 'session_limit'
   | 'bad_request'
   | 'unsupported'

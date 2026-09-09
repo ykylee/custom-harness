@@ -1,7 +1,7 @@
 // 대화 뷰 (WBS 1.5.3~1.5.5, FR-3.2) — 스트리밍 델타, 사고 과정 접기(기본 접힘),
 // 툴/승인 카드, 턴 상태·중단, 자동 스크롤 추적(위로 스크롤 시 해제 + 새 메시지 배지).
 import { useEffect, useRef, useState } from 'react';
-import type { PermissionOutcome, SessionSummary } from '@custom-harness/protocol';
+import type { PermissionOutcome, SessionCommand, SessionSummary } from '@custom-harness/protocol';
 import type { SessionView } from '../timeline.js';
 import { displaySessionStatus } from '../session-status.js';
 import { Composer } from '../components/Composer.js';
@@ -24,12 +24,14 @@ const AUTO_APPROVE_WARNING =
 export function Conversation({
   view,
   summary,
+  commands = [],
   autoApprove = false,
   actions,
 }: {
   view: SessionView;
   /** 세션 실행 조건 — 타임라인과 분리해 언제나 보이는 사용자 계약이다. */
   summary?: SessionSummary;
+  commands?: readonly SessionCommand[];
   autoApprove?: boolean;
   actions: ConversationActions;
 }): React.JSX.Element {
@@ -250,7 +252,13 @@ export function Conversation({
         </button>
       )}
 
-      <Composer disabled={running || view.status === 'closed'} onSubmit={actions.prompt} />
+      <Composer
+        disabled={view.status === 'closed'}
+        queueing={running}
+        queuedCount={summary?.queuedPromptCount ?? 0}
+        commands={commands}
+        onSubmit={actions.prompt}
+      />
     </div>
   );
 }

@@ -96,10 +96,30 @@ export async function cmdSessionPrompt(
   // 구독을 **보내기 전에** 건다 — 사이에 온 이벤트는 다시 받을 길이 없다.
   // (백필은 turnId 를 모르는 시점이라 갭 판정의 기준이 없다)
   const stream = options.wait ? startStream(context, options.sessionId) : undefined;
-  const { turnId } = await context.connection.rpc<{ turnId: string }>('session.prompt', {
+  const result = await context.connection.rpc<{
+    turnId?: string;
+    queued: boolean;
+    queuePosition?: number;
+  }>('session.prompt', {
     sessionId: options.sessionId,
     prompt: options.prompt,
   });
+  if (result.queued) {
+    const payload = { queued: true, queuePosition: result.queuePosition };
+    if (context.json) context.io.out(JSON.stringify(payload));
+    else context.io.out(`대기열 ${String(result.queuePosition)}번에 추가됨`);
+    if (stream !== undefined) {
+      failOut(
+        context,
+        'queued',
+        '--wait 는 대기열 입력을 기다릴 수 없습니다. 세션 watch를 사용하세요.',
+      );
+      return 2;
+    }
+    return 0;
+  }
+  const turnId = result.turnId;
+  if (!turnId) throw new Error('session.prompt 응답에 turnId 없음');
   if (stream === undefined) {
     if (context.json) context.io.out(JSON.stringify({ turnId }));
     else context.io.out(turnId);

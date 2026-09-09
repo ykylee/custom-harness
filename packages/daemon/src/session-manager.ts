@@ -11,11 +11,17 @@ import type {
   PermissionOutcome,
   PermissionRequest,
   SessionEvent,
+  SessionCommand,
   SessionSummary,
 } from '@custom-harness/protocol';
 import { hasCapability, TOOL_LABEL_PARENT_SESSION } from '@custom-harness/protocol';
 import type { ProbeResult } from '@custom-harness/protocol';
-import type { AgentAdapter, AgentSession, Unsubscribe } from './adapters/contract.js';
+import type {
+  AgentAdapter,
+  AgentSession,
+  NativeCommand,
+  Unsubscribe,
+} from './adapters/contract.js';
 import { DaemonError } from './errors.js';
 import { attentionChanged, computeAttention, type AttentionState } from './attention.js';
 import { verifyProbeAgainstManifest, type BundleManifest } from './manifest.js';
@@ -40,6 +46,11 @@ interface LiveSession {
   /** undefined = 런타임 없음 (closed — 재개 가능) */
   runtime: AgentSession | undefined;
   unsubscribe: Unsubscribe | undefined;
+  unsubscribeCommands: Unsubscribe | undefined;
+  commands: SessionCommand[];
+  /** 실행 중 제출된 사용자 입력. 세션 생명주기 안에서만 유지하는 FIFO다. */
+  queuedPrompts: string[];
+  drainingQueue: boolean;
   nextSeq: number;
   activeTurnId: string | undefined;
   pending: Map<string, PermissionRequest>;
@@ -151,6 +162,10 @@ export class SessionManager {
         meta,
         runtime: undefined,
         unsubscribe: undefined,
+        unsubscribeCommands: undefined,
+        commands: [],
+        queuedPrompts: [],
+        drainingQueue: false,
         nextSeq: (await this.store.lastSeq(meta.sessionId)) + 1,
         activeTurnId: undefined,
         pending: new Map(),
@@ -227,6 +242,10 @@ export class SessionManager {
       meta,
       runtime: undefined,
       unsubscribe: undefined,
+      unsubscribeCommands: undefined,
+      commands: [],
+      queuedPrompts: [],
+      drainingQueue: false,
       nextSeq: 0,
       activeTurnId: undefined,
       pending: new Map(),
@@ -337,11 +356,17 @@ export class SessionManager {
    */
   async closeSession(sessionId: string, reason: 'user' | 'shutdown' = 'user'): Promise<void> {
     const live = this.requireSession(sessionId);
+    if (live.queuedPrompts.length > 0) {
+      live.queuedPrompts = [];
+      this.emitQueueChanged(live);
+    }
     if (live.runtime) {
       live.unsubscribe?.();
+      live.unsubscribeCommands?.();
       await live.runtime.close();
       live.runtime = undefined;
       live.unsubscribe = undefined;
+      live.unsubscribeCommands = undefined;
       live.activeTurnId = undefined;
       live.pending.clear();
       // 닫힌 세션의 턴은 끝난 것이다 — 풀어 주지 않으면 대기가 타임아웃까지 매달린다
@@ -367,17 +392,36 @@ export class SessionManager {
     await this.store.deleteSession(live.meta.sessionId);
   }
 
-  async prompt(sessionId: string, text: string): Promise<{ turnId: string }> {
+  async prompt(
+    sessionId: string,
+    text: string,
+  ): Promise<{ turnId?: string; queued: boolean; queuePosition?: number }> {
     const live = this.requireSession(sessionId);
     if (!live.runtime) throw new DaemonError('bad_request', '런타임 없음 — 먼저 재개(resume) 필요');
     if (live.activeTurnId) {
-      // 활성 턴 1개 — 큐잉이 아니라 거부 (daemon-design §4)
-      throw new DaemonError('busy', `활성 턴 존재: ${live.activeTurnId}`);
+      if (live.queuedPrompts.length >= 20) {
+        throw new DaemonError(
+          'queue_full',
+          '입력 대기열 상한(20) 초과 — 진행 중인 입력을 기다리거나 중단',
+        );
+      }
+      live.queuedPrompts.push(text);
+      this.emitQueueChanged(live);
+      return { queued: true, queuePosition: live.queuedPrompts.length };
     }
     if (live.meta.status !== 'idle') {
       throw new DaemonError('bad_request', `프롬프트 불가 상태: ${live.meta.status}`);
     }
 
+    const turnId = await this.startPrompt(live, text);
+    return { turnId, queued: false };
+  }
+
+  /** 활성 턴이 없는 상태에서만 호출하는 실제 하네스 전송 경로. */
+  private async startPrompt(live: LiveSession, text: string): Promise<string> {
+    if (!live.runtime || live.activeTurnId || live.meta.status !== 'idle') {
+      throw new DaemonError('bad_request', '대기열 시작 불가 상태');
+    }
     // 개시 구간 동안 어댑터 이벤트를 잡아 둔다 (§eventHold). 어댑터가 `startTurn` 직후
     // 턴을 끝내 버리면 매니저가 자기 행을 내기도 전에 종료 이벤트가 들어와, 타임라인이
     // 뒤집히고 이미 끝난 턴이 activeTurnId 에 얹혀 세션이 영구히 busy 가 된다.
@@ -404,7 +448,7 @@ export class SessionManager {
     // 제목은 **첫 프롬프트에서만** 만든다 (FR-9.5). 턴을 막지 않는다 — LLM 모드는
     // 왕복이 붙고, 제목 때문에 응답이 늦어지는 것은 교환으로 성립하지 않는다.
     void this.ensureTitle(live, text);
-    return { turnId };
+    return turnId;
   }
 
   /**
@@ -612,6 +656,12 @@ export class SessionManager {
   /** 멱등 — 활성 턴이 없어도 에러 없이 완료 (FR-1.6) */
   async interrupt(sessionId: string): Promise<void> {
     const live = this.requireSession(sessionId);
+    // 중단은 현재 턴과 사용자가 이미 보낸 후속 지시를 함께 취소한다. 그렇지 않으면
+    // '정지'를 눌렀는데 다음 지시가 곧바로 실행되는 놀라운 동작이 된다.
+    if (live.queuedPrompts.length > 0) {
+      live.queuedPrompts = [];
+      this.emitQueueChanged(live);
+    }
     if (!live.runtime || !live.activeTurnId) return;
     await live.runtime.interrupt();
   }
@@ -756,7 +806,41 @@ export class SessionManager {
   private attachRuntime(live: LiveSession, runtime: AgentSession): void {
     live.runtime = runtime;
     live.unsubscribe = runtime.subscribe((event) => this.applyEvent(live, event));
+    live.unsubscribeCommands = runtime.subscribeCommands?.((commands) => {
+      const next = this.normalizeCommands(live.meta.harness, commands);
+      const changed = JSON.stringify(next) !== JSON.stringify(live.commands);
+      live.commands = next;
+      // 빈 초기 스냅샷은 세션 수명 이벤트가 아니다. 실제 카탈로그가 생기거나 바뀔 때만 알린다.
+      if (!changed) return;
+      this.applyEvent(live, { type: 'session_commands_changed', commands: live.commands });
+    });
     live.meta.handle = runtime.describeHandle();
+  }
+
+  /** UI에는 검증 가능한 네이티브 명령만 노출한다. 실행 의미론은 raw prompt다. */
+  private normalizeCommands(
+    harness: HarnessId,
+    commands: readonly NativeCommand[],
+  ): SessionCommand[] {
+    const seen = new Set<string>();
+    return commands.flatMap((command) => {
+      if (!/^\/[\w-]+$/.test(command.name) || seen.has(command.name)) return [];
+      seen.add(command.name);
+      return [
+        {
+          id: `harness:${harness}:${command.name.slice(1)}`,
+          name: command.name,
+          title: command.title ?? command.name,
+          ...(command.description !== undefined ? { description: command.description } : {}),
+          source: 'harness' as const,
+          executionMode: 'raw-prompt' as const,
+        },
+      ];
+    });
+  }
+
+  listCommands(sessionId: string): SessionCommand[] {
+    return [...this.requireSession(sessionId).commands];
   }
 
   /**
@@ -806,13 +890,17 @@ export class SessionManager {
         this.releaseTurnWaiters(live);
         // 턴이 끝났다 = 사용자가 아직 결과를 못 봤다 (7.1.1)
         live.attentionAcknowledged = false;
-        void this.transition(live, 'idle');
+        void this.transition(live, 'idle').then(() => this.drainQueuedPrompts(live));
         return;
       case 'session_status_changed':
         // 어댑터는 신호만 — 상태 반영 후 단일 이벤트로 통과 (비정상 종료 등)
         live.meta.status = event.status;
         if (event.status === 'error') {
           live.activeTurnId = undefined;
+          if (live.queuedPrompts.length > 0) {
+            live.queuedPrompts = [];
+            this.emitQueueChanged(live);
+          }
           this.releaseTurnWaiters(live);
           live.attentionAcknowledged = false;
         }
@@ -835,6 +923,40 @@ export class SessionManager {
     }
   }
 
+  private emitQueueChanged(live: LiveSession): void {
+    this.emit(live, {
+      type: 'session_queue_changed',
+      queuedPromptCount: live.queuedPrompts.length,
+    });
+  }
+
+  /** 한 턴이 끝난 뒤 FIFO에서 정확히 하나만 다음 턴으로 승격한다. */
+  private async drainQueuedPrompts(live: LiveSession): Promise<void> {
+    if (live.drainingQueue || !live.runtime || live.activeTurnId || live.meta.status !== 'idle')
+      return;
+    const text = live.queuedPrompts.shift();
+    if (text === undefined) return;
+    live.drainingQueue = true;
+    this.emitQueueChanged(live);
+    try {
+      await this.startPrompt(live, text);
+    } catch (error) {
+      // 이미 수락한 입력을 조용히 잃지 않는다. 오류 상태에서는 다시 전송하지 않고 남은
+      // 입력도 비운다 — 재개 뒤에 과거 작업이 뒤늦게 실행되는 것보다 안전하다.
+      live.queuedPrompts = [];
+      this.emitQueueChanged(live);
+      this.applyEvent(live, {
+        type: 'error',
+        error: {
+          kind: 'unknown',
+          message: `대기열 입력 시작 실패: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      });
+    } finally {
+      live.drainingQueue = false;
+    }
+  }
+
   /** seq 부여는 동기, 영속화·팬아웃은 세션 체인으로 직렬화 — 순서 보장 */
   private emit(
     live: LiveSession,
@@ -849,7 +971,8 @@ export class SessionManager {
           attentionTimestamp?: string;
         }
       // 세션 제목 확정 (M7 7.6.1) — 역시 데몬 소유
-      | { type: 'session_title_changed'; title: string },
+      | { type: 'session_title_changed'; title: string }
+      | { type: 'session_queue_changed'; queuedPromptCount: number },
   ): void {
     const event = {
       ...body,
@@ -1000,6 +1123,7 @@ export class SessionManager {
       ...(live.meta.labels !== undefined ? { labels: live.meta.labels } : {}),
       // 자동 생성 제목 (M7 7.6.1) — 스키마에는 5.0.2 부터 있었지만 채우는 쪽이 없었다
       ...(live.meta.title !== undefined ? { title: live.meta.title } : {}),
+      ...(live.queuedPrompts.length > 0 ? { queuedPromptCount: live.queuedPrompts.length } : {}),
     };
   }
 }

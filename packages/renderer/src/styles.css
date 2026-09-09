@@ -1296,8 +1296,73 @@ body {
   font: inherit;
   transition: border-color 0.12s;
 }
+.composer-field {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.composer-field textarea {
+  width: 100%;
+}
+.slash-popover {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 6px);
+  width: 100%;
+  max-height: min(280px, 45dvh);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+.slash-popover-label,
+.slash-raw-fallback {
+  padding: 8px 10px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.slash-command-list {
+  border-top: 1px solid var(--border-subtle);
+}
+.slash-command-list [role='option'] {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+.slash-command-list [role='option'].is-active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.slash-command-list strong {
+  color: var(--text-1);
+  font-size: 13px;
+}
+.slash-command-list span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slash-command-list em {
+  color: var(--text-3);
+  font-size: 11px;
+  font-style: normal;
+  white-space: nowrap;
+}
 .composer button {
   flex: none;
+  white-space: nowrap;
+}
+.composer-queue-count {
+  align-self: center;
+  color: var(--text-3);
+  font-size: 12px;
   white-space: nowrap;
 }
 

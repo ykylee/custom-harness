@@ -12,6 +12,7 @@ import {
   AdapterError,
   type AgentSession,
   type PersistenceHandle,
+  type NativeCommand,
   type SessionConfig,
   type Unsubscribe,
 } from '../contract.js';
@@ -77,6 +78,8 @@ export abstract class JsonlRpcSessionCore implements AgentSession {
   readonly sessionId: string;
   protected readonly transport: JsonlRpcTransport;
   private readonly listeners = new Set<(event: AgentEvent) => void>();
+  private readonly commandListeners = new Set<(commands: NativeCommand[]) => void>();
+  private commands: NativeCommand[] = [];
   private readonly coreOptions: SessionCoreOptions;
   protected turnCounter = 0;
   protected activeTurnId: string | undefined;
@@ -159,6 +162,45 @@ export abstract class JsonlRpcSessionCore implements AgentSession {
   subscribe(listener: (event: AgentEvent) => void): Unsubscribe {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  subscribeCommands(listener: (commands: NativeCommand[]) => void): Unsubscribe {
+    this.commandListeners.add(listener);
+    listener(this.commands);
+    return () => this.commandListeners.delete(listener);
+  }
+
+  listCommands(): readonly NativeCommand[] {
+    return this.commands;
+  }
+
+  /** 하네스 확장 프레임의 명령 목록을 한 번 정규화해 보관한다. */
+  protected setCommands(raw: unknown): void {
+    if (!Array.isArray(raw)) return;
+    const next = raw.flatMap((item): NativeCommand[] => {
+      if (typeof item === 'string')
+        return item.startsWith('/') ? [{ name: item }] : [{ name: `/${item}` }];
+      if (!item || typeof item !== 'object') return [];
+      const value = item as Record<string, unknown>;
+      const rawName =
+        typeof value.name === 'string'
+          ? value.name
+          : typeof value.command === 'string'
+            ? value.command
+            : undefined;
+      if (!rawName) return [];
+      const name = rawName.startsWith('/') ? rawName : `/${rawName}`;
+      if (!/^\/[\w-]+$/.test(name)) return [];
+      return [
+        {
+          name,
+          ...(typeof value.title === 'string' ? { title: value.title } : {}),
+          ...(typeof value.description === 'string' ? { description: value.description } : {}),
+        },
+      ];
+    });
+    this.commands = next;
+    for (const listener of this.commandListeners) listener(next);
   }
 
   /** abort 는 스트리밍 중이 아니어도 성공 응답 — 멱등 (FR-1.6) */

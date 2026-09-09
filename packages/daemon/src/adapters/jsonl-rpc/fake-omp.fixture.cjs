@@ -78,10 +78,16 @@ out({
   maxReassembledFrameBytes: 64 * 1024 * 1024,
 });
 out({ type: 'extension_ui_request', id: 'w-1', method: 'setWidget', widgetKey: 'fake' });
-out({ type: 'available_commands_update', commands: [] });
+out({
+  type: 'available_commands_update',
+  commands: process.env.FAKE_OMP_COMMANDS ? JSON.parse(process.env.FAKE_OMP_COMMANDS) : [],
+});
 if (process.env.FAKE_OMP_REPLAY === '1') {
   // 버전 드리프트 가정 리플레이 — 어댑터 가드가 드롭해야 한다
-  out({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '리플레이 잔향' } });
+  out({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', delta: '리플레이 잔향' },
+  });
   out({ type: 'tool_execution_start', toolCallId: 'old-1', toolName: 'bash', args: {} });
   out({ type: 'agent_end', messages: [assistant('stop')] });
 }
@@ -95,9 +101,15 @@ async function runScenario(message) {
   out({ type: 'notice', level: 'info', message: 'fake notice', source: 'fake' });
   out({ type: 'prompt_result', agentInvoked: true });
 
-  out({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '생각 중…' } });
+  out({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'thinking_delta', delta: '생각 중…' },
+  });
   out({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '작업을 ' } });
-  out({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '시작합니다' } });
+  out({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', delta: '시작합니다' },
+  });
 
   if (message.includes('[bigframe]')) {
     // 1MiB 초과 논리 프레임 — v2 면 rpc_chunk 로 나간다
@@ -111,7 +123,13 @@ async function runScenario(message) {
     // 어댑터는 즉시 cancelled 응답으로 격하해야 한다 — 응답이 오면 턴을 계속한다
     await new Promise((resolve) => {
       pendingUi = { id: 'ui-omp-1', resolve };
-      out({ type: 'extension_ui_request', id: 'ui-omp-1', method: 'confirm', title: '확인', message: '계속?' });
+      out({
+        type: 'extension_ui_request',
+        id: 'ui-omp-1',
+        method: 'confirm',
+        title: '확인',
+        message: '계속?',
+      });
     });
     pendingUi = null;
   }
@@ -121,8 +139,20 @@ async function runScenario(message) {
   const toolMatch = /\[tool:([^\]]+)\]/.exec(message);
   const toolName = toolMatch ? toolMatch[1] : 'bash';
   out({ type: 'tool_execution_start', toolCallId: 'tc-1', toolName, args: { command: 'echo hi' } });
-  out({ type: 'tool_execution_update', toolCallId: 'tc-1', toolName, args: {}, partialResult: { line: 1 } });
-  out({ type: 'tool_execution_end', toolCallId: 'tc-1', toolName, result: { stdout: 'hi' }, isError: false });
+  out({
+    type: 'tool_execution_update',
+    toolCallId: 'tc-1',
+    toolName,
+    args: {},
+    partialResult: { line: 1 },
+  });
+  out({
+    type: 'tool_execution_end',
+    toolCallId: 'tc-1',
+    toolName,
+    result: { stdout: 'hi' },
+    isError: false,
+  });
 
   activeTurn = false;
   if (message.includes('[fail]')) {
@@ -203,7 +233,13 @@ function handle(cmd) {
       return;
     case 'prompt':
       startedTurns += 1;
-      out({ type: 'response', id: cmd.id, command: 'prompt', success: true, data: { agentInvoked: true } });
+      out({
+        type: 'response',
+        id: cmd.id,
+        command: 'prompt',
+        success: true,
+        data: { agentInvoked: true },
+      });
       void runScenario(String(cmd.message ?? ''));
       return;
     case 'abort':
@@ -214,13 +250,25 @@ function handle(cmd) {
       }
       return;
     case 'set_model':
-      out({ type: 'response', id: cmd.id, command: 'set_model', success: true, data: { id: cmd.modelId } });
+      out({
+        type: 'response',
+        id: cmd.id,
+        command: 'set_model',
+        success: true,
+        data: { id: cmd.modelId },
+      });
       return;
     case 'extension_ui_response':
       if (cmd.cancelled === true) uiCancelled = true;
       if (pendingUi && cmd.id === pendingUi.id) pendingUi.resolve();
       return;
     default:
-      out({ type: 'response', id: cmd.id, command: String(cmd.type), success: false, error: `unknown command: ${cmd.type}` });
+      out({
+        type: 'response',
+        id: cmd.id,
+        command: String(cmd.type),
+        success: false,
+        error: `unknown command: ${cmd.type}`,
+      });
   }
 }

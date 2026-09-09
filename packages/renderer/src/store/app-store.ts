@@ -11,6 +11,7 @@ import type {
   Project,
   LicenseIndex,
   SearchHit,
+  SessionCommand,
   SessionSummary,
   SessionUsageTree,
   Terminal,
@@ -126,6 +127,8 @@ export interface AppState {
    * 사용자가 보는 "자식 2개"와 상한이 막는 기준이 달라진다 (7.3.2 결정).
    */
   usageTrees: Record<string, SessionUsageTree>;
+  /** 세션별 하네스 네이티브 슬래시 명령 카탈로그. 없으면 raw prompt만 가능하다. */
+  commandsBySession: Record<string, SessionCommand[]>;
   /** 하네스 상태 패널 (FR-3.6.3) — harness.probe 결과 캐시 */
   probes: Record<string, ProbeResult>;
   /** 커맨드 팔레트 (M7 7.4.2, FR-9.4) */
@@ -207,6 +210,7 @@ export function initialAppState(): AppState {
     terminals: [],
     autoApprove: {},
     usageTrees: {},
+    commandsBySession: {},
     notificationsEnabled: loadPersisted<boolean>(NOTIFICATIONS_KEY) ?? true,
     probes: {},
     diffs: {},
@@ -270,7 +274,9 @@ export class AppController {
         const view = prev.views[event.sessionId] ?? emptySessionView();
         return { ...prev, views: { ...prev.views, [event.sessionId]: applyEvent(view, event) } };
       });
-      if (event.type === 'session_status_changed') void this.refreshSessions();
+      if (event.type === 'session_status_changed' || event.type === 'session_queue_changed') {
+        void this.refreshSessions();
+      }
       if (event.type === 'permission_requested') this.onPermissionRequested(event.sessionId, event);
       if (event.type === 'turn_completed' || event.type === 'turn_failed') {
         void this.refreshSessions(); // 목록 usage 요약 갱신 (FR-3.7)
@@ -287,6 +293,12 @@ export class AppController {
           sessions: prev.sessions.map((session) =>
             session.sessionId === sessionId ? { ...session, title } : session,
           ),
+        }));
+      }
+      if (event.type === 'session_commands_changed') {
+        this.store.set((prev) => ({
+          ...prev,
+          commandsBySession: { ...prev.commandsBySession, [event.sessionId]: event.commands },
         }));
       }
     });
@@ -719,6 +731,24 @@ export class AppController {
   private async loadSessionTab(sessionId: string): Promise<void> {
     await this.loadTimeline(sessionId);
     await this.refreshUsageTree(sessionId);
+    await this.refreshSessionCommands(sessionId);
+  }
+
+  /** 보조 정보라 실패해도 대화 입력은 막지 않는다 — `/foo` 원문 전달은 항상 가능하다. */
+  async refreshSessionCommands(sessionId: string): Promise<void> {
+    try {
+      const result = (await this.client.rpc('session.commands.list', { sessionId })) as {
+        commands?: SessionCommand[];
+      };
+      this.store.set({
+        commandsBySession: {
+          ...this.store.get().commandsBySession,
+          [sessionId]: Array.isArray(result.commands) ? result.commands : [],
+        },
+      });
+    } catch {
+      /* 구형 데몬·연결 실패에서도 일반 컴포저는 정상 동작 */
+    }
   }
 
   /**
@@ -994,6 +1024,8 @@ export class AppController {
 
   async prompt(sessionId: string, text: string): Promise<void> {
     await this.client.rpc('session.prompt', { sessionId, prompt: text });
+    // 대기열 추가는 상태 전이가 없으므로 목록 요약(대기 개수)을 즉시 회수한다.
+    await this.refreshSessions();
   }
 
   async interrupt(sessionId: string): Promise<void> {

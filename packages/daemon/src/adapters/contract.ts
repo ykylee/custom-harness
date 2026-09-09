@@ -33,11 +33,21 @@ export interface PersistenceHandle {
 
 export type Unsubscribe = () => void;
 
+/** 하네스가 알려 준 네이티브 명령의 어댑터 내부 표현. */
+export interface NativeCommand {
+  name: string;
+  title?: string;
+  description?: string;
+}
+
 export interface AgentSession {
   readonly sessionId: string;
   startTurn(prompt: string): Promise<{ turnId: string }>;
   /** 하네스 유래 이벤트만 — turn_started·user_message 는 데몬(세션 매니저) 소유 (FR-1.4) */
   subscribe(listener: (event: AgentEvent) => void): Unsubscribe;
+  /** 명령 카탈로그가 준비·변경될 때 알린다. 지원하지 않는 하네스는 생략한다. */
+  subscribeCommands?(listener: (commands: NativeCommand[]) => void): Unsubscribe;
+  listCommands?(): readonly NativeCommand[];
   /** 멱등 (FR-1.6) */
   interrupt(): Promise<void>;
   respondToPermission(requestId: string, outcome: PermissionOutcome): Promise<void>;

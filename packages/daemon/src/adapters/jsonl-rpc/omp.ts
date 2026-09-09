@@ -169,6 +169,10 @@ class OmpSession extends JsonlRpcSessionCore {
       this.readyResolve?.();
       return true;
     }
+    if (frame.type === 'available_commands_update') {
+      this.setCommands(frame.commands);
+      return true;
+    }
     // omp 확장 프레임 — 중립 유니온 대상 아님, 1차 드롭 (prompt_result·notice·
     // available_commands_update·subagent_* 등). 코어 default 드롭과 동일하나
     // 리플레이 가드 대상에서 제외할 필요도 없어 코어로 통과시킨다.

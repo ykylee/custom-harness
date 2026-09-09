@@ -262,7 +262,15 @@ async function run(
         prompt: args.prompt,
       });
       // 턴 완료를 기다리지 않는다(카탈로그 계약) — 진행 확인은 session_read 로
-      return ok({ turnId: result.turnId, note: '턴이 시작됐다. 진행은 session_read 로 확인한다.' });
+      return ok(
+        result.queued === true
+          ? {
+              queued: true,
+              queuePosition: result.queuePosition,
+              note: '입력이 세션 대기열에 추가됐다.',
+            }
+          : { turnId: result.turnId, note: '턴이 시작됐다. 진행은 session_read 로 확인한다.' },
+      );
     }
 
     case 'session_stop': {

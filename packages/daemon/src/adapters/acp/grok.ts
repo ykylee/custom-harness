@@ -17,6 +17,7 @@ import {
   AdapterError,
   type AgentAdapter,
   type AgentSession,
+  type NativeCommand,
   type PersistenceHandle,
   type SessionConfig,
   type Unsubscribe,
@@ -96,6 +97,8 @@ class GrokSession implements AgentSession {
   readonly sessionId: string;
   private readonly client: AcpClient;
   private readonly listeners = new Set<(event: AgentEvent) => void>();
+  private readonly commandListeners = new Set<(commands: NativeCommand[]) => void>();
+  private commands: NativeCommand[] = [];
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private readonly cwd: string;
   private acpSessionId = '';
@@ -231,6 +234,16 @@ class GrokSession implements AgentSession {
     return () => this.listeners.delete(listener);
   }
 
+  subscribeCommands(listener: (commands: NativeCommand[]) => void): Unsubscribe {
+    this.commandListeners.add(listener);
+    listener(this.commands);
+    return () => this.commandListeners.delete(listener);
+  }
+
+  listCommands(): readonly NativeCommand[] {
+    return this.commands;
+  }
+
   /** session/cancel 은 알림 — 활성 턴이 없어도 안전 (멱등, FR-1.6, 실측 #6) */
   async interrupt(): Promise<void> {
     this.client.notify('session/cancel', { sessionId: this.acpSessionId });
@@ -282,6 +295,36 @@ class GrokSession implements AgentSession {
     for (const listener of this.listeners) listener(event);
   }
 
+  private setCommands(raw: unknown): void {
+    if (!Array.isArray(raw)) return;
+    this.commands = raw.flatMap((item): NativeCommand[] => {
+      if (typeof item === 'string') {
+        const name = item.startsWith('/') ? item : `/${item}`;
+        return /^\/[\w-]+$/.test(name) ? [{ name }] : [];
+      }
+      if (!item || typeof item !== 'object') return [];
+      const value = item as Record<string, unknown>;
+      const rawName =
+        typeof value.name === 'string'
+          ? value.name
+          : typeof value.command === 'string'
+            ? value.command
+            : undefined;
+      if (!rawName) return [];
+      const name = rawName.startsWith('/') ? rawName : `/${rawName}`;
+      return /^\/[\w-]+$/.test(name)
+        ? [
+            {
+              name,
+              ...(typeof value.title === 'string' ? { title: value.title } : {}),
+              ...(typeof value.description === 'string' ? { description: value.description } : {}),
+            },
+          ]
+        : [];
+    });
+    for (const listener of this.commandListeners) listener(this.commands);
+  }
+
   // ── 이벤트 정규화 (FR-1.4) ────────────────────────────────────────────────
 
   private onNotification(method: string, params: Record<string, unknown>): void {
@@ -330,8 +373,11 @@ class GrokSession implements AgentSession {
         }
         return;
       }
+      case 'available_commands_update':
+        this.setCommands(update.commands ?? update.availableCommands);
+        return;
       default:
-        // user_message_chunk(데몬 소유)·plan·available_commands_update 등 — 1차 드롭
+        // user_message_chunk(데몬 소유)·plan 등 — 1차 드롭
         return;
     }
   }

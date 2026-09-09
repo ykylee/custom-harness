@@ -2,6 +2,7 @@
 // 동일 스키마를 공유하고, 데몬은 sessionId/seq 부여 외 재가공하지 않는다 (protocol-design §2).
 // 파싱은 관대(loose) — 미지 필드는 보존한다 (FR-1.8, NFR-5).
 import { z } from 'zod';
+import { SessionCommandSchema } from './commands.js';
 
 /** FR-1.3.5 세션 상태 모델 — closed 는 삭제가 아니라 "런타임 없음, 재개 가능" */
 export const SessionStatusSchema = z.enum(['initializing', 'idle', 'running', 'closed', 'error']);
@@ -164,6 +165,18 @@ const titleChanged = z.looseObject({
   title: z.string(),
 });
 
+/** 하네스가 명령 카탈로그를 갱신했다 — 실행 기록이 아니라 세션 UI 상태 동기화 신호다. */
+const commandsChanged = z.looseObject({
+  type: z.literal('session_commands_changed'),
+  commands: z.array(SessionCommandSchema),
+});
+
+/** 사용자 입력 FIFO 대기열의 길이 변경 — 상세 텍스트는 타임라인에 쓰지 않는다. */
+const queueChanged = z.looseObject({
+  type: z.literal('session_queue_changed'),
+  queuedPromptCount: z.number().int().nonnegative(),
+});
+
 /** 어댑터가 올리는 이벤트 — sessionId/seq 없음 (세션 스코프는 데몬이 부여) */
 export const AgentEventSchema = z.discriminatedUnion('type', [
   turnStarted,
@@ -180,6 +193,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   usageUpdated,
   sessionStatusChanged,
   errorEvent,
+  commandsChanged,
 ]);
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
 
@@ -217,5 +231,7 @@ export const SessionEventSchema = z.discriminatedUnion('type', [
   // 데몬 소유 — 어댑터 유니온(AgentEvent)에는 없다 (user_message 와 같은 층)
   attentionChanged.extend(wireEnvelope),
   titleChanged.extend(wireEnvelope),
+  commandsChanged.extend(wireEnvelope),
+  queueChanged.extend(wireEnvelope),
 ]);
 export type SessionEvent = z.infer<typeof SessionEventSchema>;

@@ -57,10 +57,11 @@ describe('Conversation (FR-3.2)', () => {
     expect(screen.getByTestId('tool-card').textContent).toContain('실행 중');
   });
 
-  it('disables the composer while running and wires the interrupt button (FR-3.2.4/6)', () => {
+  it('keeps the composer queueable while running and wires the interrupt button (FR-3.2.4/6)', () => {
     const actions = { ...noopActions, interrupt: vi.fn() };
     render(<Conversation view={runningView()} actions={actions} />);
-    expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(false);
+    expect(screen.getByRole('button', { name: '대기열 추가' })).toBeTruthy();
     fireEvent.click(screen.getByText('중단'));
     expect(actions.interrupt).toHaveBeenCalled();
   });
@@ -109,12 +110,10 @@ describe('Conversation (FR-3.2)', () => {
     expect(screen.getByText('결정 필요')).toBeTruthy();
     fireEvent.click(screen.getByText('허용'));
     expect(actions.respondPermission).toHaveBeenCalledWith('p-1', { optionId: 'allow' });
-    expect((screen.getByRole('button', { name: '거부' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect((screen.getByRole('button', { name: '거부' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('enables the composer after the turn completes and submits with Cmd+Enter', () => {
+  it('enables the composer after the turn completes and submits with Enter', () => {
     const actions = { ...noopActions, prompt: vi.fn() };
     const view = runningView([
       ev({ type: 'turn_completed', turnId: 't-1' }),
@@ -124,7 +123,7 @@ describe('Conversation (FR-3.2)', () => {
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
     expect(textarea.disabled).toBe(false);
     fireEvent.change(textarea, { target: { value: '다음 작업' } });
-    fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
     expect(actions.prompt).toHaveBeenCalledWith('다음 작업');
   });
 });

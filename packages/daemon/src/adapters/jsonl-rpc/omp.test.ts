@@ -59,6 +59,16 @@ describe('OmpAdapter specifics', () => {
     expect(mapOmpToolKind('quantum_flux')).toBe('other');
   });
 
+  it('keeps available_commands_update as a native command catalog', async () => {
+    const { session } = await openWith(undefined, {
+      env: { FAKE_OMP_COMMANDS: JSON.stringify([{ name: 'compact', description: '대화를 압축' }]) },
+    });
+    await vi.waitFor(() => {
+      expect(session.listCommands?.()).toEqual([{ name: '/compact', description: '대화를 압축' }]);
+    });
+    await session.close();
+  });
+
   it('translates approvalPolicy to --approval-mode (mediate→write, auto→yolo)', async () => {
     expect(approvalModeFor('mediate')).toBe('write');
     expect(approvalModeFor('auto')).toBe('yolo');

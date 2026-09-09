@@ -153,6 +153,11 @@ export function applyEvent(view: SessionView, event: SessionEvent): SessionView 
   const base: SessionView = { ...view, lastSeq: event.seq };
 
   switch (event.type) {
+    // 카탈로그 갱신은 컴포저 상태가 소비한다. 타임라인에는 사용자 작업만 남긴다.
+    case 'session_commands_changed':
+      return base;
+    case 'session_queue_changed':
+      return base;
     case 'user_message':
       return {
         ...base,

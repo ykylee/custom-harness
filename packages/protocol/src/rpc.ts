@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { HarnessIdSchema, PROTOCOL_VERSION } from './base.js';
 import { CapabilityFlagsSchema } from './capabilities.js';
+import { SessionCommandSchema } from './commands.js';
 import {
   PermissionOutcomeSchema,
   PermissionRequestSchema,
@@ -118,6 +119,8 @@ export const SessionSummarySchema = z.looseObject({
   attentionTimestamp: z.string().optional(),
   /** 사용자 표시 제목 (M7 7.6 이 채운다) */
   title: z.string().optional(),
+  /** 실행 중인 턴 뒤에 FIFO로 대기 중인 사용자 입력 수. 세션 종료 시 비영속으로 비운다. */
+  queuedPromptCount: z.number().int().nonnegative().optional(),
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
@@ -259,7 +262,13 @@ export const rpc = {
     prompt: rpcPair(
       'session.prompt',
       z.looseObject({ sessionId: z.string(), prompt: z.string() }),
-      z.looseObject({ turnId: z.string() }),
+      z.looseObject({
+        /** 즉시 시작된 경우에만 있다. 대기열 입력은 실제 시작 때 turnId를 얻는다. */
+        turnId: z.string().optional(),
+        /** 구형 데몬의 즉시 시작 응답에는 없을 수 있다. */
+        queued: z.boolean().optional(),
+        queuePosition: z.number().int().positive().optional(),
+      }),
     ),
     /**
      * 활성 턴 완료 대기 (M7 7.3.1, FR-9.3) — 서브에이전트 위임의 "기다린다"에 해당한다.
@@ -377,6 +386,12 @@ export const rpc = {
         limit: z.number().int().positive().max(500).optional(),
       }),
       z.looseObject({ hits: z.array(SearchHitSchema) }),
+    ),
+    /** 하네스가 발표한 세션별 슬래시 명령. 실행은 원문 prompt 전달을 유지한다. */
+    commandsList: rpcPair(
+      'session.commands.list',
+      z.looseObject({ sessionId: z.string() }),
+      z.looseObject({ commands: z.array(SessionCommandSchema) }),
     ),
   },
   config: {
@@ -766,6 +781,7 @@ export const RpcRequestSchema = z.discriminatedUnion('type', [
   rpc.session.result.request,
   rpc.session.timeline.request,
   rpc.session.search.request,
+  rpc.session.commandsList.request,
   rpc.config.keySet.request,
   rpc.config.keyTest.request,
   rpc.config.get.request,
@@ -823,6 +839,7 @@ export const RpcResponseSchema = z.union([
   rpc.session.result.response,
   rpc.session.timeline.response,
   rpc.session.search.response,
+  rpc.session.commandsList.response,
   rpc.config.keySet.response,
   rpc.config.keyTest.response,
   rpc.config.get.response,

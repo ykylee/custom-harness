@@ -20,6 +20,10 @@ export class FakeSession implements AgentSession {
   readonly config: SessionConfig;
   readonly resumed: boolean;
   private readonly listeners = new Set<(event: AgentEvent) => void>();
+  private readonly commandListeners = new Set<
+    (commands: { name: string; title?: string; description?: string }[]) => void
+  >();
+  private commands: { name: string; title?: string; description?: string }[] = [];
   private turnCounter = 0;
   lastTurnId: string | undefined;
   interruptCalls = 0;
@@ -47,6 +51,23 @@ export class FakeSession implements AgentSession {
   subscribe(listener: (event: AgentEvent) => void): Unsubscribe {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  subscribeCommands(
+    listener: (commands: { name: string; title?: string; description?: string }[]) => void,
+  ): Unsubscribe {
+    this.commandListeners.add(listener);
+    listener(this.commands);
+    return () => this.commandListeners.delete(listener);
+  }
+
+  listCommands(): readonly { name: string; title?: string; description?: string }[] {
+    return this.commands;
+  }
+
+  setCommands(commands: { name: string; title?: string; description?: string }[]): void {
+    this.commands = commands;
+    for (const listener of this.commandListeners) listener(commands);
   }
 
   async interrupt(): Promise<void> {

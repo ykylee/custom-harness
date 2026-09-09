@@ -161,6 +161,22 @@ describe('SessionManager', () => {
     });
   });
 
+  it('하네스 명령 카탈로그 변경을 세션 이벤트와 목록으로 보존한다', async () => {
+    const summary = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
+    const session = adapter.sessions.at(-1)!;
+    session.setCommands([{ name: '/compact', description: '대화를 압축한다' }]);
+    await vi.waitFor(() => {
+      expect(manager.listCommands(summary.sessionId)).toEqual([
+        expect.objectContaining({
+          id: 'harness:mock:compact',
+          name: '/compact',
+          executionMode: 'raw-prompt',
+        }),
+      ]);
+      expect(events.some((event) => event.type === 'session_commands_changed')).toBe(true);
+    });
+  });
+
   describe('위임 비용 합산 (M7 7.3.2)', () => {
     /** 세션 하나를 만들고 턴 1회로 사용량을 심는다 */
     async function spend(totalTokens: number, labels?: Record<string, string>): Promise<string> {
@@ -379,7 +395,7 @@ describe('SessionManager', () => {
     const { turnId } = await manager.prompt(sessionId, '파일 고쳐줘');
     const session = adapter.sessions[0]!;
     session.emit({ type: 'message_delta', turnId, delta: '네' });
-    session.emit({ type: 'turn_completed', turnId });
+    session.emit({ type: 'turn_completed', turnId: turnId! });
     await settled();
 
     const types = events.map((e) => e.type);
@@ -404,10 +420,26 @@ describe('SessionManager', () => {
     await expect(manager.prompt(sessionId, '다음')).resolves.toMatchObject({ turnId: 'turn-2' });
   });
 
-  it('rejects a second prompt while a turn is active — 큐잉 없이 거부', async () => {
+  it('queues prompts FIFO while a turn is active, then starts the next one', async () => {
     const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
-    await manager.prompt(sessionId, '첫 턴');
-    await expect(manager.prompt(sessionId, '둘째 턴')).rejects.toMatchObject({ code: 'busy' });
+    const first = await manager.prompt(sessionId, '첫 턴');
+    await expect(manager.prompt(sessionId, '둘째 턴')).resolves.toEqual({
+      queued: true,
+      queuePosition: 1,
+    });
+    expect((await manager.listSessions())[0]?.queuedPromptCount).toBe(1);
+
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId: first.turnId! });
+    await vi.waitFor(() => expect(adapter.sessions[0]!.lastTurnId).toBe('turn-2'));
+    expect((await manager.listSessions())[0]?.queuedPromptCount).toBeUndefined();
+    expect(
+      (await manager.timeline(sessionId)).filter((event) => event.type === 'user_message'),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: '첫 턴' }),
+        expect.objectContaining({ text: '둘째 턴' }),
+      ]),
+    );
   });
 
   it('interrupt is idempotent (FR-1.6)', async () => {
@@ -417,9 +449,11 @@ describe('SessionManager', () => {
     expect(adapter.sessions[0]!.interruptCalls).toBe(0);
 
     await manager.prompt(sessionId, '작업');
+    await manager.prompt(sessionId, '취소될 다음 입력');
     await manager.interrupt(sessionId); // fake 가 turn_canceled 발행
     await settled();
     expect(adapter.sessions[0]!.interruptCalls).toBe(1);
+    expect((await manager.listSessions())[0]?.queuedPromptCount).toBeUndefined();
     expect(events.at(-1)).toMatchObject({ type: 'session_status_changed', status: 'idle' });
     await manager.interrupt(sessionId); // 다시 호출해도 no-op
     expect(adapter.sessions[0]!.interruptCalls).toBe(1);
@@ -455,7 +489,7 @@ describe('SessionManager', () => {
   it('턴 종료가 주의 상태를 세우고 목록·이벤트에 함께 실린다', async () => {
     const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     const { turnId } = await manager.prompt(sessionId, '해줘');
-    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId });
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId: turnId! });
     await settled();
 
     const changed = events.filter((e) => e.type === 'attention_changed');
@@ -470,7 +504,7 @@ describe('SessionManager', () => {
   it('확인 처리(ack)는 완료 주의를 지우고 이벤트를 1번만 낸다 — 멱등', async () => {
     const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     const { turnId } = await manager.prompt(sessionId, '해줘');
-    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId });
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId: turnId! });
     await settled();
 
     manager.acknowledgeAttention(sessionId);
@@ -508,7 +542,7 @@ describe('SessionManager', () => {
   it('새 프롬프트는 주의 상태를 해제한다 — 사용자가 붙어 있다', async () => {
     const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     const first = await manager.prompt(sessionId, '하나');
-    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId: first.turnId });
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId: first.turnId! });
     await settled();
     expect((await manager.listSessions())[0]?.requiresAttention).toBe(true);
 
@@ -520,7 +554,7 @@ describe('SessionManager', () => {
   it('데몬 재기동 후에도 주의 상태가 그대로 조회된다 (클라이언트 부재 구간)', async () => {
     const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     const { turnId } = await manager.prompt(sessionId, '해줘');
-    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId });
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId: turnId! });
     await settled();
 
     // 같은 저장소 위에 새 매니저를 세운다 = 데몬 재기동
@@ -546,7 +580,7 @@ describe('SessionManager', () => {
   it('restarts: stale active statuses become closed, resume restores pending + seq (FR-1.3)', async () => {
     const { sessionId } = await manager.createSession({ harness: 'mock', cwd: process.cwd() });
     const { turnId } = await manager.prompt(sessionId, '작업');
-    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId });
+    adapter.sessions[0]!.emit({ type: 'turn_completed', turnId: turnId! });
     await settled();
     const seqBefore = (await manager.listSessions())[0]!.seq;
 

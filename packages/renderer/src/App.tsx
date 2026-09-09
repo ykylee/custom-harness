@@ -54,6 +54,7 @@ function Pane({
           />
           <Conversation
             view={state.views[sessionId] ?? emptySessionView()}
+            commands={state.commandsBySession[sessionId] ?? []}
             {...(summary !== undefined ? { summary } : {})}
             autoApprove={state.autoApprove[sessionId] === true}
             actions={{
